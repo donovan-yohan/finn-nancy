@@ -6,11 +6,11 @@
     <p class="eyebrow">statements</p>
     <h1>Reconciliation</h1>
     <p class="subtle">{{ review_items | length }} line{{ 's' if review_items | length != 1 else '' }} waiting on a match.</p>
-    <p>
+    <p class="link-row subtle">
       <a class="link nancy-link" href="/actions">approval queue{% if active_proposal_count %} · {{ active_proposal_count }}{% endif %}</a>
       {% if selected_month %}
-      · <a class="link" href="/statements?month={{ selected_month }}">period statement</a>
-      · <a class="link nancy-link" href="/close?month={{ selected_month }}">monthly close</a>
+      <a class="link" href="/statements?month={{ selected_month }}">period statement</a>
+      <a class="link nancy-link" href="/close?month={{ selected_month }}">monthly close</a>
       {% endif %}
     </p>
   </div>

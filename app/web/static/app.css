@@ -117,6 +117,26 @@ h2 { font-size: 1rem; letter-spacing: -.02em; }
 }
 .ghost { cursor: pointer; }
 .link { color: var(--finn); }
+/* Pill links are atomic inline-level boxes: a plain inline element's
+   padding/border does not contribute to line-box height, so wrapped pill
+   rows overlapped on mobile. Inline-flex makes the full pill box drive the
+   line height; long labels wrap inside the border instead of clipping. */
+.link {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .1rem .5rem;
+  max-width: 100%;
+  min-width: 0;
+}
+/* Hero nav chip rows: wrap with real spacing; no dangling separators. */
+.link-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .55rem .8rem;
+  margin-top: .9rem;
+}
 
 .bars { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; }
 .month-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 18px; padding: 1rem; }

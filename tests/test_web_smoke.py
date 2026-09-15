@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import sqlite3
 import uuid
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -29,6 +30,24 @@ def test_dashboard_renders(sample_db, monkeypatch):
     assert r.text.count('name="nav-sheet"') >= 2
     assert '<details class="fab" name="nav-sheet">' in r.text
     assert '<details class="more" name="nav-sheet">' in r.text
+
+
+def test_dashboard_nav_pills_wrap_without_overlap(sample_db, monkeypatch):
+    """Pill links must be atomic inline-flex boxes, and the hero nav row
+    must wrap via a flex container with gaps — not middot-separated inline
+    pills whose boxes overflow the line box and overlap on mobile."""
+    client = _client(sample_db, monkeypatch)
+    r = client.get("/")
+    assert r.status_code == 200
+    css = (
+        Path(__file__).parents[1] / "app" / "web" / "static" / "app.css"
+    ).read_text()
+    assert ".link {\n  display: inline-flex;" in css
+    # The hero nav is a gap-separated chip row, not inline middot-separated pills.
+    assert '<p class="link-row subtle">' in r.text
+    hero = r.text.split('<header class="hero">')[1].split("</header>")[0]
+    assert "link-row" in hero
+    assert "·" not in re.sub(r"<[^>]+>", "", hero)
 
 
 def test_dashboard_discloses_transactions_excluded_from_totals(sample_db, monkeypatch):
