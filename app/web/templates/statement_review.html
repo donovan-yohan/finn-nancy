@@ -5,13 +5,12 @@
   <div>
     <p class="eyebrow">month-end evidence</p>
     <h1>Review statement</h1>
-    <p class="subtle">
+    <p class="subtle">{{ doc.original_name }} · revision {{ review.revision }}</p>
+    <p class="link-row subtle">
       <a class="link" href="/review">review queue</a>
-      · {{ doc.original_name }}
-      · revision {{ review.revision }}
       {% if review.period_month %}
-      · <a class="link" href="/recon?month={{ review.period_month }}">reconcile this month</a>
-      · <a class="link" href="/statements?month={{ review.period_month }}">period statement</a>
+      <a class="link" href="/recon?month={{ review.period_month }}">reconcile this month</a>
+      <a class="link" href="/statements?month={{ review.period_month }}">period statement</a>
       {% endif %}
     </p>
   </div>
