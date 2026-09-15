@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+DB_PATH="${FN_DEV_DB_PATH:-$REPO/data/local.sqlite}"
+DATA_DIR="${FN_DEV_DATA_DIR:-$REPO/data}"
+ADDR="${FN_DEV_ADDR:-127.0.0.1:8771}"
+ALLOW_NON_LOOPBACK="${FN_DEV_ALLOW_NON_LOOPBACK:-0}"
+VALIDATE_ONLY=0
+
+if [[ $# -gt 0 ]]; then
+  if [[ "$#" -eq 1 && "$1" == "--validate-only" ]]; then
+    VALIDATE_ONLY=1
+  else
+    echo "usage: scripts/dev [--validate-only]" >&2
+    exit 2
+  fi
+fi
+
+if [[ "$ALLOW_NON_LOOPBACK" != "0" && "$ALLOW_NON_LOOPBACK" != "1" ]]; then
+  echo "FN_DEV_ALLOW_NON_LOOPBACK must be 0 or 1" >&2
+  exit 2
+fi
+
+mapfile -t resolved_paths < <(
+  python3 - "$REPO" "$DB_PATH" "$DATA_DIR" <<'PY'
+from pathlib import Path
+import sys
+
+repo = Path(sys.argv[1]).resolve()
+safe_root_path = repo / "data"
+if safe_root_path.is_symlink():
+    raise SystemExit(f"refusing symlinked dev data root: {safe_root_path}")
+safe_root = safe_root_path.resolve(strict=False)
+if safe_root.parent != repo:
+    raise SystemExit(f"dev data root is not contained by repository: {safe_root}")
+
+for label, raw in (("database", sys.argv[2]), ("data directory", sys.argv[3])):
+    resolved = Path(raw).expanduser().resolve(strict=False)
+    try:
+        resolved.relative_to(safe_root)
+    except ValueError:
+        raise SystemExit(
+            f"refusing dev {label} outside {safe_root}: {resolved}; "
+            "use scripts/smoke for disposable external paths"
+        )
+    print(resolved)
+PY
+)
+if [[ "${#resolved_paths[@]}" -ne 2 ]]; then
+  echo "failed to resolve contained development paths" >&2
+  exit 2
+fi
+DB_PATH="${resolved_paths[0]}"
+DATA_DIR="${resolved_paths[1]}"
+
+loopback="$(
+  python3 - "$ADDR" <<'PY'
+import ipaddress
+import sys
+
+addr = sys.argv[1]
+if addr.startswith("["):
+    end = addr.find("]")
+    if end < 0 or not addr[end + 1 :].startswith(":"):
+        raise SystemExit(f"invalid FN_DEV_ADDR: {addr}")
+    host = addr[1:end]
+    port_raw = addr[end + 2 :]
+else:
+    if addr.count(":") != 1:
+        raise SystemExit(f"invalid FN_DEV_ADDR: {addr}")
+    host, port_raw = addr.rsplit(":", 1)
+try:
+    port = int(port_raw)
+except ValueError:
+    raise SystemExit(f"invalid FN_DEV_ADDR port: {addr}") from None
+if not 1 <= port <= 65535:
+    raise SystemExit(f"invalid FN_DEV_ADDR port: {addr}")
+try:
+    is_loopback = ipaddress.ip_address(host).is_loopback
+except ValueError:
+    is_loopback = host.lower() == "localhost"
+print("1" if is_loopback else "0")
+PY
+)"
+
+if [[ "$loopback" != "1" && "$ALLOW_NON_LOOPBACK" != "1" ]]; then
+  echo "refusing non-loopback development bind: $ADDR" >&2
+  echo "set FN_DEV_ALLOW_NON_LOOPBACK=1 explicitly to expose the dev server" >&2
+  exit 2
+fi
+if [[ "$loopback" != "1" ]]; then
+  echo "EXPLICIT NON-LOOPBACK DEV BIND ENABLED: $ADDR (FN_DEV_ALLOW_NON_LOOPBACK=1)" >&2
+fi
+
+echo "dev configuration ok: db=$DB_PATH data=$DATA_DIR addr=$ADDR"
+if [[ "$VALIDATE_ONLY" -eq 1 ]]; then
+  exit 0
+fi
+
+case "$DB_PATH" in
+  "$REPO"/data/*) ;;
+  *)
+    echo "internal containment check failed for dev database: $DB_PATH" >&2
+    exit 2
+    ;;
+esac
+
+cd "$REPO"
+uv sync --frozen
+mkdir -p "$DATA_DIR"
+uv run --frozen fn init-db --db "$DB_PATH"
+
+export DB_PATH DATA_DIR ADDR
+exec uv run --frozen fn serve --db "$DB_PATH" --addr "$ADDR"

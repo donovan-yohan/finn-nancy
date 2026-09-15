@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}budget · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div>
+    <p class="eyebrow nancy">nancy planning</p>
+    <h1>Budget</h1>
+    <p class="subtle">monthly targets, leisure flags, and big-ticket guardrails.</p>
+  </div>
+  <a class="link nancy-link" href="/insights">view insights</a>
+</header>
+
+<main class="grid single">
+  <section class="card nancy-card span-2">
+    <div class="card-head">
+      <div><p class="eyebrow nancy">threshold</p><h2>Big-ticket line</h2></div>
+      <form class="inline-form" method="post" action="/categories/settings/big-ticket">
+        <input class="money-input" name="amount" inputmode="decimal"
+               value="{{ '%.2f'|format(big_ticket_threshold_cents / 100) }}">
+        <button class="ghost" type="submit">save</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="card span-2">
+    <div class="card-head">
+      <div><p class="eyebrow nancy">people</p><h2>Budget owners</h2></div>
+      <form class="inline-form" method="post" action="/categories/members">
+        <input name="name" placeholder="name" required>
+        <button class="ghost" type="submit">add</button>
+      </form>
+    </div>
+    <div class="member-list">
+      <span class="db-pill">Shared</span>
+      {% for member in household_members %}
+      <span class="db-pill">{{ member.name }}</span>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card span-2">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow nancy">monthly targets</p>
+        <h2>Expense categories</h2>
+      </div>
+      <p class="subtle">actuals from {{ selected_month }}</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>category</th>
+            <th>owner</th>
+            <th class="money">target</th>
+            <th class="money">actual</th>
+            <th>leisure</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in budget_rows %}
+          <tr id="category-{{ c.category_id }}">
+            <td><span class="dot" style="background: {{ c.color }}"></span>{{ c.category_name }}</td>
+            <td>
+              <select form="budget-{{ c.category_id }}" name="owner_member_id">
+                <option value="shared" {% if not c.owner_member_id %}selected{% endif %}>Shared</option>
+                {% for member in household_members | default([]) %}
+                <option value="{{ member.id }}" {% if c.owner_member_id == member.id %}selected{% endif %}>
+                  {{ member.name }}
+                </option>
+                {% endfor %}
+              </select>
+            </td>
+            <td class="money">
+              <input form="budget-{{ c.category_id }}" class="money-input" name="amount" inputmode="decimal"
+                     value="{{ '%.2f'|format(c.budget_cents / 100) }}">
+            </td>
+            <td class="money">{{ c.latest_actual_cents | money }}</td>
+            <td>
+              <label class="check">
+                <input form="budget-{{ c.category_id }}" type="checkbox" name="is_leisure" value="1"
+                       {% if c.is_leisure %}checked{% endif %}>
+                <span>yes</span>
+              </label>
+            </td>
+            <td>
+              <button class="ghost" type="submit" form="budget-{{ c.category_id }}">save</button>
+              <form id="budget-{{ c.category_id }}" action="/categories/{{ c.category_id }}/budget" method="post"></form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+{% endblock %}

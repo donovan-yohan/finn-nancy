@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}goals close · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div>
+    <p class="eyebrow nancy">monthly close</p>
+    <h1>Goal close</h1>
+    <p class="subtle">review underspend allocations and payoff drift for each auto-funded goal.</p>
+  </div>
+  <div class="action-row">
+    <form class="inline-form" method="get" action="/goals/close">
+      <select name="month" onchange="this.form.submit()">
+        {% for m in months %}
+        <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <form method="post" action="/goals/close">
+      <input type="hidden" name="month" value="{{ selected_month }}">
+      <button class="ghost" type="submit">run close</button>
+    </form>
+    <a class="link nancy-link" href="/goals?month={{ selected_month }}">goals</a>
+  </div>
+</header>
+
+<main class="grid single">
+  <section class="card span-2 nancy-card">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow nancy">review</p>
+        <h2>{{ selected_month }}</h2>
+      </div>
+    </div>
+    {% if review_rows %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>goal</th>
+            <th>pace</th>
+            <th class="money">planned</th>
+            <th class="money">applied</th>
+            <th>sources</th>
+            <th>actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in review_rows %}
+          <tr>
+            <td>
+              <b>{{ row.name }}</b>
+              <span class="subtle block">{{ row.kind }} · priority {{ row.priority }} · {{ row.status }}</span>
+            </td>
+            <td>
+              <span class="db-pill">{{ row.payoff.state }}</span>
+              <span class="subtle block">behind/ahead {{ row.payoff.ahead_behind_cents | money }}</span>
+              <span class="subtle block">required {{ row.payoff.required_monthly_cents | money }}/mo</span>
+            </td>
+            <td class="money">{{ row.planned_cents | money }}</td>
+            <td class="money">{{ row.actual_cents | money }}</td>
+            <td>
+              {% if row.note_json.sources %}
+              <div class="source-list">
+                {% for source in row.note_json.sources %}
+                <span class="db-pill evidence-pill">
+                  <span>#{{ source.category_id }}</span>
+                  <span>{{ source.category_name }}</span>
+                  <b>{{ source.cents | money }}</b>
+                </span>
+                {% endfor %}
+              </div>
+              <span class="subtle block">pool before {{ row.note_json.pool_before_cents | money }}</span>
+              {% else %}
+              <span class="subtle">No allocation yet.</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="action-row">
+                {% if row.status == 'active' and row.payoff.state == 'behind' %}
+                <form method="post" action="/goals/{{ row.id }}/catch-up">
+                  <input type="hidden" name="month" value="{{ selected_month }}">
+                  <button class="ghost compact-action" type="submit">catch up</button>
+                </form>
+                <form method="post" action="/goals/{{ row.id }}/extend">
+                  <input type="hidden" name="month" value="{{ selected_month }}">
+                  <button class="ghost compact-action" type="submit">extend</button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="subtle">No active auto-funded goals for {{ selected_month }}.</p>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}

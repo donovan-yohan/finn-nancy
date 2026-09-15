@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+{% block title %}statement import · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div>
+    <p class="eyebrow">desktop month-end tool</p>
+    <h1>Import statement rows</h1>
+    <p class="subtle">
+      Preview an explicitly mapped CSV or a bounded OFX/QFX file before anything
+      reaches reconciliation. This path does not call a language model.
+    </p>
+    <a class="link" href="/review">review queue</a>
+    · <a class="link" href="/recon">statement reconciliation</a>
+  </div>
+</header>
+
+<main class="grid single">
+  {% if notice %}
+  <p class="banner" role="status">{{ notice }}</p>
+  {% endif %}
+
+  {% if imported %}
+  <section class="card span-2" aria-labelledby="import-preview-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">immutable preview · revision {{ imported.revision }}</p>
+        <h2 id="import-preview-title">{{ imported.adapter_id | replace('_', ' ') }}</h2>
+      </div>
+      <span class="statement-state-pill is-{{ imported.status }}">
+        {{ imported.status | replace('_', ' ') }}
+      </span>
+    </div>
+    {% if import_context %}
+    <div class="metric-grid" aria-label="Statement confirmation context"
+         data-import-confirmation-context>
+      <div>
+        <span class="eyebrow">Statement file</span>
+        <strong>{{ import_context.source_name }}</strong>
+      </div>
+      <div>
+        <span class="eyebrow">Ledger account</span>
+        <strong>{{ import_context.account_name }}</strong>
+      </div>
+      <div>
+        <span class="eyebrow">Format</span>
+        <strong>{{ imported.adapter_id | replace('_', ' ') }}</strong>
+      </div>
+      <div>
+        <span class="eyebrow">Statement period</span>
+        <strong>{{ imported.period_start_on or '?' }} to {{ imported.period_end_on or '?' }}</strong>
+      </div>
+    </div>
+    {% endif %}
+    <p class="subtle">
+      {{ imported.row_count }} parsed row{{ 's' if imported.row_count != 1 else '' }}
+      · {{ imported.currency or 'currency unresolved' }}
+      · adapter {{ imported.adapter_version }}
+    </p>
+    <p>
+      <a class="link" href="/review/doc/{{ imported.source_document_id }}/file"
+         target="_blank" rel="noopener">open immutable original</a>
+      {% if imported.statement_review_id %}
+      · <a class="link"
+           href="/review/statement/{{ imported.source_document_id }}">open statement review</a>
+      {% endif %}
+    </p>
+
+    {% if diagnostics %}
+    <div class="statement-blockers" aria-label="Import diagnostics">
+      {% for diagnostic in diagnostics %}
+      <span class="statement-blocker is-hard">
+        {{ diagnostic.code | replace('_', ' ') }}
+        {% if diagnostic.row_number %}· row {{ diagnostic.row_number }}{% endif %}
+        {% if diagnostic.field %}· {{ diagnostic.field }}{% endif %}
+        — {{ diagnostic.message }}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if review_reasons %}
+    <div class="statement-blockers" aria-label="Review reasons">
+      {% for reason in review_reasons %}
+      <span class="statement-blocker">{{ reason | replace('_', ' ') }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if parsed %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Source row</th>
+            <th scope="col">Date</th>
+            <th scope="col">Description</th>
+            <th scope="col">Amount</th>
+            <th scope="col">Currency</th>
+            <th scope="col">State</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in parsed.rows %}
+          <tr>
+            <td>{{ row.source_row_number }}</td>
+            <td>{{ row.posted_on }}</td>
+            <td>{{ row.description }}</td>
+            <td>{{ row.amount_cents | money }}</td>
+            <td>{{ row.currency }}</td>
+            <td>{{ 'pending' if row.is_pending else 'posted' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if imported.status in ['preview_ready', 'needs_review'] and parsed and not imported.evaluated_at %}
+    <form method="post" action="/review/import/{{ imported.id }}/confirm">
+      <input type="hidden" name="expected_revision" value="{{ imported.revision }}">
+      <p class="subtle">
+        Confirmation re-reads and verifies the original, checks the full row
+        multiset for overlap, then stages every row or none.
+      </p>
+      <button class="primary" type="submit">
+        {{ 'Record evidence for review' if review_reasons else 'Confirm and stage all rows' }}
+      </button>
+    </form>
+    {% elif imported.status == 'needs_review' %}
+    <p class="banner warn">
+      Confirmation is fail-closed for malformed, mixed-currency, foreign-currency,
+      account-conflict, and partial-overlap imports. No rows were staged.
+    </p>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <section class="card span-2" aria-labelledby="new-import-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">new preview</p>
+        <h2 id="new-import-title">Choose source and mapping</h2>
+      </div>
+      <span class="subtle">desktop workflow · originals preserved</span>
+    </div>
+    {% if form_error %}
+    <div class="banner warn" role="alert" id="import-form-error" tabindex="-1">
+      <strong>Preview not created.</strong>
+      {{ form_error }}
+      No rows were staged.
+    </div>
+    {% endif %}
+    <form method="post" action="/review/import/preview"
+          enctype="multipart/form-data" class="statement-form-grid"
+          {% if form_error %}aria-describedby="import-form-error"{% endif %}>
+      <label class="statement-form-wide">
+        <span>Statement file</span>
+        <input type="file" name="file" accept=".csv,.ofx,.qfx,text/csv,application/x-ofx"
+               required>
+      </label>
+      <label>
+        <span>Format</span>
+        <select name="adapter_kind" required data-structured-import-format>
+          <option value="mapped_csv"
+                  {% if form_values.get('adapter_kind') == 'mapped_csv' %}selected{% endif %}>
+            Mapped CSV v1
+          </option>
+          <option value="ofx"
+                  {% if form_values.get('adapter_kind') == 'ofx' %}selected{% endif %}>
+            OFX/QFX
+          </option>
+        </select>
+      </label>
+      <label>
+        <span>Ledger account</span>
+        <select name="account_id" required>
+          <option value="">select account</option>
+          {% for account in accounts %}
+          <option value="{{ account.id }}"
+                  {% if form_values.get('account_id') == account.id|string %}selected{% endif %}>
+            {{ account.name }} · {{ account.institution or account.kind }}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <fieldset class="statement-form-wide statement-csv-fields"
+                data-csv-mapping-fields>
+        <legend class="eyebrow">CSV v1 explicit mapping</legend>
+        <p class="subtle">
+          Column names are exact and never guessed. For debit/credit exports,
+          clear “signed amount” and fill both debit and credit.
+        </p>
+        <div class="statement-form-grid">
+          <label><span>Date column</span>
+            <input type="text" name="date_column"
+                   value="{{ form_values.get('date_column') }}">
+          </label>
+          <label><span>Description column</span>
+            <input type="text" name="description_column"
+                   value="{{ form_values.get('description_column') }}">
+          </label>
+          <label><span>Signed amount column</span>
+            <input type="text" name="amount_column"
+                   value="{{ form_values.get('amount_column') }}">
+          </label>
+          <label><span>Debit column</span>
+            <input type="text" name="debit_column"
+                   value="{{ form_values.get('debit_column') }}">
+          </label>
+          <label><span>Credit column</span>
+            <input type="text" name="credit_column"
+                   value="{{ form_values.get('credit_column') }}">
+          </label>
+          <label><span>Running balance column</span>
+            <input type="text" name="balance_column"
+                   value="{{ form_values.get('balance_column') }}">
+          </label>
+          <label><span>Currency column</span>
+            <input type="text" name="currency_column"
+                   value="{{ form_values.get('currency_column') }}">
+          </label>
+          <label><span>Pending column</span>
+            <input type="text" name="pending_column"
+                   value="{{ form_values.get('pending_column') }}">
+          </label>
+          <label><span>Provider transaction ID column</span>
+            <input type="text" name="fitid_column"
+                   value="{{ form_values.get('fitid_column') }}">
+          </label>
+          <label><span>Date format</span>
+            <select name="date_format">
+              <option value="%Y-%m-%d"
+                      {% if form_values.get('date_format') == '%Y-%m-%d' %}selected{% endif %}>
+                YYYY-MM-DD
+              </option>
+              <option value="%Y%m%d"
+                      {% if form_values.get('date_format') == '%Y%m%d' %}selected{% endif %}>
+                YYYYMMDD
+              </option>
+              <option value="%m/%d/%Y"
+                      {% if form_values.get('date_format') == '%m/%d/%Y' %}selected{% endif %}>
+                MM/DD/YYYY
+              </option>
+              <option value="%d/%m/%Y"
+                      {% if form_values.get('date_format') == '%d/%m/%Y' %}selected{% endif %}>
+                DD/MM/YYYY
+              </option>
+            </select>
+          </label>
+          <label><span>Delimiter</span>
+            <select name="delimiter">
+              <option value=","
+                      {% if form_values.get('delimiter') == ',' %}selected{% endif %}>
+                comma
+              </option>
+              <option value=";"
+                      {% if form_values.get('delimiter') == ';' %}selected{% endif %}>
+                semicolon
+              </option>
+              <option value="tab"
+                      {% if form_values.get('delimiter') == 'tab' %}selected{% endif %}>
+                tab
+              </option>
+              <option value="|"
+                      {% if form_values.get('delimiter') == '|' %}selected{% endif %}>
+                pipe
+              </option>
+            </select>
+          </label>
+          <label><span>Default currency</span>
+            <input type="text" name="default_currency"
+                   value="{{ form_values.get('default_currency') }}" maxlength="3">
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="statement-form-wide">
+        <p class="eyebrow">optional statement-level evidence</p>
+        <p class="subtle">
+          Add values the export does not contain. They remain versioned with this
+          preview and can be audited in statement review.
+        </p>
+      </div>
+      <label><span>Period starts</span>
+        <input type="date" name="period_start_on"
+               value="{{ form_values.get('period_start_on') }}">
+      </label>
+      <label><span>Period closes</span>
+        <input type="date" name="period_end_on"
+               value="{{ form_values.get('period_end_on') }}">
+      </label>
+      <label><span>Statement issued</span>
+        <input type="date" name="statement_issued_on"
+               value="{{ form_values.get('statement_issued_on') }}">
+      </label>
+      <label><span>Opening balance</span>
+        <input type="text" name="opening_balance" inputmode="decimal"
+               value="{{ form_values.get('opening_balance') }}">
+      </label>
+      <label><span>Closing balance</span>
+        <input type="text" name="closing_balance" inputmode="decimal"
+               value="{{ form_values.get('closing_balance') }}">
+      </label>
+      <div class="statement-form-wide">
+        <button class="primary" type="submit">Create deterministic preview</button>
+      </div>
+    </form>
+  </section>
+</main>
+<script>
+(() => {
+  const format = document.querySelector("[data-structured-import-format]");
+  const csvFields = document.querySelector("[data-csv-mapping-fields]");
+  if (!format || !csvFields) return;
+  const syncCsvFields = () => {
+    const enabled = format.value === "mapped_csv";
+    csvFields.hidden = !enabled;
+    csvFields.querySelectorAll("input, select").forEach((control) => {
+      control.disabled = !enabled;
+    });
+  };
+  format.addEventListener("change", syncCsvFields);
+  syncCsvFields();
+})();
+</script>
+{% endblock %}

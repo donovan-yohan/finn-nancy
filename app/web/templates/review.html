@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}review · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div>
+    <p class="eyebrow">inbox</p>
+    <h1>Review queue</h1>
+    <p class="subtle">{{ queue_count }} item{{ 's' if queue_count != 1 else '' }} waiting on you.</p>
+    <a class="link" href="/recon">statement reconciliation</a>
+    · <a class="link" href="/review/import">import CSV or OFX/QFX</a>
+  </div>
+</header>
+
+<main class="grid single">
+  {% if not items %}
+  <section class="card span-2">
+    <p class="subtle">queue clear — nothing needs review.</p>
+  </section>
+  {% endif %}
+
+  {% for item in items %}
+  <section class="card span-2">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">{{ item.doc.kind }}</p>
+        <h2>{{ item.doc.original_name }}</h2>
+      </div>
+      <span class="subtle">#{{ item.doc.id }} · {{ item.doc.created_at }}</span>
+    </div>
+
+    {% if item.capture_provenance %}
+    <div class="capture-provenance" aria-label="Capture provenance">
+      {% for origin in item.capture_provenance %}
+      <span class="capture-transport-class {{ origin.transport_class }}">
+        {{ origin.transport_label }} · {{ origin.classification_label }}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if item.triage %}
+    <p class="subtle" style="margin:.2rem 0 .6rem;">
+      ↻ reclassified from <strong>{{ item.triage.from }}</strong>
+      to <strong>{{ item.triage.to }}</strong>
+      · conf {{ "%.2f"|format(item.triage.confidence) }}
+    </p>
+    {% endif %}
+
+    <div style="display:flex; gap:1.2rem; flex-wrap:wrap; align-items:flex-start;">
+      <div style="flex:0 0 auto; width:min(220px, 40vw);">
+        {% if item.doc.mime_type.startswith('image/') %}
+        <img src="/review/doc/{{ item.doc.id }}/file" alt="{{ item.doc.original_name }}" style="width:100%; border-radius:14px; border:1px solid var(--line); display:block;">
+        {% else %}
+        <a class="link" href="/review/doc/{{ item.doc.id }}/file" target="_blank">view file</a>
+        {% endif %}
+      </div>
+
+      <div style="flex:1 1 260px; min-width:0;">
+        {% if item.structured_import %}
+        <p class="subtle">
+          <strong>Deterministic structured import</strong>
+          · {{ item.structured_import.adapter_id | replace('_', ' ') }}
+          · {{ item.structured_import.row_count }} row{{ 's' if item.structured_import.row_count != 1 else '' }}
+          · {{ item.structured_import.status | replace('_', ' ') }}
+        </p>
+        <p>
+          <a class="primary" href="/review/import/{{ item.structured_import.id }}">
+            Review import preview and evidence
+          </a>
+          {% if item.structured_import.statement_review_id %}
+          · <a class="link" href="/review/statement/{{ item.doc.id }}">
+            open statement review
+          </a>
+          {% endif %}
+        </p>
+        {% elif item.statement is not none %}
+        <p class="subtle">
+          <strong>{{ item.statement.institution or "Unknown institution" }}</strong>
+          · {{ item.statement.account_hint or "Unknown account" }}
+          · last4 {{ item.statement.account_last4 or "?" }}
+          · period {{ item.statement.statement_period or "?" }}
+        </p>
+        <p class="subtle">
+          {{ item.statement.rows | length }} row{{ 's' if item.statement.rows | length != 1 else '' }}
+          · opening {{ item.statement.opening_balance_cents | money if item.statement.opening_balance_cents is not none else "?" }}
+          · closing {{ item.statement.closing_balance_cents | money if item.statement.closing_balance_cents is not none else "?" }}
+          · reason: {{ item.reason | replace('_', ' ') }}
+        </p>
+        {% if item.statement_review %}
+        <p>
+          <a class="primary" href="/review/statement/{{ item.doc.id }}">
+            Review source, metadata, and rows
+          </a>
+        </p>
+        {% else %}
+        <p class="banner warn">
+          This legacy import has no canonical evidence envelope. Re-ingest it
+          before approval.
+        </p>
+        {% endif %}
+
+        {% if item.statement_review %}
+        <form method="post" action="/review/{{ item.extraction.id }}/approve-statement" style="display:grid; gap:.5rem; margin-top:.6rem;">
+          <label class="subtle">existing account
+            <select name="account_id">
+              <option value="">create new account</option>
+              {% for a in accounts %}
+              <option value="{{ a.id }}">{{ a.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <p class="eyebrow" style="margin:.35rem 0 0;">new account</p>
+          <label class="subtle">name
+            <input type="text" name="name" value="{{ (item.statement.institution ~ ' ' ~ item.statement.account_hint) | trim }}">
+          </label>
+          <label class="subtle">institution
+            <input type="text" name="institution" value="{{ item.statement.institution }}">
+          </label>
+          <label class="subtle">kind
+            <select name="kind">
+              <option value="">select kind</option>
+              {% for account_kind in account_kinds %}
+              <option value="{{ account_kind }}">{{ account_kind }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="subtle">external ref
+            <input type="text" name="external_ref" value="{{ item.statement.account_last4 }}">
+          </label>
+          <label class="subtle">statement cadence for a new account
+            <select name="statement_cadence">
+              <option value="">select cadence</option>
+              <option value="monthly">monthly</option>
+              <option value="quarterly">quarterly</option>
+              <option value="annual">annual</option>
+            </select>
+          </label>
+          <label class="subtle">anchor month for quarterly or annual
+            <input type="number" name="statement_anchor_month" min="1" max="12"
+                   value="{{ item.statement.statement_period[5:7] if item.statement.statement_period | length == 7 else '' }}">
+          </label>
+          <span class="subtle">
+            Existing accounts use their saved statement policy. A new account
+            needs an explicit cadence; it is never inferred from one document.
+          </span>
+          <button class="ghost" type="submit">set account, then review</button>
+        </form>
+        {% endif %}
+
+        <form method="post" action="/review/{{ item.extraction.id }}/reject" style="margin-top:.5rem;"
+              onsubmit='return confirm({{ ("Reject " ~ item.doc.original_name ~ "? It leaves the review queue.") | tojson }})'>
+          <button class="ghost" type="submit">reject</button>
+        </form>
+        {% elif item.extraction is none or item.receipt is none %}
+        <p class="subtle">couldn't auto-extract this {{ item.doc.kind }} — open the file to review it, then delete if it isn't usable.</p>
+        {% else %}
+        <p class="subtle">
+          extracted: <strong>{{ item.receipt.merchant or "?" }}</strong>
+          · {{ item.receipt.purchased_on or "?" }}
+          · {{ item.receipt.total_cents | money }}
+          · confidence {{ (item.receipt.confidence * 100) | round | int }}%
+        </p>
+        {% if item.receipt.unreadable_fields %}
+        <p class="subtle">unreadable: {{ item.receipt.unreadable_fields | join(', ') }}</p>
+        {% endif %}
+        {% if item.similar_transactions %}
+        <div style="margin-top:.7rem;">
+          <p class="eyebrow">similar past transactions</p>
+          <ul class="subtle" style="margin:.25rem 0 .6rem; padding-left:1.1rem;">
+            {% for neighbor in item.similar_transactions %}
+            <li>
+              #{{ neighbor.transaction_id }} · {{ neighbor.posted_on }} · {{ neighbor.merchant }}
+              · {{ neighbor.category }} · {{ neighbor.amount_cents | money }}
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        <form class="resolution-review-form" method="post" action="/review/{{ item.extraction.id }}/approve">
+          <fieldset class="resolution-decision-panel" data-resolution-kind="canonical_merchant">
+            <legend>Merchant identity</legend>
+            <p class="subtle">
+              Confirm who charged you. This decision is saved independently
+              from the expense category.
+            </p>
+            <label class="subtle">merchant
+              <input type="text" name="merchant" value="{{ item.receipt.merchant }}" required>
+            </label>
+          </fieldset>
+          <label class="subtle">date
+            <input type="date" name="purchased_on" value="{{ item.receipt.purchased_on }}" required>
+          </label>
+          <label class="subtle">total
+            <input type="text" name="total" inputmode="decimal"
+                   value="{{ item.receipt.total_cents // 100 }}.{{ '%02d'|format(item.receipt.total_cents % 100) }}" required>
+          </label>
+          <fieldset class="resolution-decision-panel" data-resolution-kind="expense_category">
+            <legend>Expense category</legend>
+            <p class="subtle">
+              Confirm what the purchase was for. A merchant confirmation never
+              silently decides this category.
+            </p>
+            <label class="subtle">category
+              <select name="category_name" required>
+                {% for c in categories %}
+                <option value="{{ c.name }}" {% if c.name == item.receipt.category_guess %}selected{% endif %}>{{ c.name }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </fieldset>
+          <label class="subtle">account
+            <select name="account_id">
+              <option value="">auto</option>
+              {% for a in accounts %}
+              <option value="{{ a.id }}">{{ a.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button class="ghost" type="submit">approve</button>
+        </form>
+
+        <form method="post" action="/review/{{ item.extraction.id }}/reject" style="margin-top:.5rem;"
+              onsubmit='return confirm({{ ("Reject " ~ item.doc.original_name ~ "? It leaves the review queue.") | tojson }})'>
+          <button class="ghost" type="submit">reject</button>
+        </form>
+        {% endif %}
+
+        {% if item.statement is none and not item.structured_import %}
+        <form method="post" action="/review/doc/{{ item.doc.id }}/delete" style="margin-top:.5rem;"
+              onsubmit='return confirm({{ ("Delete " ~ item.doc.original_name ~ "? This permanently removes the document.") | tojson }})'>
+          <button class="ghost" type="submit">delete</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+  {% endfor %}
+</main>
+{% endblock %}

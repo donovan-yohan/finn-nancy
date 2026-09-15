@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}import run · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div>
+    <p class="eyebrow">batch import</p>
+    <h1>Import run · {{ rollup.total }} file{{ '' if rollup.total == 1 else 's' }}</h1>
+    <p class="subtle">Started {{ run.created_at }}.</p>
+    <a class="link" href="/upload">upload more</a> ·
+    <a class="link" href="/review">review queue</a> ·
+    <a class="link" href="/recon">reconcile</a>
+  </div>
+</header>
+
+{% include "_import_run_status.html" %}
+{% endblock %}

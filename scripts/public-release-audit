@@ -1,0 +1,408 @@
+#!/usr/bin/env python3
+"""Fail closed on common public-source privacy regressions.
+
+Git checkouts include cached and non-ignored untracked files. History-free
+source exports are walked directly, excluding only generated tooling paths.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import ipaddress
+import json
+import re
+import subprocess
+import sys
+import zlib
+from pathlib import Path, PurePosixPath
+from typing import Any
+
+SENSITIVE_SUFFIXES = {
+    ".env", ".pem", ".key", ".p12", ".pfx", ".sqlite", ".sqlite3", ".db",
+    ".bak", ".backup", ".zip", ".tar", ".gz", ".tgz", ".sqlitedump",
+    ".pdf", ".ofx", ".qfx", ".qbo", ".xls", ".xlsx",
+}
+FINANCE_FIXTURE_ROOTS = (
+    Path("fixtures"),
+    Path("tests/fixtures"),
+    Path("tests/evals/data"),
+)
+RELEASE_MANIFEST = Path("PUBLIC_RELEASE_MANIFEST.json")
+RELEASE_MANIFEST_SCHEMA = "finn-nancy-public-release-manifest.v1"
+RELEASE_DECLARATION = (
+    "Fixture files are deterministic synthetic data; opaque binaries are reviewed public assets."
+)
+MANIFEST_SECTIONS = ("fixtures", "binary_assets")
+EMAIL_RE = re.compile(r"(?i)(?<![\w.+-])[\w.+-]+@([a-z0-9.-]+\.[a-z]{2,})(?![\w.-])")
+SYSTEMD_UNIT_RE = re.compile(r"^finn-nancy@[a-z0-9_.-]+\.service$", re.IGNORECASE)
+ABSOLUTE_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:/(?:home|Users|srv)/[^\s'\"`]+|[A-Za-z]:\\Users\\[^\s'\"`]+)"
+)
+TAILNET_RE = re.compile(r"(?i)(?:[a-z0-9-]+\.)+ts\.net\b")
+TAILSCALE_IPV4_NETWORK = ipaddress.ip_network("100." "64.0.0/10")
+SECRET_ASSIGNMENT_RE = re.compile(
+    r"^\s*(?:export\s+)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
+    r"(?:\s*:\s*[^=]+)?\s*=\s*(?P<value>.+?)\s*$"
+)
+SYSTEMD_ENVIRONMENT_RE = re.compile(
+    r"^\s*Environment\s*=\s*['\"]?(?P<name>[A-Za-z_][A-Za-z0-9_]*)="
+    r"(?P<value>.+?)['\"]?\s*$"
+)
+CONFIG_SUFFIXES = {".env", ".ini", ".cfg", ".toml", ".yaml", ".yml"}
+IGNORED_ROOTS = {".git", ".venv", ".pytest_cache", ".mypy_cache", ".ruff_cache", "dist"}
+IGNORED_PARTS = {"__pycache__"}
+URL_HOST_RE = re.compile(
+    r"(?i)\bhttps?://(?P<host>\[[0-9a-f:]+\]|[a-z0-9_-]+(?:\.[a-z0-9_-]+)*)(?::\d+)?"
+)
+MALFORMED_PLACEHOLDER_RE = re.compile(
+    r"(?i)\bsample_member_[a-z][a-z0-9]+\b|\bSample Member [A-Z][a-z]+\b"
+)
+CREDENTIAL_SHAPE_RE = re.compile(
+    r"AKIA[0-9A-Z]{16}"
+    r"|gh[pousr]_[A-Za-z0-9]{20,}"
+    r"|xox[baprs]-[A-Za-z0-9-]{20,}"
+    r"|sk-(?:ant-)?[A-Za-z0-9_-]{20,}"
+    r"|\b[0-9]{8,10}:[A-Za-z0-9_-]{35}\b"
+    r"|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"
+    r"|-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----"
+)
+
+
+def _git_candidate_files(root: Path) -> list[Path] | None:
+    try:
+        result = subprocess.run(
+            [
+                "git", "-C", str(root), "ls-files", "--cached", "--others",
+                "--exclude-standard", "-z",
+            ],
+            check=True,
+            capture_output=True,
+            text=False,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return [root / item.decode() for item in result.stdout.split(b"\0") if item]
+
+
+def _candidate_files(root: Path) -> list[Path]:
+    git_files = _git_candidate_files(root)
+    if git_files is not None:
+        return git_files
+
+    def included(path: Path) -> bool:
+        relative = path.relative_to(root)
+        return bool(relative.parts) and (
+            relative.parts[0] not in IGNORED_ROOTS
+            and not any(part in IGNORED_PARTS for part in relative.parts)
+        )
+
+    return sorted(
+        path
+        for path in root.rglob("*")
+        if (path.is_file() or path.is_symlink()) and included(path)
+    )
+
+
+def _is_private_ip(value: str) -> bool:
+    try:
+        address = ipaddress.ip_address(value.strip("[]"))
+    except ValueError:
+        return False
+    if (
+        address.is_loopback
+        or address.is_unspecified
+        or address in ipaddress.ip_network("192.0.2.0/24")
+        or address in ipaddress.ip_network("198.51.100.0/24")
+        or address in ipaddress.ip_network("203.0.113.0/24")
+        or address in ipaddress.ip_network("2001:db8::/32")
+    ):
+        return False
+    return address.is_private or address in TAILSCALE_IPV4_NETWORK
+
+
+def _contains_private_ip(text: str) -> bool:
+    for token in re.findall(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])", text):
+        if _is_private_ip(token):
+            return True
+    for token in re.findall(r"\[([0-9a-fA-F:]+)\]", text):
+        if _is_private_ip(token):
+            return True
+    return False
+
+
+def _contains_private_hostname(text: str) -> bool:
+    for match in URL_HOST_RE.finditer(text):
+        host = match.group("host").strip("[]").lower()
+        try:
+            ipaddress.ip_address(host)
+            continue
+        except ValueError:
+            pass
+        if host in {"localhost", "invalid"}:
+            continue
+        if "." not in host or host.endswith((".internal", ".local")):
+            return True
+    return False
+
+
+def _placeholder_secret(value: str) -> bool:
+    value = value.strip().strip("'\"")
+    lowered = value.lower()
+    placeholders = (
+        "change-me", "changeme", "dummy", "example", "fake", "placeholder",
+        "smoke-test", "synthetic", "test-token",
+    )
+    return not value or value.startswith(("$", "<")) or value.endswith("(") or any(
+        marker in lowered for marker in placeholders
+    )
+
+
+def _secret_name(name: str) -> bool:
+    upper = name.upper()
+    return (
+        any(
+            marker in upper
+            for marker in ("SECRET", "TOKEN", "PASSWORD", "API_KEY", "CREDENTIAL")
+        )
+        or upper == "KEY"
+        or upper.endswith("_KEY")
+    )
+
+
+def _secret_assignment_file(relative: Path) -> bool:
+    if (
+        relative.suffix.lower() in CONFIG_SUFFIXES
+        or relative.name == ".env"
+        or ".env." in relative.name
+    ):
+        return True
+    if relative.name in {"config.py", "settings.py"}:
+        return True
+    return (
+        bool(relative.parts)
+        and relative.parts[0] in {"deploy", "scripts"}
+        and relative.suffix.lower() in {"", ".sh", ".service"}
+    )
+
+
+def _is_fixture_data(relative: Path) -> bool:
+    return relative.suffix.lower() != ".md" and any(
+        relative.is_relative_to(prefix) for prefix in FINANCE_FIXTURE_ROOTS
+    )
+
+
+def _approved_binary_shape(relative: Path, raw: bytes) -> bool:
+    """Accept only minimal, structurally valid PNG assets without metadata chunks."""
+    if relative.suffix.lower() != ".png" or not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return False
+    offset = 8
+    chunks: list[tuple[bytes, bytes]] = []
+    while offset < len(raw):
+        if offset + 12 > len(raw):
+            return False
+        length = int.from_bytes(raw[offset:offset + 4], "big")
+        kind = raw[offset + 4:offset + 8]
+        end = offset + 12 + length
+        if end > len(raw):
+            return False
+        data = raw[offset + 8:offset + 8 + length]
+        expected_crc = int.from_bytes(raw[offset + 8 + length:end], "big")
+        if zlib.crc32(kind + data) & 0xFFFFFFFF != expected_crc:
+            return False
+        chunks.append((kind, data))
+        offset = end
+    if offset != len(raw) or not chunks:
+        return False
+    if chunks[0][0] != b"IHDR" or len(chunks[0][1]) != 13:
+        return False
+    if chunks[-1] != (b"IEND", b"") or not any(kind == b"IDAT" for kind, _ in chunks):
+        return False
+    if any(kind not in {b"IHDR", b"IDAT", b"IEND"} for kind, _ in chunks):
+        return False
+    width = int.from_bytes(chunks[0][1][0:4], "big")
+    height = int.from_bytes(chunks[0][1][4:8], "big")
+    return 0 < width <= 4096 and 0 < height <= 4096
+
+
+def _manifest_path(value: str) -> Path | None:
+    if not value or "\\" in value:
+        return None
+    pure = PurePosixPath(value)
+    if pure.is_absolute() or pure.as_posix() != value or any(
+        part in {"", ".", ".."} for part in pure.parts
+    ):
+        return None
+    return Path(*pure.parts)
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate key {key!r}")
+        result[key] = value
+    return result
+
+
+def _load_release_manifest(root: Path) -> tuple[dict[str, dict[str, str]], list[str]]:
+    path = root / RELEASE_MANIFEST
+    empty = {section: {} for section in MANIFEST_SECTIONS}
+    if not path.is_file() or path.is_symlink():
+        return empty, [f"{RELEASE_MANIFEST}: missing regular-file release manifest"]
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        return empty, [f"{RELEASE_MANIFEST}: invalid manifest ({exc})"]
+    if not isinstance(payload, dict):
+        return empty, [f"{RELEASE_MANIFEST}: manifest root must be an object"]
+
+    expected_keys = {"schema", "declaration", *MANIFEST_SECTIONS}
+    violations: list[str] = []
+    if set(payload) != expected_keys:
+        violations.append(f"{RELEASE_MANIFEST}: expected exactly {sorted(expected_keys)}")
+    if payload.get("schema") != RELEASE_MANIFEST_SCHEMA:
+        violations.append(f"{RELEASE_MANIFEST}: invalid schema")
+    if payload.get("declaration") != RELEASE_DECLARATION:
+        violations.append(f"{RELEASE_MANIFEST}: invalid review declaration")
+
+    result = empty
+    for section in MANIFEST_SECTIONS:
+        entries = payload.get(section)
+        if not isinstance(entries, dict):
+            violations.append(f"{RELEASE_MANIFEST}: {section} must be an object")
+            continue
+        parsed: dict[str, str] = {}
+        for name, digest in entries.items():
+            relative = _manifest_path(name) if isinstance(name, str) else None
+            if relative is None:
+                violations.append(f"{RELEASE_MANIFEST}: unsafe {section} path")
+                continue
+            if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+                violations.append(f"{RELEASE_MANIFEST}: invalid SHA-256 for {name}")
+                continue
+            if section == "fixtures" and not _is_fixture_data(relative):
+                violations.append(f"{RELEASE_MANIFEST}: fixture outside approved roots: {name}")
+                continue
+            parsed[name] = digest
+        result[section] = parsed
+    return result, violations
+
+
+def _validate_manifest_entries(
+    root: Path,
+    candidates: set[str],
+    manifest: dict[str, dict[str, str]],
+    opaque_binaries: set[str],
+) -> list[str]:
+    violations: list[str] = []
+    for section, entries in manifest.items():
+        for name, expected in entries.items():
+            path = root / name
+            if name not in candidates:
+                violations.append(f"{RELEASE_MANIFEST}: {section} path is not in the candidate: {name}")
+                continue
+            if not path.is_file() or path.is_symlink():
+                violations.append(f"{RELEASE_MANIFEST}: {section} path is not a regular file: {name}")
+                continue
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            if actual != expected:
+                violations.append(f"{name}: {section} manifest hash mismatch")
+            if section == "binary_assets" and name not in opaque_binaries:
+                violations.append(f"{name}: binary manifest entry is not opaque binary")
+    return violations
+
+
+def audit(root: Path) -> list[str]:
+    manifest, violations = _load_release_manifest(root)
+    paths = _candidate_files(root)
+    relative_paths = {path.relative_to(root).as_posix() for path in paths}
+    opaque_binaries: set[str] = set()
+    if RELEASE_MANIFEST.as_posix() not in relative_paths:
+        violations.append(f"{RELEASE_MANIFEST}: release manifest is not in the candidate")
+
+    for path in paths:
+        relative = path.relative_to(root)
+        relative_name = relative.as_posix()
+        if path.is_symlink() or not path.is_file():
+            violations.append(f"{relative}: candidate path is not a regular file")
+            continue
+        if not path.name.endswith(".env.example") and (
+            path.suffix.lower() in SENSITIVE_SUFFIXES
+            or path.name == ".env"
+            or ".env." in path.name
+        ):
+            violations.append(f"{relative}: sensitive file extension")
+            continue
+
+        raw = path.read_bytes()
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            opaque_binaries.add(relative_name)
+            if not _approved_binary_shape(relative, raw):
+                violations.append(f"{relative}: unsupported opaque binary format")
+            if relative_name not in manifest["binary_assets"]:
+                violations.append(f"{relative}: unreviewed opaque binary")
+            if _is_fixture_data(relative) and relative_name not in manifest["fixtures"]:
+                violations.append(f"{relative}: unreviewed binary fixture")
+            continue
+
+        if relative_name in manifest["binary_assets"]:
+            violations.append(f"{relative}: binary manifest entry points to UTF-8 text")
+        if ABSOLUTE_PATH_RE.search(text):
+            violations.append(f"{relative}: personal absolute path")
+        if MALFORMED_PLACEHOLDER_RE.search(text):
+            violations.append(f"{relative}: malformed synthetic-person placeholder")
+        for match in EMAIL_RE.finditer(text):
+            address = match.group(0)
+            if match.group(1).lower() == "example.invalid" or SYSTEMD_UNIT_RE.fullmatch(address):
+                continue
+            violations.append(f"{relative}: non-placeholder email")
+            break
+        if _contains_private_ip(text):
+            violations.append(f"{relative}: private IP address")
+        if _contains_private_hostname(text):
+            violations.append(f"{relative}: private or single-label hostname")
+        if TAILNET_RE.search(text):
+            violations.append(f"{relative}: private-overlay domain")
+        if CREDENTIAL_SHAPE_RE.search(text):
+            violations.append(f"{relative}: credential-shaped value")
+        if _secret_assignment_file(relative):
+            for line in text.splitlines():
+                if line.lstrip().startswith("#"):
+                    continue
+                matches = [SECRET_ASSIGNMENT_RE.match(line)]
+                if relative.suffix.lower() == ".service":
+                    matches.append(SYSTEMD_ENVIRONMENT_RE.match(line))
+                if any(
+                    match
+                    and _secret_name(match.group("name"))
+                    and not _placeholder_secret(match.group("value"))
+                    for match in matches
+                ):
+                    violations.append(f"{relative}: populated secret assignment")
+                    break
+        if _is_fixture_data(relative) and relative_name not in manifest["fixtures"]:
+            violations.append(f"{relative}: unreviewed synthetic fixture")
+
+    violations.extend(
+        _validate_manifest_entries(root, relative_paths, manifest, opaque_binaries)
+    )
+    return violations
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
+    args = parser.parse_args(argv)
+    violations = audit(args.root.resolve())
+    if violations:
+        print("public-release audit failed:", file=sys.stderr)
+        print("\n".join(f"- {item}" for item in violations), file=sys.stderr)
+        return 1
+    print("public-release audit passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

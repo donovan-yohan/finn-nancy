@@ -1,0 +1,498 @@
+{
+  "cases": [
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "external_cash_cents": -1250,
+        "ledger_transaction_count": 1,
+        "reconciliation": "not_applicable",
+        "report_bucket": "expense",
+        "spending_cents": 1250
+      },
+      "flow_kind": "purchase",
+      "id": "cash_purchase",
+      "ledger_legs": [
+        {
+          "account_ref": "Cash Wallet",
+          "amount_cents": -1250
+        }
+      ],
+      "paths": [
+        "manual_entry"
+      ],
+      "posted_on": "2026-06-01",
+      "provenance": [
+        "manual"
+      ],
+      "scenario": "transaction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "external_cash_cents": -4210,
+        "ledger_transaction_count": 1,
+        "reconciliation": "match_existing",
+        "report_bucket": "expense",
+        "spending_cents": 4210
+      },
+      "flow_kind": "purchase",
+      "id": "card_receipt",
+      "ledger_legs": [
+        {
+          "account_ref": "Everyday Card",
+          "amount_cents": -4210
+        }
+      ],
+      "paths": [
+        "receipt_ingest",
+        "statement_import"
+      ],
+      "posted_on": "2026-06-03",
+      "provenance": [
+        "receipt",
+        "statement"
+      ],
+      "scenario": "transaction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "external_cash_cents": 300000,
+        "income_cents": 300000,
+        "ledger_transaction_count": 1,
+        "reconciliation": "not_applicable",
+        "report_bucket": "income"
+      },
+      "flow_kind": "income",
+      "id": "salary_income",
+      "ledger_legs": [
+        {
+          "account_ref": "Everyday Chequing",
+          "amount_cents": 300000
+        }
+      ],
+      "paths": [
+        "manual_entry"
+      ],
+      "posted_on": "2026-06-05",
+      "provenance": [
+        "manual"
+      ],
+      "scenario": "transaction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "external_cash_cents": 1000,
+        "ledger_transaction_count": 1,
+        "reconciliation": "promote",
+        "report_bucket": "expense",
+        "spending_cents": -1000
+      },
+      "flow_kind": "refund",
+      "id": "partial_refund",
+      "ledger_legs": [
+        {
+          "account_ref": "Everyday Card",
+          "amount_cents": 1000
+        }
+      ],
+      "paths": [
+        "statement_import"
+      ],
+      "posted_on": "2026-06-06",
+      "provenance": [
+        "statement"
+      ],
+      "relationship": "card_receipt",
+      "scenario": "transaction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "external_cash_cents": -500,
+        "ledger_transaction_count": 1,
+        "reconciliation": "promote",
+        "report_bucket": "expense",
+        "spending_cents": 500
+      },
+      "flow_kind": "fee",
+      "id": "bank_fee",
+      "ledger_legs": [
+        {
+          "account_ref": "Everyday Chequing",
+          "amount_cents": -500
+        }
+      ],
+      "paths": [
+        "statement_import"
+      ],
+      "posted_on": "2026-06-07",
+      "provenance": [
+        "statement"
+      ],
+      "scenario": "transaction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "external_cash_cents": -1200,
+        "ledger_transaction_count": 1,
+        "reconciliation": "promote",
+        "report_bucket": "expense",
+        "spending_cents": 1200
+      },
+      "flow_kind": "purchase",
+      "id": "reversed_charge",
+      "ledger_legs": [
+        {
+          "account_ref": "Everyday Card",
+          "amount_cents": -1200
+        }
+      ],
+      "paths": [
+        "statement_import"
+      ],
+      "posted_on": "2026-06-08",
+      "provenance": [
+        "statement"
+      ],
+      "scenario": "transaction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "external_cash_cents": 1200,
+        "ledger_transaction_count": 1,
+        "reconciliation": "promote",
+        "report_bucket": "expense",
+        "spending_cents": -1200
+      },
+      "flow_kind": "reversal",
+      "id": "charge_reversal",
+      "ledger_legs": [
+        {
+          "account_ref": "Everyday Card",
+          "amount_cents": 1200
+        }
+      ],
+      "paths": [
+        "statement_import"
+      ],
+      "posted_on": "2026-06-09",
+      "provenance": [
+        "statement"
+      ],
+      "relationship": "reversed_charge",
+      "scenario": "transaction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "ledger_transaction_count": 2,
+        "reconciliation": "ignore",
+        "report_bucket": "transfer"
+      },
+      "flow_kind": "internal_transfer",
+      "id": "savings_transfer",
+      "ledger_legs": [
+        {
+          "account_ref": "Everyday Chequing",
+          "amount_cents": -50000
+        },
+        {
+          "account_ref": "Rainy Day Savings",
+          "amount_cents": 50000
+        }
+      ],
+      "paths": [
+        "manual_entry"
+      ],
+      "posted_on": "2026-06-10",
+      "provenance": [
+        "manual"
+      ],
+      "relationship": "pair:savings-transfer-2026-06-10",
+      "scenario": "transaction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "ledger_transaction_count": 2,
+        "reconciliation": "ignore",
+        "report_bucket": "transfer"
+      },
+      "flow_kind": "card_payment",
+      "id": "card_payment",
+      "ledger_legs": [
+        {
+          "account_ref": "Everyday Chequing",
+          "amount_cents": -75000
+        },
+        {
+          "account_ref": "Everyday Card",
+          "amount_cents": 75000
+        }
+      ],
+      "paths": [
+        "statement_import"
+      ],
+      "posted_on": "2026-06-12",
+      "provenance": [
+        "statement"
+      ],
+      "relationship": "pair:card-payment-2026-06-12",
+      "scenario": "transaction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "external_cash_cents": -2500,
+        "ledger_transaction_count": 1,
+        "reconciliation": "not_applicable",
+        "report_bucket": "expense",
+        "spending_cents": 2500
+      },
+      "flow_kind": "purchase",
+      "id": "reimbursed_expense",
+      "ledger_legs": [
+        {
+          "account_ref": "Everyday Chequing",
+          "amount_cents": -2500
+        }
+      ],
+      "paths": [
+        "manual_entry"
+      ],
+      "posted_on": "2026-06-14",
+      "provenance": [
+        "manual"
+      ],
+      "scenario": "transaction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "external_cash_cents": 2500,
+        "ledger_transaction_count": 1,
+        "reconciliation": "not_applicable",
+        "report_bucket": "expense",
+        "spending_cents": -2500
+      },
+      "flow_kind": "reimbursement",
+      "id": "expense_reimbursement",
+      "ledger_legs": [
+        {
+          "account_ref": "Everyday Chequing",
+          "amount_cents": 2500
+        }
+      ],
+      "paths": [
+        "manual_entry"
+      ],
+      "posted_on": "2026-06-15",
+      "provenance": [
+        "manual"
+      ],
+      "relationship": "reimbursed_expense",
+      "scenario": "transaction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "ledger_transaction_count": 1,
+        "reconciliation": "not_applicable",
+        "report_bucket": "opening"
+      },
+      "flow_kind": "opening",
+      "id": "opening_balance",
+      "ledger_legs": [
+        {
+          "account_ref": "Everyday Chequing",
+          "amount_cents": 100000
+        }
+      ],
+      "paths": [
+        "manual_entry"
+      ],
+      "posted_on": "2026-06-01",
+      "provenance": [
+        "system",
+        "manual"
+      ],
+      "scenario": "transaction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "audited_exception",
+        "ledger_transaction_count": 1,
+        "reconciliation": "not_applicable",
+        "report_bucket": "adjustment"
+      },
+      "flow_kind": "adjustment",
+      "id": "reconciliation_adjustment",
+      "ledger_legs": [
+        {
+          "account_ref": "Everyday Chequing",
+          "amount_cents": 700
+        }
+      ],
+      "paths": [
+        "manual_entry"
+      ],
+      "posted_on": "2026-06-30",
+      "provenance": [
+        "system",
+        "manual"
+      ],
+      "scenario": "transaction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "external_cash_cents": -2300,
+        "ledger_transaction_count": 1,
+        "reconciliation": "not_applicable",
+        "report_bucket": "expense",
+        "spending_cents": 2300
+      },
+      "flow_kind": "purchase",
+      "id": "edited_extraction",
+      "ledger_legs": [
+        {
+          "account_ref": "Cash Wallet",
+          "amount_cents": -2300
+        }
+      ],
+      "original_amount_cents": -2000,
+      "paths": [
+        "receipt_ingest"
+      ],
+      "posted_on": "2026-06-18",
+      "provenance": [
+        "receipt",
+        "human_edit"
+      ],
+      "scenario": "edited_extraction"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "eligible",
+        "external_cash_cents": -575,
+        "ledger_transaction_count": 1,
+        "reconciliation": "promote",
+        "report_bucket": "expense",
+        "spending_cents": 575
+      },
+      "flow_kind": "purchase",
+      "id": "duplicate_statement_import",
+      "ledger_legs": [
+        {
+          "account_ref": "Everyday Chequing",
+          "amount_cents": -575
+        }
+      ],
+      "paths": [
+        "statement_import"
+      ],
+      "posted_on": "2026-06-20",
+      "provenance": [
+        "statement"
+      ],
+      "scenario": "duplicate_import"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "blocking",
+        "ledger_transaction_count": 0,
+        "reconciliation": "review",
+        "report_bucket": "review"
+      },
+      "id": "missing_expected_statement",
+      "ledger_legs": [],
+      "paths": [],
+      "provenance": [
+        "system"
+      ],
+      "scenario": "missing_statement"
+    },
+    {
+      "currency": "CAD",
+      "expected": {
+        "close_impact": "blocking",
+        "ledger_transaction_count": 0,
+        "reconciliation": "not_applicable",
+        "report_bucket": "review"
+      },
+      "id": "closed_period_write",
+      "ledger_legs": [],
+      "paths": [
+        "manual_entry"
+      ],
+      "posted_on": "2026-06-22",
+      "provenance": [
+        "manual"
+      ],
+      "scenario": "closed_period"
+    },
+    {
+      "currency": "USD",
+      "expected": {
+        "close_impact": "blocking",
+        "ledger_transaction_count": 0,
+        "reconciliation": "review",
+        "report_bucket": "review"
+      },
+      "flow_kind": "purchase",
+      "id": "foreign_currency_receipt",
+      "ledger_legs": [],
+      "paths": [
+        "receipt_ingest"
+      ],
+      "posted_on": "2026-06-24",
+      "provenance": [
+        "receipt"
+      ],
+      "scenario": "currency_review"
+    },
+    {
+      "currency": "",
+      "expected": {
+        "close_impact": "blocking",
+        "ledger_transaction_count": 0,
+        "reconciliation": "review",
+        "report_bucket": "review"
+      },
+      "flow_kind": "purchase",
+      "id": "ambiguous_currency_statement",
+      "ledger_legs": [],
+      "paths": [
+        "statement_import"
+      ],
+      "posted_on": "2026-06-25",
+      "provenance": [
+        "statement"
+      ],
+      "scenario": "currency_review"
+    }
+  ],
+  "home_currency": "CAD",
+  "month": "2026-06",
+  "version": "fn-139.v1"
+}

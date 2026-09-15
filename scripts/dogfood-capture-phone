@@ -1,0 +1,340 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+ADB_BIN="${ADB_BIN:-adb}"
+BASE_URL="${FN_CAPTURE_DOGFOOD_BASE_URL:-}"
+OUTPUT="${TMPDIR:-/tmp}/finn-nancy-fn146-phone-manifest.json"
+PROOF_SESSION=""
+EXPECTED_DATABASE_IDENTITY=""
+
+usage() {
+  cat <<'EOF'
+usage: scripts/dogfood-capture-phone --base-url URL --proof-session UUID
+       --expected-database-identity UUID [--output manifest.json]
+
+Requires one authorized Android device and an isolated synthetic-data service.
+It records no capture ids, filenames, financial contents, paths, or device
+serial. Camera/share/offline steps remain operator-driven because Android does
+not expose a safe portable automation contract for camera capture.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --base-url)
+      BASE_URL="${2:?--base-url requires a value}"
+      shift 2
+      ;;
+    --output)
+      OUTPUT="${2:?--output requires a value}"
+      shift 2
+      ;;
+    --proof-session)
+      PROOF_SESSION="${2:?--proof-session requires a UUID}"
+      shift 2
+      ;;
+    --expected-database-identity)
+      EXPECTED_DATABASE_IDENTITY="${2:?--expected-database-identity requires a UUID}"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown dogfood-capture-phone argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+mkdir -p "$(dirname "$OUTPUT")"
+HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
+TREE_SHA="$(git -C "$REPO" rev-parse 'HEAD^{tree}')"
+GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+write_blocker() {
+  local reason="$1"
+  uv run --project "$REPO" --frozen python - "$OUTPUT" "$HEAD_SHA" "$TREE_SHA" "$GENERATED_AT" "$reason" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+output, head, tree, generated_at, reason = sys.argv[1:]
+manifest = {
+    "schema_version": 1,
+    "kind": "fn146_physical_phone",
+    "generated_at": generated_at,
+    "head_sha": head,
+    "tree_sha": tree,
+    "status": "blocked",
+    "blocker": reason,
+    "content_free": True,
+    "required_journey": [
+        "camera_capture",
+        "share_target",
+        "offline_kill_restart",
+        "reconnect_durable_ack",
+        "forced_recoverable_retry",
+        "review_or_filed_follow_through",
+    ],
+}
+Path(output).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+print(json.dumps(manifest, sort_keys=True))
+PY
+}
+
+if ! command -v "$ADB_BIN" >/dev/null 2>&1; then
+  write_blocker "adb_unavailable"
+  exit 3
+fi
+
+DEVICE_LINES="$("$ADB_BIN" devices | awk 'NR > 1 && $2 == "device" {print $1}')"
+DEVICE_COUNT="$(printf '%s\n' "$DEVICE_LINES" | awk 'NF {count++} END {print count+0}')"
+if [[ "$DEVICE_COUNT" -ne 1 ]]; then
+  write_blocker "one_authorized_adb_device_required"
+  exit 3
+fi
+if [[ -z "$BASE_URL" ]]; then
+  write_blocker "isolated_base_url_required"
+  exit 3
+fi
+if [[ -z "$PROOF_SESSION" ]]; then
+  write_blocker "proof_session_required"
+  exit 3
+fi
+if [[ -z "$EXPECTED_DATABASE_IDENTITY" ]]; then
+  write_blocker "expected_database_identity_required"
+  exit 3
+fi
+if ! uv run --project "$REPO" --frozen python - \
+  "$PROOF_SESSION" "$EXPECTED_DATABASE_IDENTITY" <<'PY'
+import sys
+import uuid
+
+for value in sys.argv[1:]:
+    try:
+        if str(uuid.UUID(value)) != value.lower():
+            raise ValueError
+    except ValueError:
+        raise SystemExit(1)
+PY
+then
+  write_blocker "proof_identity_invalid"
+  exit 3
+fi
+
+BEFORE_FILE="$(mktemp "${TMPDIR:-/tmp}/fn146-phone-before.XXXXXX")"
+AFTER_FILE="$(mktemp "${TMPDIR:-/tmp}/fn146-phone-after.XXXXXX")"
+VERSION_FILE="$(mktemp "${TMPDIR:-/tmp}/fn146-phone-version.XXXXXX")"
+cleanup() {
+  rm -f "$BEFORE_FILE" "$AFTER_FILE" "$VERSION_FILE"
+}
+trap cleanup EXIT
+
+if ! curl -fsS "$BASE_URL/version" >"$VERSION_FILE"; then
+  write_blocker "candidate_version_unreachable"
+  exit 3
+fi
+VERSION_BLOCKER="$(
+  uv run --project "$REPO" --frozen python - \
+    "$VERSION_FILE" "$HEAD_SHA" "$TREE_SHA" "$EXPECTED_DATABASE_IDENTITY" <<'PY'
+import json
+import re
+import sys
+import uuid
+from pathlib import Path
+
+from app.diagnostics import EXPECTED_MIGRATION_DIGEST, EXPECTED_MIGRATION_HEAD
+
+version_path, head, tree, expected_db = sys.argv[1:]
+try:
+    expected_db = str(uuid.UUID(expected_db))
+except ValueError:
+    print("expected_database_identity_invalid")
+    raise SystemExit
+try:
+    payload = json.loads(Path(version_path).read_text())
+except (OSError, ValueError):
+    print("candidate_version_invalid")
+    raise SystemExit
+migration_head = payload.get("expected_migration_head")
+applied_migration_head = payload.get("applied_migration_head")
+migration_digest = payload.get("expected_migration_digest")
+applied_migration_digest = payload.get("applied_migration_digest")
+migration_identity_valid = (
+    isinstance(EXPECTED_MIGRATION_HEAD, str)
+    and bool(re.fullmatch(r"[0-9]{3}_[a-z0-9_]+[.]sql", EXPECTED_MIGRATION_HEAD))
+    and isinstance(migration_head, str)
+    and bool(re.fullmatch(r"[0-9]{3}_[a-z0-9_]+[.]sql", migration_head))
+    and isinstance(applied_migration_head, str)
+    and bool(re.fullmatch(r"[0-9]{3}_[a-z0-9_]+[.]sql", applied_migration_head))
+    and isinstance(migration_digest, str)
+    and bool(re.fullmatch(r"[0-9a-f]{64}", migration_digest))
+    and isinstance(applied_migration_digest, str)
+    and bool(re.fullmatch(r"[0-9a-f]{64}", applied_migration_digest))
+)
+checks = (
+    ("served_head_mismatch", payload.get("build_sha") == head),
+    ("served_tree_mismatch", payload.get("build_tree_sha") == tree),
+    ("served_database_identity_mismatch", payload.get("database_identity") == expected_db),
+    ("served_migration_status_invalid", payload.get("migration_status") == "ok"),
+    ("served_migrations_incomplete", payload.get("migration_sequence_matches") is True),
+    ("served_migration_identity_invalid", migration_identity_valid),
+    (
+        "served_migration_digest_mismatch",
+        migration_digest
+        == applied_migration_digest
+        == EXPECTED_MIGRATION_DIGEST,
+    ),
+    (
+        "served_migration_head_mismatch",
+        migration_head
+        == applied_migration_head
+        == EXPECTED_MIGRATION_HEAD,
+    ),
+)
+print(next((reason for reason, ok in checks if not ok), ""))
+PY
+)"
+if [[ -n "$VERSION_BLOCKER" ]]; then
+  write_blocker "$VERSION_BLOCKER"
+  exit 3
+fi
+
+DEVICE_SERIAL="$("$ADB_BIN" get-serialno | tr -d '\r\n')"
+DEVICE_COHORT="$(
+  uv run --project "$REPO" --frozen python - "$DEVICE_SERIAL" <<'PY'
+import sys
+import uuid
+
+namespace = uuid.UUID("bcb098b2-0778-49f5-b29f-02653841b6f4")
+print(uuid.uuid5(namespace, sys.argv[1]))
+PY
+)"
+unset DEVICE_SERIAL
+
+METRICS_QUERY="proof_run_id=$PROOF_SESSION&device_cohort_id=$DEVICE_COHORT"
+curl -fsS "$BASE_URL/capture/metrics?$METRICS_QUERY" >"$BEFORE_FILE"
+if ! uv run --project "$REPO" --frozen python - "$BEFORE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text())
+raise SystemExit(0 if int(payload.get("accepted", -1)) == 0 else 1)
+PY
+then
+  write_blocker "proof_session_already_contains_captures"
+  exit 3
+fi
+
+PHONE_URL="$BASE_URL/upload?mode=camera&intent=receipt&$METRICS_QUERY"
+ADB_PHONE_URL="${PHONE_URL//&/\\&}"
+"$ADB_BIN" shell am start \
+  -a android.intent.action.VIEW \
+  -d "$ADB_PHONE_URL" >/dev/null
+
+cat <<'EOF'
+On the authorized phone, using synthetic originals only:
+1. capture one receipt with the camera;
+2. share one synthetic image/PDF to finn-nancy;
+3. go offline, kill/restart the browser, reconnect, and retry;
+4. force one recoverable network failure; and
+5. continue each item to Needs review or Filed.
+Press Enter only after every step is complete.
+EOF
+read -r
+
+curl -fsS "$BASE_URL/capture/metrics?$METRICS_QUERY" >"$AFTER_FILE"
+MODEL="$("$ADB_BIN" shell getprop ro.product.model | tr -d '\r' | cut -c1-80)"
+ANDROID_RELEASE="$("$ADB_BIN" shell getprop ro.build.version.release | tr -d '\r' | cut -c1-32)"
+
+uv run --project "$REPO" --frozen python - \
+  "$BEFORE_FILE" "$AFTER_FILE" "$VERSION_FILE" "$OUTPUT" "$HEAD_SHA" "$TREE_SHA" \
+  "$GENERATED_AT" "$MODEL" "$ANDROID_RELEASE" "$PROOF_SESSION" \
+  "$DEVICE_COHORT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+(
+    before_path,
+    after_path,
+    version_path,
+    output_path,
+    head,
+    tree,
+    generated_at,
+    model,
+    release,
+    proof_session,
+    device_cohort,
+) = sys.argv[1:]
+before = json.loads(Path(before_path).read_text())
+after = json.loads(Path(after_path).read_text())
+served = json.loads(Path(version_path).read_text())
+accepted = int(after["accepted"]) - int(before["accepted"])
+durable = int(after["durable"]) - int(before["durable"])
+ack_count = int(after["online_durable_ack"]["count"])
+p90 = after["online_durable_ack"]["p90_ms"]
+offline_count = int(after["offline_recovery"]["count"])
+client_retries = int(after["client_retry_count"])
+review_or_filed = int(after["review_or_filed"])
+channels = after["by_channel"]
+sources = after["by_source"]
+assertions = {
+    "camera_capture": (
+        int(channels.get("web", 0)) >= 1
+        and int(sources.get("camera", 0)) >= 1
+    ),
+    "share_target": (
+        int(channels.get("share", 0)) >= 1
+        and int(sources.get("share", 0)) >= 1
+    ),
+    "all_accepted_are_durable": accepted >= 2 and durable == accepted,
+    "online_ack_samples": ack_count >= 2,
+    "online_ack_p90_within_10s": p90 is not None and int(p90) <= 10_000,
+    "offline_recovery_recorded": offline_count >= 1,
+    "recoverable_retry_recorded": client_retries >= 1,
+    "review_or_filed_follow_through": review_or_filed >= accepted,
+}
+status = "passed" if all(assertions.values()) else "failed"
+manifest = {
+    "schema_version": 2,
+    "kind": "fn146_physical_phone",
+    "generated_at": generated_at,
+    "head_sha": head,
+    "tree_sha": tree,
+    "status": status,
+    "content_free": True,
+    "proof_session": proof_session,
+    "device_cohort": device_cohort,
+    "device_model": model,
+    "android_release": release,
+    "served_build_sha": served["build_sha"],
+    "served_build_tree_sha": served["build_tree_sha"],
+    "served_database_identity": served["database_identity"],
+    "served_schema_digest": served["schema_digest"],
+    "served_migration_head": served["applied_migration_head"],
+    "served_migration_digest": served["applied_migration_digest"],
+    "served_migration_sequence_complete": served["migration_sequence_matches"],
+    "accepted_delta": accepted,
+    "durable_delta": durable,
+    "online_durable_ack_samples": ack_count,
+    "online_durable_ack_p90_ms": p90,
+    "offline_recovery_samples": offline_count,
+    "offline_recovery_p90_ms": after["offline_recovery"]["p90_ms"],
+    "client_retry_count": client_retries,
+    "review_or_filed_count": review_or_filed,
+    "journey_assertions": assertions,
+}
+Path(output_path).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+print(json.dumps(manifest, sort_keys=True))
+if status != "passed":
+    raise SystemExit("physical-phone acceptance did not meet FN-146 thresholds")
+PY
+
+echo "physical-phone manifest: $OUTPUT"

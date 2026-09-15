@@ -1,0 +1,375 @@
+{
+  "corpus_version": "fn149b-synthetic-descriptors.v1",
+  "privacy": {
+    "contains_personal_data": false,
+    "production_data_forbidden": true,
+    "source": "invented_synthetic_templates"
+  },
+  "schema_version": "fn149b-descriptor-template.v1",
+  "templates": [
+    {
+      "case_count": 100,
+      "cohort": "processor_prefix",
+      "descriptor_pattern": "SYNTH DEV PAYRITE*ORBITAL-MARKET T{terminal:03d} S{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:processor-prefix"
+    },
+    {
+      "case_count": 100,
+      "cohort": "terminal_location_codes",
+      "descriptor_pattern": "SYNTH DEV METRO-CAB T{terminal:03d} L{location:02d} S{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:terminal-location"
+    },
+    {
+      "case_count": 100,
+      "cohort": "marketplace_truncation",
+      "descriptor_pattern": "SYNTH DEV MKTPL*PAPER-KITE-CO... R{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:marketplace-truncation"
+    },
+    {
+      "case_count": 100,
+      "cohort": "legitimate_merchant_digits",
+      "descriptor_pattern": "SYNTH DEV SHOP-42-NORTH POS{terminal:03d} S{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:legitimate-digits"
+    },
+    {
+      "case_count": 100,
+      "cohort": "punctuation_variants",
+      "descriptor_pattern": "SYNTH DEV ACME.CAFE/ROAST #{terminal:03d} S{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:punctuation"
+    },
+    {
+      "case_count": 100,
+      "cohort": "subscription_suffix",
+      "descriptor_pattern": "SYNTH DEV STREAM-FOREST REF-{terminal:03d}-{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:subscription-suffix"
+    },
+    {
+      "case_count": 30,
+      "cohort": "merchant_only_confirmed",
+      "descriptor_pattern": "SYNTH DEV HARBOR-HARDWARE T{terminal:03d} S{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:merchant-only"
+    },
+    {
+      "case_count": 30,
+      "cohort": "category_only_confirmed",
+      "descriptor_pattern": "SYNTH DEV GENERIC-FUEL-PUMP T{terminal:03d} S{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:category-only"
+    },
+    {
+      "case_count": 20,
+      "cohort": "ambiguous_alias",
+      "descriptor_pattern": "SYNTH DEV COMMON-SQUARE T{terminal:03d} S{serial:04d}",
+      "family_size": 2,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:ambiguous-alias"
+    },
+    {
+      "case_count": 20,
+      "cohort": "no_evidence",
+      "descriptor_pattern": "SYNTH DEV UNKNOWN-QUASAR T{terminal:03d} S{serial:04d}",
+      "family_size": 2,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:no-evidence"
+    },
+    {
+      "case_count": 20,
+      "cohort": "scope_conflict",
+      "descriptor_pattern": "SYNTH DEV SCOPED-BAKERY T{terminal:03d} S{serial:04d}",
+      "family_size": 2,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:scope-conflict"
+    },
+    {
+      "case_count": 20,
+      "cohort": "model_hint_only",
+      "descriptor_pattern": "SYNTH DEV MODEL-LANTERN T{terminal:03d} S{serial:04d}",
+      "family_size": 2,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:model-only"
+    },
+    {
+      "case_count": 20,
+      "cohort": "web_hint_only",
+      "descriptor_pattern": "SYNTH DEV WEB-CEDAR T{terminal:03d} S{serial:04d}",
+      "family_size": 2,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:web-only"
+    },
+    {
+      "case_count": 20,
+      "cohort": "legacy_alias_only",
+      "descriptor_pattern": "SYNTH DEV LEGACY-MOSAIC T{terminal:03d} S{serial:04d}",
+      "family_size": 2,
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      },
+      "split": "developer",
+      "template_id": "synthetic-template:developer:legacy-only"
+    },
+    {
+      "case_count": 100,
+      "cohort": "processor_prefix",
+      "descriptor_pattern": "SYNTH SEA ACQPAY*COPPER-MEADOW T{terminal:03d} S{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:processor-prefix"
+    },
+    {
+      "case_count": 100,
+      "cohort": "terminal_location_codes",
+      "descriptor_pattern": "SYNTH SEA CITY-RAIL T{terminal:03d} L{location:02d} S{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:terminal-location"
+    },
+    {
+      "case_count": 100,
+      "cohort": "marketplace_truncation",
+      "descriptor_pattern": "SYNTH SEA MARKET*INK-WILLOW... R{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:marketplace-truncation"
+    },
+    {
+      "case_count": 100,
+      "cohort": "legitimate_merchant_digits",
+      "descriptor_pattern": "SYNTH SEA STUDIO-88-EAST POS{terminal:03d} S{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:legitimate-digits"
+    },
+    {
+      "case_count": 100,
+      "cohort": "punctuation_variants",
+      "descriptor_pattern": "SYNTH SEA LUNA.BISTRO/PIER #{terminal:03d} S{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:punctuation"
+    },
+    {
+      "case_count": 100,
+      "cohort": "subscription_suffix",
+      "descriptor_pattern": "SYNTH SEA AUDIO-TUNDRA REF-{terminal:03d}-{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:subscription-suffix"
+    },
+    {
+      "case_count": 30,
+      "cohort": "merchant_only_confirmed",
+      "descriptor_pattern": "SYNTH SEA RIDGE-TOOLS T{terminal:03d} S{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:merchant-only"
+    },
+    {
+      "case_count": 30,
+      "cohort": "category_only_confirmed",
+      "descriptor_pattern": "SYNTH SEA GENERIC-TRANSIT-TAP T{terminal:03d} S{serial:04d}",
+      "family_size": 3,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:category-only"
+    },
+    {
+      "case_count": 20,
+      "cohort": "ambiguous_alias",
+      "descriptor_pattern": "SYNTH SEA COMMON-COURT T{terminal:03d} S{serial:04d}",
+      "family_size": 2,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:ambiguous-alias"
+    },
+    {
+      "case_count": 20,
+      "cohort": "no_evidence",
+      "descriptor_pattern": "SYNTH SEA UNKNOWN-NEBULA T{terminal:03d} S{serial:04d}",
+      "family_size": 2,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:no-evidence"
+    },
+    {
+      "case_count": 20,
+      "cohort": "scope_conflict",
+      "descriptor_pattern": "SYNTH SEA SCOPED-DELI T{terminal:03d} S{serial:04d}",
+      "family_size": 2,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:scope-conflict"
+    },
+    {
+      "case_count": 20,
+      "cohort": "model_hint_only",
+      "descriptor_pattern": "SYNTH SEA MODEL-ASTER T{terminal:03d} S{serial:04d}",
+      "family_size": 2,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:model-only"
+    },
+    {
+      "case_count": 20,
+      "cohort": "web_hint_only",
+      "descriptor_pattern": "SYNTH SEA WEB-BIRCH T{terminal:03d} S{serial:04d}",
+      "family_size": 2,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:web-only"
+    },
+    {
+      "case_count": 20,
+      "cohort": "legacy_alias_only",
+      "descriptor_pattern": "SYNTH SEA LEGACY-PRISM T{terminal:03d} S{serial:04d}",
+      "family_size": 2,
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      },
+      "split": "sealed",
+      "template_id": "synthetic-template:sealed:legacy-only"
+    }
+  ]
+}

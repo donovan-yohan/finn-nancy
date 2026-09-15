@@ -1,0 +1,20 @@
+[
+  {
+    "id": "loblaws",
+    "merchant": "Loblaws #123",
+    "expected_category": "Groceries",
+    "predicted_category": "Groceries"
+  },
+  {
+    "id": "ttc",
+    "merchant": "TTC EXAMPLE TRANSIT",
+    "expected_category": "Transport",
+    "predicted_category": "Transport"
+  },
+  {
+    "id": "unknown",
+    "merchant": "MYSTERY SHOP",
+    "expected_category": "Shopping",
+    "predicted_category": "Uncategorized"
+  }
+]

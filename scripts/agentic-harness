@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO"
+
+required_files=(
+  AGENTS.md
+  docs/context-map.md
+  docs/DELIVERY.md
+  docs/delivery/fn-147-period-policy.md
+  docs/delivery/fn-148-period-statements.md
+  scripts/dev
+  scripts/test
+  scripts/lint
+  scripts/build
+  scripts/smoke
+  scripts/agentic-harness
+  scripts/descriptor-resolution-eval
+  scripts/release-audit
+  scripts/backup-manifest
+  scripts/backup_manifest_lib.py
+  scripts/llm-eval
+  .github/workflows/ci.yml
+  .github/pull_request_template.md
+)
+
+failed=0
+for file in "${required_files[@]}"; do
+  if [[ ! -f "$file" ]]; then
+    echo "missing required delivery file: $file" >&2
+    failed=1
+  fi
+done
+
+for file in scripts/dev scripts/test scripts/lint scripts/build scripts/smoke \
+  scripts/agentic-harness scripts/descriptor-resolution-eval \
+  scripts/release-audit scripts/backup-manifest \
+  scripts/llm-eval; do
+  if [[ -f "$file" && ! -x "$file" ]]; then
+    echo "delivery command is not executable: $file" >&2
+    failed=1
+  fi
+done
+
+if [[ "$failed" -ne 0 ]]; then
+  exit 1
+fi
+
+for file in scripts/dev scripts/test scripts/lint scripts/build scripts/smoke \
+  scripts/agentic-harness scripts/descriptor-resolution-eval \
+  scripts/llm-eval; do
+  bash -n "$file"
+done
+python3 -m py_compile \
+  scripts/release-audit scripts/backup-manifest scripts/backup_manifest_lib.py
+
+workflow=".github/workflows/ci.yml"
+for command in agentic-harness descriptor-resolution-eval lint test build smoke; do
+  if ! grep -Fq "./scripts/$command" "$workflow"; then
+    echo "CI does not call scripts/$command" >&2
+    failed=1
+  fi
+done
+if grep -Fq 'scripts/api_acceptance.sh' "$workflow"; then
+  echo "CI must use the isolated scripts/smoke, not the mutating legacy API acceptance script" >&2
+  failed=1
+fi
+
+for heading in "## Intent" "## Risk seams" "## Exact-head evidence"; do
+  if ! grep -Fq "$heading" .github/pull_request_template.md; then
+    echo "PR template missing heading: $heading" >&2
+    failed=1
+  fi
+done
+
+if git ls-files | grep -Eq '(^|/)\.env$'; then
+  echo "tracked .env file detected" >&2
+  failed=1
+fi
+
+if grep -R -n -E 'git[[:space:]]+push[^#\n]*(main|master)|git[[:space:]]+add[[:space:]]+-A' \
+  --exclude=agentic-harness scripts .github/workflows; then
+  echo "review-bypass command detected" >&2
+  failed=1
+fi
+
+if ! grep -Fq 'mktemp -d' scripts/smoke; then
+  echo "scripts/smoke must allocate an isolated temporary directory" >&2
+  failed=1
+fi
+if grep -Eq 'BASE_URL="\$\{BASE_URL|DB_PATH="\$\{DB_PATH' scripts/smoke; then
+  echo "scripts/smoke must not accept caller-selected database or target URL" >&2
+  failed=1
+fi
+if grep -Fq 'BUILD_OUT_DIR' scripts/build || grep -Fq 'uv build --clear' scripts/build; then
+  echo "scripts/build must not clear a caller-selected directory" >&2
+  failed=1
+fi
+for contract in \
+  'OUT_DIR="$REPO/dist"' \
+  'mktemp -d' \
+  'refusing symlinked build output' \
+  'refusing symlinked build artifact destination'; do
+  if ! grep -Fq "$contract" scripts/build; then
+    echo "scripts/build missing safe staging contract: $contract" >&2
+    failed=1
+  fi
+done
+
+for contract in \
+  'FN_DEV_ALLOW_NON_LOOPBACK' \
+  '"data directory"' \
+  'EXPLICIT NON-LOOPBACK DEV BIND ENABLED'; do
+  if ! grep -Fq "$contract" scripts/dev; then
+    echo "scripts/dev missing containment contract: $contract" >&2
+    failed=1
+  fi
+done
+
+for contract in \
+  'for scope in ("system", "user")' \
+  '"list-units"' \
+  '"list-unit-files"' \
+  '"MainPID"' \
+  '"ControlGroup"' \
+  '["ss", "-H", "-ltnp"' \
+  '_validate_ss_listener_address' \
+  'RELEASE_MANIFEST_MAX_AGE' \
+  '"--backup-manifest"'; do
+  if ! grep -Fq "$contract" scripts/release-audit; then
+    echo "scripts/release-audit missing fail-closed ownership contract: $contract" >&2
+    failed=1
+  fi
+done
+if grep -Fq 'add_argument("--backup"' scripts/release-audit; then
+  echo "scripts/release-audit must accept a verified manifest, not an arbitrary SQLite file" >&2
+  failed=1
+fi
+
+for contract in \
+  '__finn_nancy_database_uuid' \
+  'BEGIN IMMEDIATE' \
+  'INSERT OR IGNORE INTO app_settings'; do
+  if ! grep -Fq "$contract" app/db/migrate.py; then
+    echo "database identity initialization missing contract: $contract" >&2
+    failed=1
+  fi
+done
+if grep -Fq 'finn-nancy-db-path-v1' app/diagnostics.py; then
+  echo "database identity must be persistent state, not a database path hash" >&2
+  failed=1
+fi
+
+for contract in \
+  'conn.execute("BEGIN IMMEDIATE")' \
+  'def guard_months(' \
+  'def override_periods(' \
+  'def collect_period_exceptions('; do
+  if ! grep -R -Fq "$contract" app/db/engine.py app/db/repo_period_policy.py \
+      app/close/period_exceptions.py; then
+    echo "FN-147 period policy missing contract: $contract" >&2
+    failed=1
+  fi
+done
+period_guard_count="$(
+  grep -c '^CREATE TRIGGER period_policy_guard_' migrations/036_period_policy.sql
+)"
+if [[ "$period_guard_count" -ne 38 ]]; then
+  echo "FN-147 requires 38 reviewed period-policy guard triggers; found $period_guard_count" >&2
+  failed=1
+fi
+
+for contract in \
+  'def build_period_statement(' \
+  'def period_statement_snapshot_payload(' \
+  'fn148_period_statement' \
+  'def render_period_statement_pdf('; do
+  if ! grep -R -Fq "$contract" app/reporting app/web/routes/close.py; then
+    echo "FN-148 period-statement delivery contract missing: $contract" >&2
+    failed=1
+  fi
+done
+
+for contract in \
+  'source_conn.backup(backup_conn)' \
+  '"database_identity"' \
+  '"schema_digest"' \
+  '"migration_digest"' \
+  '"sha256"' \
+  '"created_at"'; do
+  if ! grep -Fq "$contract" scripts/backup_manifest_lib.py; then
+    echo "backup manifest helper missing evidence contract: $contract" >&2
+    failed=1
+  fi
+done
+
+uv run --frozen python - <<'PY'
+from __future__ import annotations
+
+import ast
+import hashlib
+import re
+from pathlib import Path
+
+expected_baselines = {
+    "migrations/001_tables.sql": "ccec5b9afee7ff1f0072f65ec2c60ddf24ff8d18a7a710c254f0229126e8c144",
+    "migrations/002_views.sql": "43c0c1c8f845a03f051dba549e7815668fdd199304cefdeb1b373b2a1a0e6e13",
+}
+for filename, expected in expected_baselines.items():
+    actual = hashlib.sha256(Path(filename).read_bytes()).hexdigest()
+    if actual != expected:
+        raise SystemExit(f"immutable migration changed: {filename}")
+
+paths = sorted(Path("migrations").glob("*.sql"))
+prefixes: set[str] = set()
+for path in paths:
+    match = re.fullmatch(r"(\d{3})_[a-z0-9_]+\.sql", path.name)
+    if not match:
+        raise SystemExit(f"invalid migration filename: {path.name}")
+    prefix = match.group(1)
+    if prefix in prefixes:
+        raise SystemExit(f"duplicate migration prefix: {prefix}")
+    prefixes.add(prefix)
+
+missing_flow_kind = []
+for source_path in sorted(Path("app").rglob("*.py")):
+    tree = ast.parse(source_path.read_text(), filename=str(source_path))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "insert_transaction"
+        ):
+            continue
+        if not any(keyword.arg == "flow_kind" for keyword in node.keywords):
+            missing_flow_kind.append(f"{source_path}:{node.lineno}")
+if missing_flow_kind:
+    raise SystemExit(
+        "transaction writer omitted explicit flow_kind: "
+        + ", ".join(missing_flow_kind)
+    )
+
+workflow = Path(".github/workflows/ci.yml").read_text()
+action_refs = re.findall(r"uses:\s*[^@\s]+@([^\s#]+)", workflow)
+unpinned = [ref for ref in action_refs if not re.fullmatch(r"[0-9a-f]{40}", ref)]
+if unpinned:
+    raise SystemExit(f"GitHub Actions must be pinned to full SHAs: {unpinned}")
+PY
+
+if [[ "$failed" -ne 0 ]]; then
+  exit 1
+fi
+
+echo "agentic harness ok"

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+
+exec uv run --project "$REPO" --frozen python \
+  -m app.evals.reconciliation_precision \
+  --bundle-dir "$REPO/tests/evals/data/fn149" \
+  "$@"

@@ -1,0 +1,680 @@
+{% extends "base.html" %}
+{% block title %}reconcile · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div>
+    <p class="eyebrow">statements</p>
+    <h1>Reconciliation</h1>
+    <p class="subtle">{{ review_items | length }} line{{ 's' if review_items | length != 1 else '' }} waiting on a match.</p>
+    <p>
+      <a class="link nancy-link" href="/actions">approval queue{% if active_proposal_count %} · {{ active_proposal_count }}{% endif %}</a>
+      {% if selected_month %}
+      · <a class="link" href="/statements?month={{ selected_month }}">period statement</a>
+      · <a class="link nancy-link" href="/close?month={{ selected_month }}">monthly close</a>
+      {% endif %}
+    </p>
+  </div>
+  {% if months %}
+  <form class="inline-form" method="get" action="/recon">
+    <label for="recon-month" class="subtle">statement closing month</label>
+    <select id="recon-month" name="month" onchange="this.form.submit()">
+      {% for m in months %}
+      <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  {% endif %}
+</header>
+
+{% if notice %}
+<p class="banner warn" role="alert">{{ notice }}</p>
+{% endif %}
+
+<main class="grid single">
+  {% if not review_items and not unresolved_docs and not doc_summaries and not positive_flow_reviews and not positive_flow_intake %}
+  <section class="card span-2">
+    <p class="subtle">nothing to reconcile.</p>
+  </section>
+  {% endif %}
+
+  <section class="card span-2" id="positive-flow-review">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow nancy">month-end decision queue</p>
+        <h2>Money in to explain</h2>
+        <p class="subtle">A credit is not income until you confirm what moved. Scores rank evidence only; they never approve a decision.</p>
+      </div>
+      {% set positive_flow_count = (positive_flow_reviews | length) + (positive_flow_intake | length) %}
+      <span class="db-pill">{{ positive_flow_count }} item{{ 's' if positive_flow_count != 1 else '' }}</span>
+    </div>
+
+    {% if not positive_flow_reviews and not positive_flow_intake %}
+    <p class="subtle">Every matched statement credit for {{ selected_month }} has an explicit accounting meaning.</p>
+    {% endif %}
+
+    {% for intake in positive_flow_intake %}
+    {% set line = intake.line %}
+    <article class="card" id="positive-intake-{{ line.statement_line_id }}" style="margin-top:1rem;">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">statement credit needs a transaction · {{ line.match_status | replace('_', ' ') }}</p>
+          <h2>{{ line.raw_description }}</h2>
+          <p class="subtle">
+            {{ line.document_name }} · {{ line.account_name or 'account unresolved' }}
+            · {{ line.posted_on }} · {{ line.currency }}
+            · row confidence {{ (line.row_confidence * 100) | round | int }}%
+            · source {{ line.adapter_id or line.locator_kind or line.source_kind or 'statement row' }}
+            {% if line.adapter_version %} {{ line.adapter_version }}{% endif %}
+          </p>
+          <p>
+            <a class="link" href="/review/statement/{{ line.source_document_id }}">
+              inspect source{% if line.source_anchor_id %} anchor #{{ line.source_anchor_id }}{% endif %}
+            </a>
+          </p>
+        </div>
+        <span class="money positive">{{ line.amount_cents | money }}</span>
+      </div>
+      <p class="subtle">Recover only this row into an unknown-flow transaction. It remains excluded from income until you classify or pair it below.</p>
+      {% if intake.recoverable %}
+      <form method="post" action="/recon/positive/line/{{ line.statement_line_id }}/recover" class="action-row">
+        <input type="hidden" name="month" value="{{ selected_month }}">
+        <input type="hidden" name="evidence_fingerprint" value="{{ intake.evidence_fingerprint }}">
+        <input type="hidden" name="operation_key" value="{{ intake.operation_key }}">
+        <input type="hidden" name="reason" value="operator recovered one {{ line.match_status | replace('_', ' ') }} positive statement row">
+        <button class="ghost" type="submit">Create unknown transaction for this row</button>
+      </form>
+      {% else %}
+      <p class="banner warn" role="alert">{{ intake.blockers | join('; ') }}.</p>
+      {% endif %}
+    </article>
+    {% endfor %}
+
+    {% for review in positive_flow_reviews %}
+    {% set subject = review.subject %}
+    <article class="card" id="positive-flow-{{ subject.transaction_id }}" style="margin-top:1rem;">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">{{ subject.account_name }} · {{ subject.posted_on }}</p>
+          <h2>{{ subject.raw_description }}</h2>
+          <p class="subtle">
+            {{ subject.document_name }}
+            · row confidence {{ (subject.row_confidence * 100) | round | int }}%
+            · source {{ subject.adapter_id or subject.locator_kind or subject.source_kind or 'statement row' }}
+            {% if subject.adapter_version %} {{ subject.adapter_version }}{% endif %}
+          </p>
+          <p>
+            <a class="link" href="/review/statement/{{ subject.source_document_id }}">
+              inspect source{% if subject.source_anchor_id %} anchor #{{ subject.source_anchor_id }}{% endif %}
+            </a>
+          </p>
+        </div>
+        <span class="money positive">{{ subject.amount_cents | money }}</span>
+      </div>
+
+      {% if review.status == 'resolved' %}
+      {% set accepted = review.acceptance %}
+      <div class="checklist-row is-complete">
+        <span class="checklist-mark">✓</span>
+        <span>
+          <b>{{ accepted.proposed_flow_kind | replace('_', ' ') }}</b>
+          {% if accepted.relationship_kind %}
+          <span class="subtle block">
+            {{ accepted.relationship_kind | replace('_', ' ') }}
+            {% if accepted.candidate %}
+            with {{ accepted.candidate.account_name }} · {{ accepted.candidate.posted_on }}
+            · {{ accepted.candidate.amount_cents | money }}
+            {% endif %}
+          </span>
+          {% endif %}
+          <span class="subtle block">Recorded by {{ accepted.actor }} · {{ accepted.reason }}</span>
+          {% if subject.match_status not in ['matched', 'promoted'] %}
+          <span class="subtle block">The statement was unreconciled; this audited decision is preserved until you undo it or reattach the same transaction.</span>
+          {% endif %}
+        </span>
+      </div>
+      <form method="post" action="/recon/positive/acceptance/{{ accepted.event_id }}/undo"
+            class="action-row" style="margin-top:.75rem;"
+            onsubmit='return confirm("Undo this accounting decision and restore the exact prior flow and category state?")'>
+        <input type="hidden" name="month" value="{{ selected_month }}">
+        <input type="hidden" name="evidence_fingerprint" value="{{ accepted.undo_fingerprint }}">
+        <input type="hidden" name="operation_key" value="{{ accepted.operation_key }}">
+        <input type="hidden" name="reason" value="operator requested exact positive-flow rollback">
+        <button class="ghost" type="submit">Undo accounting decision</button>
+      </form>
+      {% else %}
+      <div class="coverage-grid" style="margin-top:.75rem;">
+        <fieldset class="card">
+          <legend><b>Classify this credit</b></legend>
+          <p class="subtle">Use only when your evidence proves this is new income rather than money moving back.</p>
+          <div class="action-row">
+            {% for proposal in review.proposals %}
+            {% if proposal.proposal_kind == 'classification' and proposal.state == 'available' %}
+            <form method="post" action="/recon/positive/{{ subject.transaction_id }}/accept-classification">
+              <input type="hidden" name="month" value="{{ selected_month }}">
+              <input type="hidden" name="flow_kind" value="{{ proposal.proposed_flow_kind }}">
+              <input type="hidden" name="evidence_fingerprint" value="{{ proposal.evidence_fingerprint }}">
+              <input type="hidden" name="operation_key" value="{{ proposal.operation_key }}">
+              <input type="hidden" name="reason" value="operator confirmed {{ proposal.proposed_flow_kind | replace('_', ' ') }} from statement evidence">
+              <button class="ghost" type="submit">{{ proposal.action_label }}</button>
+            </form>
+            {% endif %}
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <div>
+          <p class="eyebrow">possible money-back or transfer pairs</p>
+          {% set available_pairs = review.proposals | selectattr('proposal_kind', 'equalto', 'pair') | selectattr('state', 'equalto', 'available') | list %}
+          {% if not available_pairs %}
+          <p class="subtle">No deterministic pair candidates fit the amount, currency, date, and relationship rules. Classify only with evidence or leave this as a close blocker.</p>
+          {% endif %}
+          {% for proposal in available_pairs %}
+          {% set candidate = proposal.candidate %}
+          <article class="card" style="margin-top:.65rem;">
+            <div class="card-head compact-head">
+              <div>
+                <p class="eyebrow">{{ proposal.confidence_band }} evidence · {{ proposal.confidence_pct }}%</p>
+                <h3>{{ candidate.description or candidate.counterparty }}</h3>
+                <p class="subtle">
+                  {{ candidate.account_name }} · {{ candidate.posted_on }}
+                  · {{ candidate.currency }} · current flow {{ candidate.flow_kind | replace('_', ' ') }}
+                  · source {{ candidate.source }}
+                  {% if candidate.source_document_name %} · {{ candidate.source_document_name }}{% endif %}
+                </p>
+                {% if candidate.source_document_id %}
+                <p><a class="link" href="/review/doc/{{ candidate.source_document_id }}/file" target="_blank" rel="noopener">inspect candidate source document</a></p>
+                {% endif %}
+              </div>
+              <span class="money negative">{{ candidate.amount_cents | money }}</span>
+            </div>
+            <ul class="subtle">
+              {% for reason in proposal.reasons %}
+              <li>{{ reason }}</li>
+              {% endfor %}
+            </ul>
+            {% if candidate.splits %}
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>candidate category</th><th>memo</th><th class="money">split</th></tr>
+                </thead>
+                <tbody>
+                  {% for split in candidate.splits %}
+                  <tr>
+                    <td>{{ split.category_name }} · {{ split.category_kind }}</td>
+                    <td>{{ split.memo or '—' }}</td>
+                    <td class="money {{ 'negative' if split.amount_cents < 0 else 'positive' }}">{{ split.amount_cents | money }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% endif %}
+            <div class="action-row">
+              <form method="post" action="/recon/positive/{{ subject.transaction_id }}/accept-pair">
+                <input type="hidden" name="month" value="{{ selected_month }}">
+                <input type="hidden" name="proposal_key" value="{{ proposal.proposal_key }}">
+                <input type="hidden" name="evidence_fingerprint" value="{{ proposal.evidence_fingerprint }}">
+                <input type="hidden" name="operation_key" value="{{ proposal.operation_key }}">
+                <input type="hidden" name="reason" value="operator confirmed {{ proposal.relationship_kind | replace('_', ' ') }} from both transaction records">
+                {% if proposal.projected_effect_cents %}
+                <p class="subtle">
+                  Projected report effect: {{ proposal.projected_effect_cents | money }}
+                  reduces money out in the selected expense category; neither source amount changes.
+                </p>
+                {% if proposal.requires_allocation %}
+                <label>expense category this credit offsets
+                  <select name="selected_category_id" required>
+                    <option value="">choose a category</option>
+                    {% for option in proposal.allocation_options %}
+                    <option value="{{ option.category_id }}">
+                      {{ option.category_name }} · existing {{ option.candidate_split_cents | money }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </label>
+                {% elif proposal.automatic_category_id %}
+                {% set automatic = proposal.allocation_options[0] %}
+                <p class="subtle">Category effect: {{ automatic.category_name }} {{ proposal.projected_effect_cents | money }}.</p>
+                {% else %}
+                <p class="banner warn" role="alert">Categorize the candidate purchase before accepting this offset.</p>
+                {% endif %}
+                {% endif %}
+                {% if not proposal.projected_effect_cents or proposal.allocation_options %}
+                <button class="ghost" type="submit">{{ proposal.action_label }}</button>
+                {% endif %}
+              </form>
+              <form method="post" action="/recon/positive/{{ subject.transaction_id }}/reject">
+                <input type="hidden" name="month" value="{{ selected_month }}">
+                <input type="hidden" name="proposal_key" value="{{ proposal.proposal_key }}">
+                <input type="hidden" name="evidence_fingerprint" value="{{ proposal.evidence_fingerprint }}">
+                <input type="hidden" name="operation_key" value="{{ proposal.operation_key }}:reject">
+                <input type="hidden" name="reason" value="operator rejected only the {{ proposal.relationship_kind | replace('_', ' ') }} interpretation">
+                <button class="ghost" type="submit">{{ proposal.reject_label }}</button>
+                <span class="subtle block">{{ proposal.suppression_scope_copy }}</span>
+              </form>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+      </div>
+
+      {% if review.suppressed_proposals %}
+      <details style="margin-top:.75rem;">
+        <summary>{{ review.suppressed_proposals | length }} rejected suggestion{{ 's' if review.suppressed_proposals | length != 1 else '' }}</summary>
+        {% for proposal in review.suppressed_proposals %}
+        <div class="checklist-row" style="margin-top:.5rem;">
+          <span>
+            <b>{{ proposal.reject_label }}</b>
+            {% if proposal.candidate %}
+            <span class="subtle block">{{ proposal.candidate.description }} · {{ proposal.candidate.posted_on }} · {{ proposal.candidate.amount_cents | money }}</span>
+            {% endif %}
+            <span class="subtle block">{{ proposal.suppression_scope_copy }}</span>
+          </span>
+          <form method="post" action="/recon/positive/{{ subject.transaction_id }}/restore">
+            <input type="hidden" name="month" value="{{ selected_month }}">
+            <input type="hidden" name="proposal_key" value="{{ proposal.proposal_key }}">
+            <input type="hidden" name="evidence_fingerprint" value="{{ proposal.evidence_fingerprint }}">
+            <input type="hidden" name="operation_key" value="{{ proposal.operation_key }}:restore">
+            <input type="hidden" name="reason" value="operator restored rejected candidate">
+            <button class="ghost" type="submit">Restore suggestion</button>
+          </form>
+        </div>
+        {% endfor %}
+      </details>
+      {% endif %}
+      {% endif %}
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="card span-2">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">coverage</p>
+        <h2>Matched vs unmatched spend</h2>
+      </div>
+      <span class="db-pill">{{ coverage.summary.coverage_pct }}% covered</span>
+    </div>
+    {% if coverage.summary.line_count == 0 %}
+    <p class="subtle">no statement lines yet.</p>
+    {% else %}
+    <div class="coverage-strip">
+      <div class="stat-card">
+        <p class="eyebrow">statement spend</p>
+        <p class="stat-number">{{ coverage.summary.statement_spend_cents | money }}</p>
+        <p class="subtle">{{ coverage.summary.line_count }} line{{ 's' if coverage.summary.line_count != 1 else '' }}</p>
+      </div>
+      <div class="stat-card emphasis">
+        <p class="eyebrow">matched</p>
+        <p class="stat-number positive">{{ coverage.summary.covered_spend_cents | money }}</p>
+        <p class="subtle">receipt or ledger backed</p>
+      </div>
+      <div class="stat-card">
+        <p class="eyebrow">unmatched</p>
+        <p class="stat-number negative">{{ coverage.summary.unmatched_spend_cents | money }}</p>
+        <p class="subtle">needs attention</p>
+      </div>
+      <div class="stat-card">
+        <p class="eyebrow">ignored</p>
+        <p class="stat-number">{{ coverage.summary.ignored_spend_cents | money }}</p>
+        <p class="subtle">transfers or exclusions</p>
+      </div>
+      <div class="stat-card">
+        <p class="eyebrow">confirmed income</p>
+        <p class="stat-number positive">{{ coverage.summary.income_cents | money }}</p>
+        <p class="subtle">typed income or interest</p>
+      </div>
+      <div class="stat-card">
+        <p class="eyebrow">money in to explain</p>
+        <p class="stat-number">{{ coverage.summary.positive_review_cents | money }}</p>
+        <p class="subtle">excluded from income until reviewed</p>
+      </div>
+    </div>
+
+    <div class="coverage-grid">
+      <div>
+        <div class="card-head compact-head">
+          <div><p class="eyebrow">attention</p><h2>Likely reasons</h2></div>
+        </div>
+        {% if not coverage.reasons %}
+        <p class="subtle">no unmatched spend needs attention.</p>
+        {% else %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>reason</th>
+                <th>lines</th>
+                <th class="money">amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in coverage.reasons %}
+              <tr>
+                <td>{{ row.reason }}</td>
+                <td>{{ row.line_count }}</td>
+                <td class="money {{ 'positive' if row.positive_review_cents else 'negative' }}">{{ (row.positive_review_cents or row.spend_cents) | money }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      </div>
+
+      <div>
+        <div class="card-head compact-head">
+          <div><p class="eyebrow">evidence</p><h2>Largest lines needing attention</h2></div>
+        </div>
+        {% if not coverage.attention_lines %}
+        <p class="subtle">no evidence rows to inspect.</p>
+        {% else %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>date</th>
+                <th>merchant</th>
+                <th>reason</th>
+                <th class="money">amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for line in coverage.attention_lines %}
+              <tr id="attn-line-{{ line.line_id }}">
+                <td>{{ line.posted_on }}</td>
+                <td>
+                  <strong>{{ line.raw_description }}</strong>
+                  <span class="subtle block">{{ line.document_name }} · {{ line.account_name }}</span>
+                </td>
+                <td>{{ line.attention_reason }}</td>
+                <td class="money negative">{{ line.amount_cents | money }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="coverage-breakdowns">
+      <div>
+        <p class="eyebrow">documents</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>statement</th>
+                <th class="money">spend</th>
+                <th class="money">matched</th>
+                <th class="money">unmatched</th>
+                <th>coverage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in coverage.documents %}
+              <tr>
+                <td>
+                  {{ row.document_name }}
+                  <span class="subtle block">{{ row.first_posted_on }} – {{ row.last_posted_on }}</span>
+                </td>
+                <td class="money">{{ row.statement_spend_cents | money }}</td>
+                <td class="money positive">{{ row.covered_spend_cents | money }}</td>
+                <td class="money negative">{{ row.unmatched_spend_cents | money }}</td>
+                <td>{{ row.coverage_pct }}%</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <p class="eyebrow">month</p>
+        {% with rows=coverage.months %}
+        {% include "_coverage_breakdown.html" %}
+        {% endwith %}
+      </div>
+      <div>
+        <p class="eyebrow">account</p>
+        {% with rows=coverage.accounts %}
+        {% include "_coverage_breakdown.html" %}
+        {% endwith %}
+      </div>
+      <div>
+        <p class="eyebrow">category</p>
+        {% with rows=coverage.categories %}
+        {% include "_coverage_breakdown.html" %}
+        {% endwith %}
+      </div>
+      <div>
+        <p class="eyebrow">merchant</p>
+        {% with rows=coverage.merchants %}
+        {% include "_coverage_breakdown.html" %}
+        {% endwith %}
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="card span-2">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">planning evidence</p>
+        <h2>{{ selected_month }}</h2>
+      </div>
+    </div>
+    {% if not planning_evidence_lines %}
+    <p class="subtle">no planning card statement evidence for this month.</p>
+    {% else %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>date</th>
+            <th>merchant</th>
+            <th>status</th>
+            <th>reason</th>
+            <th class="money">amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in planning_evidence_lines %}
+          <tr id="line-{{ line.line_id }}">
+            <td>{{ line.posted_on }}</td>
+            <td>
+              <strong>{{ line.raw_description }}</strong>
+              <span class="subtle block">{{ line.document_name }} · {{ line.account_name }}</span>
+            </td>
+            <td>{{ line.match_status }}</td>
+            <td>{{ line.attention_reason or 'planning evidence' }}</td>
+            <td class="money {{ 'negative' if line.amount_cents < 0 else 'positive' }}">{{ line.amount_cents | money }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="card span-2">
+    <div class="card-head">
+      <div><p class="eyebrow">needs review</p><h2>Statement lines</h2></div>
+    </div>
+    {% if not review_items %}
+    <p class="subtle">nothing to reconcile.</p>
+    {% endif %}
+    {% for item in review_items %}
+    {% set line = item.line %}
+    <div class="card" id="line-{{ line.id }}" style="margin-bottom:1rem;">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">{{ line.original_name }}</p>
+          <h2>{{ line.raw_description }}</h2>
+        </div>
+        <span class="money {{ 'negative' if line.amount_cents < 0 else 'positive' }}">{{ line.amount_cents | money }}</span>
+      </div>
+      <p class="subtle">{{ line.posted_on }}{% if line.match_rationale %} · {{ line.match_rationale }}{% endif %}</p>
+
+      {% if item.candidates %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>date</th>
+              <th>description</th>
+              <th>account</th>
+              <th>similarity</th>
+              <th class="money">amount</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in item.candidates %}
+            <tr>
+              <td>{{ c.txn.posted_on }}</td>
+              <td>{{ c.txn.description }}</td>
+              <td>{{ c.txn.account_name }}</td>
+              <td>{{ c.score }}%</td>
+              <td class="money {{ 'negative' if c.txn.amount_cents < 0 else 'positive' }}">{{ c.txn.amount_cents | money }}</td>
+              <td>
+                <form method="post" action="/recon/line/{{ line.id }}/confirm">
+                  <input type="hidden" name="transaction_id" value="{{ c.txn.id }}">
+                  <input type="hidden" name="month" value="{{ selected_month }}">
+                  <button class="ghost" type="submit">confirm</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="subtle">no candidate transactions in range.</p>
+      {% endif %}
+
+      <div style="display:flex; gap:.5rem; margin-top:.75rem;">
+        <form method="post" action="/recon/line/{{ line.id }}/promote">
+          <input type="hidden" name="month" value="{{ selected_month }}">
+          {% if line.amount_cents > 0 %}
+          <input type="hidden" name="flow_kind" value="unknown">
+          <p class="subtle">This credit will stay excluded from income until you explain it in the queue above.</p>
+          <button class="ghost" type="submit">Create for money-in review</button>
+          {% else %}
+          <label>accounting flow
+            <select name="flow_kind" aria-label="accounting flow for {{ line.raw_description }}">
+              {% for flow in flow_kinds %}
+              <option value="{{ flow.value }}" {{ 'selected' if line.flow_kind == flow.value else '' }}>
+                {{ flow.value | replace('_', ' ') }}
+              </option>
+              {% endfor %}
+            </select>
+          </label>
+          <span class="subtle block">Leave unknown to send this transaction to review.</span>
+          <button class="ghost" type="submit">create transaction</button>
+          {% endif %}
+        </form>
+        {% if line.amount_cents <= 0 %}
+        <form method="post" action="/recon/line/{{ line.id }}/ignore"
+              onsubmit='return confirm({{ ("Ignore this statement line? " ~ line.raw_description) | tojson }})'>
+          <input type="hidden" name="month" value="{{ selected_month }}">
+          <button class="ghost" type="submit">ignore</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="card span-2">
+    <div class="card-head">
+      <div><p class="eyebrow">unresolved</p><h2>Statements needing an account</h2></div>
+    </div>
+    {% if not unresolved_docs %}
+    <p class="subtle">nothing to reconcile.</p>
+    {% endif %}
+    {% for doc in unresolved_docs %}
+    <form method="post" action="/recon/doc/{{ doc.id }}/assign-account" style="display:flex; gap:.5rem; align-items:center; margin-bottom:.6rem;">
+      <input type="hidden" name="month" value="{{ selected_month }}">
+      <span style="flex:1;">{{ doc.original_name }}</span>
+      <select name="account_id" required>
+        {% for a in accounts %}
+        <option value="{{ a.id }}">{{ a.name }}</option>
+        {% endfor %}
+      </select>
+      <button class="ghost" type="submit">assign account</button>
+    </form>
+    {% endfor %}
+  </section>
+
+  <section class="card span-2">
+    <div class="card-head">
+      <div><p class="eyebrow">documents</p><h2>Reconciled statements</h2></div>
+    </div>
+    {% if not doc_summaries %}
+    <p class="subtle">nothing to reconcile.</p>
+    {% endif %}
+    {% if doc_summaries %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>document</th>
+            <th>status</th>
+            <th>matched</th>
+            <th>promoted</th>
+            <th>needs review</th>
+            <th>ignored</th>
+            <th>unmatched</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for doc in doc_summaries %}
+          <tr>
+            <td>{{ doc.original_name }}</td>
+            <td>{{ doc.status }}</td>
+            <td>{{ doc.counts.matched or 0 }}</td>
+            <td>{{ doc.counts.promoted or 0 }}</td>
+            <td>{{ doc.counts.needs_review or 0 }}</td>
+            <td>{{ doc.counts.ignored or 0 }}</td>
+            <td>{{ doc.counts.unmatched or 0 }}</td>
+            <td style="display:flex; gap:.4rem;">
+              <form method="post" action="/recon/doc/{{ doc.id }}/unreconcile"
+                    onsubmit='return confirm({{ ("Unreconcile " ~ doc.original_name ~ "? This clears its matches.") | tojson }})'>
+                <input type="hidden" name="month" value="{{ selected_month }}">
+                <button class="ghost" type="submit">unreconcile</button>
+              </form>
+              <form method="post" action="/recon/doc/{{ doc.id }}/rerun">
+                <input type="hidden" name="month" value="{{ selected_month }}">
+                <button class="ghost" type="submit">re-run</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+
+  {% if selected_month %}
+  <section class="card span-2 period-next-actions">
+    <div>
+      <p class="eyebrow nancy">finish month-end</p>
+      <h2>Inspect the reconciled result</h2>
+      <p class="subtle">
+        The statement shows income, money out, vague-descriptor status, and exact
+        evidence before you make the close decision.
+      </p>
+    </div>
+    <div class="action-row">
+      <a class="link" href="/statements?month={{ selected_month }}">Open period statement</a>
+      <a class="primary" href="/close?month={{ selected_month }}">Review close</a>
+    </div>
+  </section>
+  {% endif %}
+</main>
+{% endblock %}

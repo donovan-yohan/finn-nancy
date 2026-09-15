@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/finn-nancy-capture-browser.XXXXXX")"
+DB_PATH="$SMOKE_DIR/browser.sqlite"
+DATA_DIR="$SMOKE_DIR/data"
+SERVER_LOG="$SMOKE_DIR/server.log"
+SERVER_PID=""
+
+cleanup() {
+  if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+    kill "$SERVER_PID" >/dev/null 2>&1 || true
+    wait "$SERVER_PID" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$SMOKE_DIR"
+}
+trap cleanup EXIT
+
+for command in node "${CHROMIUM_BIN:-chromium}"; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    echo "capture browser smoke requires $command" >&2
+    exit 2
+  fi
+done
+
+port="$(
+  uv run --project "$REPO" --frozen python -c \
+    'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
+)"
+BASE_URL="http://127.0.0.1:$port"
+
+uv run --project "$REPO" --frozen fn init-db --db "$DB_PATH" >/dev/null
+mkdir -p "$DATA_DIR"
+
+(
+  cd "$SMOKE_DIR"
+  export DB_PATH DATA_DIR
+  export ADDR="127.0.0.1:$port"
+  export LOCAL_LLM_BASE="http://127.0.0.1:1/v1"
+  export LLM_TIMEOUT_S=1
+  export TRIAGE_ENABLED=false
+  export VERIFIER_LLM_JUDGE=false
+  export EMBEDDINGS_ENABLED=false
+  export TELEGRAM_BOT_TOKEN=""
+  export TELEGRAM_CHAT_ID=""
+  export INBOX_DIR=""
+  exec uv run --project "$REPO" --frozen fn serve --db "$DB_PATH" --addr "$ADDR"
+) >"$SERVER_LOG" 2>&1 &
+SERVER_PID="$!"
+
+ready=0
+for _ in $(seq 1 60); do
+  if curl -fsS "$BASE_URL/healthz" >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+    echo "capture browser smoke server exited before readiness" >&2
+    tail -n 80 "$SERVER_LOG" >&2 || true
+    exit 1
+  fi
+  sleep 0.25
+done
+if [[ "$ready" -ne 1 ]]; then
+  echo "capture browser smoke server did not become ready" >&2
+  tail -n 80 "$SERVER_LOG" >&2 || true
+  exit 1
+fi
+
+(
+  cd "$REPO"
+  CHROMIUM_BIN="${CHROMIUM_BIN:-chromium}" \
+    node tests/browser/capture_smoke.cjs \
+      "$BASE_URL" app/web/static/icon-192.png
+)
+
+uv run --project "$REPO" --frozen python - "$DB_PATH" <<'PY'
+import sqlite3
+import sys
+
+conn = sqlite3.connect(sys.argv[1])
+try:
+    counts = conn.execute(
+        """
+        SELECT
+          (SELECT COUNT(*) FROM capture_submissions),
+          (SELECT COUNT(*) FROM source_documents),
+          (SELECT COUNT(*) FROM jobs WHERE type='ingest_document')
+        """
+    ).fetchone()
+    if counts != (22, 22, 22):
+        raise SystemExit(
+            "capture retry duplicated a durable effect: "
+            f"submissions={counts[0]} documents={counts[1]} ingest_jobs={counts[2]}"
+        )
+    integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+    if integrity != "ok":
+        raise SystemExit(f"capture smoke database integrity failed: {integrity}")
+finally:
+    conn.close()
+PY
+
+echo "capture browser smoke ok: 21-file drain, offline reload, stable retry, no hidden loss"

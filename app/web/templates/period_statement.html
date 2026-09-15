@@ -1,0 +1,492 @@
+{% extends "base.html" %}
+{% block title %}period statement · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact period-statement-hero">
+  <div>
+    <p class="eyebrow finn">statements of accounts</p>
+    <h1>{{ selected_month }}</h1>
+    <p class="subtle">
+      Income, money out, account movement, and the exact evidence behind every total.
+    </p>
+    <nav class="period-journey-links" aria-label="Month-end workflow">
+      <a class="link" href="/review/import">Import final statement</a>
+      <a class="link" href="/recon?month={{ selected_month }}">Reconcile</a>
+      <a class="link nancy-link" href="/close?month={{ selected_month }}">Close month</a>
+    </nav>
+  </div>
+  <div class="period-statement-controls">
+    <form class="inline-form" method="get" action="/statements">
+      <label for="statement-month" class="subtle">reporting month</label>
+      <select id="statement-month" name="month" onchange="this.form.submit()">
+        {% for month in months %}
+        <option value="{{ month }}" {% if month == selected_month %}selected{% endif %}>{{ month }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    {% if statement %}
+    <form class="inline-form" method="get" action="/statements">
+      <input type="hidden" name="month" value="{{ selected_month }}">
+      <label for="statement-account" class="subtle">statement scope</label>
+      <select id="statement-account" name="account_id" onchange="this.form.submit()">
+        <option value="">Household</option>
+        {% for account in statement.accounts %}
+        <option
+          value="{{ account.account_id }}"
+          {% if selected_account_id == account.account_id %}selected{% endif %}
+        >{{ account.name }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    {% endif %}
+  </div>
+</header>
+
+<main
+  class="grid single period-statement-workspace"
+  data-report-ready="{{ 'true' if statement else 'false' }}"
+  data-report-error-kind="{{ error_kind }}"
+  {% if statement %}
+  data-report-origin="{{ report_origin }}"
+  data-report-digest="{{ statement.report_digest }}"
+  data-close-state="{{ statement.close.state }}"
+  data-snapshot-id="{{ statement.close.snapshot_id or '' }}"
+  data-snapshot-current="{{ 'true' if statement.close.snapshot_is_current else 'false' }}"
+  {% endif %}
+>
+  {% if not statement %}
+  <section class="card span-2 nancy-card period-report-blocked" role="alert">
+    <p class="eyebrow nancy">report unavailable · fail closed</p>
+    {% if error_kind == "unsupported_currency" %}
+    <h2>Currency evidence cannot be combined truthfully</h2>
+    <p class="subtle">
+      The whole report is blocked because at least one contributing account,
+      statement, or ledger row is blank, malformed, or not {{ home_currency }}.
+      No totals or exports have been produced.
+    </p>
+    {% elif error_kind == "legacy_snapshot_unavailable" %}
+    <h2>This legacy close has no frozen canonical report</h2>
+    <p class="subtle">
+      Finn Nancy will not rebuild a historical close from today’s live ledger,
+      category, merchant, or account labels. No totals or exports have been produced.
+    </p>
+    {% elif error_kind == "snapshot_integrity_error" %}
+    <h2>The frozen report failed its digest check</h2>
+    <p class="subtle">
+      Snapshot bytes no longer match the canonical report digest. Finn Nancy
+      refuses to render or export altered historical totals.
+    </p>
+    {% else %}
+    <h2>The period statement could not be represented safely</h2>
+    <p class="subtle">No totals or exports have been produced.</p>
+    {% endif %}
+    <p class="banner warn period-error-detail">{{ report_error }}</p>
+    <div class="action-row">
+      <a class="link" href="/review?month={{ selected_month }}">Review source evidence</a>
+      <a class="link" href="/recon?month={{ selected_month }}">Review reconciliation</a>
+      <a class="link nancy-link" href="/close?month={{ selected_month }}">Inspect close state</a>
+    </div>
+  </section>
+  {% else %}
+  <section
+    class="card span-2 period-report-truth {{ 'finn-card' if report_origin == 'frozen_snapshot' else 'nancy-card' }}"
+    aria-labelledby="period-report-truth-title"
+  >
+    <div class="period-report-truth-layout">
+      <div>
+        <p class="eyebrow {{ 'finn' if report_origin == 'frozen_snapshot' else 'nancy' }}">
+          {% if report_origin == "frozen_snapshot" %}
+          frozen canonical report
+          {% else %}
+          live working report
+          {% endif %}
+        </p>
+        <h2 id="period-report-truth-title">
+          {% if report_origin == "frozen_snapshot" %}
+          Snapshot #{{ statement.close.snapshot_id }}
+          {% else %}
+          Not yet frozen
+          {% endif %}
+        </h2>
+        {% if report_origin == "frozen_snapshot" %}
+        <p class="subtle">
+          These values and their digest come from the close snapshot, not a
+          reconstruction from live tables.
+          {% if statement.close.snapshot_is_current %}
+          This is the current snapshot.
+          {% else %}
+          This snapshot is historical.
+          {% endif %}
+        </p>
+        {% else %}
+        <p class="subtle">
+          Values reflect current evidence and may change through reconciliation or
+          correction. Closing the month creates the immutable canonical report.
+        </p>
+        {% endif %}
+      </div>
+      <dl class="period-report-truth-metrics">
+        <div>
+          <dt>close state</dt>
+          <dd>{{ statement.close.state | replace("_", " ") }}</dd>
+        </div>
+        <div>
+          <dt>currency</dt>
+          <dd>{{ statement.home_currency }}</dd>
+        </div>
+        <div>
+          <dt>as of</dt>
+          <dd>{{ statement.as_of_date }}</dd>
+        </div>
+      </dl>
+    </div>
+    <div class="period-digest-row">
+      <span>report digest</span>
+      <code>{{ statement.report_digest }}</code>
+      {% if statement.close.snapshot_digest %}
+      <span>snapshot digest</span>
+      <code>{{ statement.close.snapshot_digest }}</code>
+      {% endif %}
+    </div>
+    {% if statement.close.exception_ids or statement.close.acknowledgement_ids %}
+    <p class="banner warn period-close-warning" role="status">
+      {{ statement.close.exception_ids | length }} unresolved close exception{{ '' if statement.close.exception_ids | length == 1 else 's' }}
+      · {{ statement.close.acknowledgement_ids | length }} acknowledgement{{ '' if statement.close.acknowledgement_ids | length == 1 else 's' }}.
+      Acknowledgement proves review; it does not resolve an exception or make a close clean.
+    </p>
+    <div class="period-reference-links" aria-label="Close evidence">
+      {% for exception_id in statement.close.exception_ids %}
+      <a class="link nancy-link" href="/close?month={{ selected_month }}#close-exception-{{ exception_id }}">
+        exception #{{ exception_id }}
+      </a>
+      {% endfor %}
+      {% for acknowledgement_id in statement.close.acknowledgement_ids %}
+      <a class="link" href="/close?month={{ selected_month }}#close-acknowledgement-{{ acknowledgement_id }}">
+        acknowledgement #{{ acknowledgement_id }}
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="card span-2 period-scope-card" aria-labelledby="period-scope-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">{{ "account statement" if selected_account else "household statement" }}</p>
+        <h2 id="period-scope-title">
+          {{ selected_account.name if selected_account else "All accounts" }}
+        </h2>
+      </div>
+      {% if not selected_account %}
+      <div class="action-row period-export-actions">
+        <a class="link" href="/statements/export?month={{ selected_month }}&amp;format=csv">Export CSV</a>
+        <a class="link" href="/statements/export?month={{ selected_month }}&amp;format=pdf">Export PDF</a>
+      </div>
+      {% endif %}
+    </div>
+    {% if selected_account %}
+    <p class="subtle">
+      {{ selected_account.institution }} · {{ selected_account.account_kind | replace("_", " ") }}
+      · {{ selected_account.currency }} · reconciliation {{ selected_account.reconciliation_state | replace("_", " ") }}.
+      Household-wide transfer neutrality and expense-resolution totals remain on the
+      <a class="link" href="/statements?month={{ selected_month }}">household statement</a>.
+    </p>
+    {% else %}
+    <p class="subtle">
+      Select any total to inspect its exact transaction, split, statement, source,
+      claim, relationship, assertion, exception, acknowledgement, and snapshot IDs.
+    </p>
+    {% endif %}
+  </section>
+
+  <section class="period-total-grid span-2" aria-label="Statement totals">
+    {% for metric in metrics %}
+    <a
+      class="period-total-link stat-card"
+      href="#evidence-{{ metric.key }}"
+      data-line-key="{{ metric.line_key }}"
+    >
+      <span class="eyebrow">{{ metric.label }}</span>
+      <strong class="stat-number {{ 'negative' if metric.amount.cents < 0 else '' }}">
+        {{ metric.amount.cents | money }}
+      </strong>
+      <span class="subtle">{{ metric.amount.currency }} · view exact evidence</span>
+    </a>
+    {% endfor %}
+  </section>
+
+  {% if expense_metrics %}
+  <section class="card span-2" aria-labelledby="expense-resolution-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow nancy">merchant and category confidence</p>
+        <h2 id="expense-resolution-title">Expense resolution</h2>
+      </div>
+      <span class="db-pill">{{ bucket_metrics | length }} breakdown bucket{{ '' if bucket_metrics | length == 1 else 's' }}</span>
+    </div>
+    <p class="subtle">
+      Confirmed, human-approved, and unresolved amounts remain separate. A likely
+      merchant match is evidence for review, not authority to classify an expense.
+    </p>
+    <div class="period-resolution-grid">
+      {% for metric in expense_metrics %}
+      <a
+        class="period-total-link period-resolution-total"
+        href="#evidence-{{ metric.key }}"
+        data-line-key="{{ metric.line_key }}"
+      >
+        <span>{{ metric.label }}</span>
+        <strong>{{ metric.amount.cents | money }}</strong>
+        <span class="subtle">{{ metric.amount.currency }} · inspect</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% if bucket_metrics %}
+    <div class="period-bucket-list">
+      {% for metric in bucket_metrics %}
+      <a
+        class="period-total-link period-bucket-row"
+        href="#evidence-{{ metric.key }}"
+        data-line-key="{{ metric.line_key }}"
+      >
+        <span>{{ metric.label }}</span>
+        <strong>{{ metric.amount.cents | money }} {{ metric.amount.currency }}</strong>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="subtle period-empty-state">No expense breakdown buckets for this period.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <section id="liquid-policy" class="card span-2" aria-labelledby="liquid-policy-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow finn">supported liquid position</p>
+        <h2 id="liquid-policy-title">Account-kind-v1 boundary</h2>
+      </div>
+      <span class="db-pill">{{ statement.accounts | length }} account{{ '' if statement.accounts | length == 1 else 's' }}</span>
+    </div>
+    <p class="subtle">
+      Cash, chequing, and savings are supported liquid assets; credit is a
+      liability; investment value is excluded as unvalued. The canonical report
+      records every inclusion or exclusion instead of implying a complete net worth.
+    </p>
+    <div class="period-account-list">
+      {% for account in statement.accounts %}
+      <a
+        class="period-account-row {{ 'is-included' if account.liquid_position_included else 'is-excluded' }}"
+        href="/statements?month={{ selected_month }}&amp;account_id={{ account.account_id }}"
+      >
+        <span>
+          <strong>{{ account.name }}</strong>
+          <span class="subtle block">{{ account.institution }} · {{ account.account_kind | replace("_", " ") }}</span>
+        </span>
+        <span>
+          {% if account.liquid_position_included %}
+          included by canonical policy
+          {% else %}
+          {{ account.liquid_position_exclusion_reason or "excluded by canonical policy" }}
+          {% endif %}
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+    {% if statement.liquid_position_exclusions %}
+    <div class="period-exclusion-list">
+      {% for exclusion in statement.liquid_position_exclusions %}
+      <p>
+        <strong>{{ exclusion.account_name }}</strong>
+        <span class="subtle"> · {{ exclusion.reason }} · account #{{ exclusion.account_id }}</span>
+      </p>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="card span-2" aria-labelledby="exact-evidence-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">drill-down</p>
+        <h2 id="exact-evidence-title">Exact evidence behind every line</h2>
+      </div>
+      <span class="db-pill">{{ evidence_metrics | length }} report line{{ '' if evidence_metrics | length == 1 else 's' }}</span>
+    </div>
+    <div class="period-evidence-list">
+      {% for metric in evidence_metrics %}
+      {% set evidence = metric.amount.evidence %}
+      <article
+        id="evidence-{{ metric.key }}"
+        class="period-evidence-panel"
+        data-line-key="{{ metric.line_key }}"
+      >
+        <div class="period-evidence-head">
+          <div>
+            <p class="eyebrow">{{ metric.line_key }}</p>
+            <h2>{{ metric.label }}</h2>
+          </div>
+          <strong>{{ metric.amount.cents | money }} {{ metric.amount.currency }}</strong>
+        </div>
+        {% if metric.rows %}
+        <p class="period-reference-links">
+          {% for row in metric.rows %}
+          <a class="link" href="#report-row-{{ row.row_id }}">{{ row.posted_on }} · {{ row.description }}</a>
+          {% endfor %}
+        </p>
+        {% endif %}
+        <dl class="period-evidence-ids">
+          {% if evidence.transaction_ids %}
+          <div><dt>transactions</dt><dd>
+            {% for value in evidence.transaction_ids %}
+            <a href="/txn/{{ value }}/edit">#{{ value }}</a>
+            {% endfor %}
+          </dd></div>
+          {% endif %}
+          {% if evidence.transaction_split_ids %}
+          <div><dt>splits</dt><dd>{{ evidence.transaction_split_ids | join(", ") }}</dd></div>
+          {% endif %}
+          {% if evidence.statement_line_ids %}
+          <div><dt>statement lines</dt><dd>{{ evidence.statement_line_ids | join(", ") }}</dd></div>
+          {% endif %}
+          {% if evidence.source_document_ids %}
+          <div><dt>source documents</dt><dd>
+            {% for value in evidence.source_document_ids %}
+            <a href="/review/doc/{{ value }}/file" target="_blank" rel="noopener">#{{ value }}</a>
+            {% endfor %}
+          </dd></div>
+          {% endif %}
+          {% if evidence.canonical_merchant_claim_ids %}
+          <div><dt>merchant claims</dt><dd>{{ evidence.canonical_merchant_claim_ids | join(", ") }}</dd></div>
+          {% endif %}
+          {% if evidence.category_claim_ids %}
+          <div><dt>category claims</dt><dd>{{ evidence.category_claim_ids | join(", ") }}</dd></div>
+          {% endif %}
+          {% if evidence.resolution_event_ids %}
+          <div><dt>resolution events</dt><dd>{{ evidence.resolution_event_ids | join(", ") }}</dd></div>
+          {% endif %}
+          {% if evidence.category_ids %}
+          <div><dt>categories</dt><dd>
+            {% for value in evidence.category_ids %}
+            <a href="/categories#category-{{ value }}">#{{ value }}</a>
+            {% endfor %}
+          </dd></div>
+          {% endif %}
+          {% if evidence.relationship_ids %}
+          <div><dt>relationships</dt><dd>{{ evidence.relationship_ids | join(", ") }}</dd></div>
+          {% endif %}
+          {% if evidence.assertion_ids %}
+          <div><dt>balance assertions</dt><dd>{{ evidence.assertion_ids | join(", ") }}</dd></div>
+          {% endif %}
+          {% if evidence.exception_ids %}
+          <div><dt>close exceptions</dt><dd>
+            {% for value in evidence.exception_ids %}
+            <a href="/close?month={{ selected_month }}#close-exception-{{ value }}">#{{ value }}</a>
+            {% endfor %}
+          </dd></div>
+          {% endif %}
+          {% if evidence.acknowledgement_ids %}
+          <div><dt>acknowledgements</dt><dd>
+            {% for value in evidence.acknowledgement_ids %}
+            <a href="/close?month={{ selected_month }}#close-acknowledgement-{{ value }}">#{{ value }}</a>
+            {% endfor %}
+          </dd></div>
+          {% endif %}
+          {% if evidence.close_snapshot_ids %}
+          <div><dt>close snapshots</dt><dd>
+            {% for value in evidence.close_snapshot_ids %}
+            <a href="/close?month={{ selected_month }}#close-snapshot-{{ value }}">#{{ value }}</a>
+            {% endfor %}
+          </dd></div>
+          {% endif %}
+        </dl>
+        {% if not metric.rows
+              and not evidence.transaction_ids
+              and not evidence.transaction_split_ids
+              and not evidence.statement_line_ids
+              and not evidence.source_document_ids
+              and not evidence.canonical_merchant_claim_ids
+              and not evidence.category_claim_ids
+              and not evidence.resolution_event_ids
+              and not evidence.category_ids
+              and not evidence.relationship_ids
+              and not evidence.assertion_ids
+              and not evidence.exception_ids
+              and not evidence.acknowledgement_ids
+              and not evidence.close_snapshot_ids %}
+        <p class="subtle">No contributing rows or evidence IDs; this is a zero control line.</p>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card span-2" aria-labelledby="report-rows-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">canonical contribution rows</p>
+        <h2 id="report-rows-title">{{ scope_rows | length }} evidence row{{ '' if scope_rows | length == 1 else 's' }}</h2>
+      </div>
+      <span class="db-pill">untruncated</span>
+    </div>
+    {% if scope_rows %}
+    <div class="period-row-list">
+      {% for row in scope_rows %}
+      <article
+        id="report-row-{{ row.row_id }}"
+        class="period-report-row is-{{ row.resolution_disposition | replace('_', '-') }}"
+      >
+        <div class="period-report-row-main">
+          <div>
+            <p class="eyebrow">{{ row.posted_on }} · {{ row.flow_kind | replace("_", " ") }}</p>
+            <h2>{{ row.description }}</h2>
+            <p class="subtle">
+              raw ledger description ·
+              merchant {{ row.canonical_merchant or "unresolved" }} ·
+              category {{ row.category_name }} ·
+              {{ row.resolution_disposition | replace("_", " ") }}
+            </p>
+          </div>
+          <strong class="{{ 'negative' if row.amount_cents < 0 else 'positive' }}">
+            {{ row.amount_cents | money }} {{ statement.home_currency }}
+          </strong>
+        </div>
+        <div class="period-report-row-links">
+          <a class="link" href="/txn/{{ row.transaction_id }}/edit">transaction #{{ row.transaction_id }}</a>
+          <a class="link" href="/categories#category-{{ row.category_id }}">category #{{ row.category_id }}</a>
+          {% for document_id in row.source_document_ids %}
+          <a class="link" href="/review/doc/{{ document_id }}/file" target="_blank" rel="noopener">
+            source #{{ document_id }}
+          </a>
+          {% endfor %}
+          {% if row.statement_line_ids %}
+          <span class="db-pill">statement line{{ 's' if row.statement_line_ids | length != 1 else '' }} {{ row.statement_line_ids | join(", ") }}</span>
+          {% endif %}
+          <span class="db-pill">split #{{ row.transaction_split_id }}</span>
+          <span class="db-pill">{{ row.reconciliation_state | replace("_", " ") }}</span>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="subtle period-empty-state">No canonical contribution rows in this scope.</p>
+    {% endif %}
+  </section>
+
+  <section class="card span-2 period-next-actions" aria-labelledby="period-next-actions-title">
+    <div>
+      <p class="eyebrow nancy">continue month-end</p>
+      <h2 id="period-next-actions-title">No dead ends</h2>
+      <p class="subtle">
+        Import the final statement, clear vague descriptors and transfers, then
+        close only when the remaining exceptions are explainable.
+      </p>
+    </div>
+    <div class="action-row">
+      <a class="link" href="/review/import">Import statement</a>
+      <a class="link" href="/recon?month={{ selected_month }}">Continue reconciliation</a>
+      <a class="primary" href="/close?month={{ selected_month }}">Review close</a>
+    </div>
+  </section>
+  {% endif %}
+</main>
+{% endblock %}

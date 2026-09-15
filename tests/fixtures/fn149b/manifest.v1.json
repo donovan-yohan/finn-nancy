@@ -1,0 +1,25 @@
+{
+  "files": [
+    {
+      "kind": "public",
+      "path": "public.v1.json",
+      "sha256": "1be4bd10576dc6a11b7e34a59562743b2eb967a5e23c41ebf6b9ee0e2fa10d00"
+    },
+    {
+      "kind": "gold",
+      "path": "gold.v1.json",
+      "sha256": "045d224252b5ec4be0dbb8f8031f4692307235fb908d0466b8b447e7b082cd52"
+    },
+    {
+      "kind": "knowledge",
+      "path": "knowledge.v1.json",
+      "sha256": "4296e14bc1715f680112f21c9f2ad51af9d21228246a8288688dd268812baa1c"
+    },
+    {
+      "kind": "policy",
+      "path": "policy.v1.json",
+      "sha256": "939a68951ba17123d249add84e69105ac69d8ff48740dd1f51ba33160a157952"
+    }
+  ],
+  "manifest_version": "fn149b-descriptor-manifest.v1"
+}

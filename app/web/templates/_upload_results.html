@@ -1,0 +1,20 @@
+{% for r in results %}
+  {% if r.status == 'duplicate' %}
+  <div class="doc-status">already imported (doc #{{ r.source_document_id }})</div>
+  {% elif r.status == 'staged' %}
+  <div class="doc-status"
+       hx-get="/documents/{{ r.source_document_id }}/status"
+       hx-trigger="load delay:1s, every 2s"
+       hx-swap="outerHTML">
+    queued #{{ r.source_document_id }} — processing…
+  </div>
+  {% else %}
+  <div class="doc-status">{{ r.status }}</div>
+  {% endif %}
+{% endfor %}
+{% if run_id %}
+<p class="upload-run-link">
+  <a class="link" href="/imports/runs/{{ run_id }}">follow this batch &rarr;</a>
+  <span class="subtle">You can close this tab; processing continues.</span>
+</p>
+{% endif %}

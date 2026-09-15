@@ -1,0 +1,81 @@
+{% if not append %}
+<div class="tx-list" id="tx-list">
+  <div class="tx-head" role="row" aria-hidden="true">
+    <span>date</span>
+    <span>account</span>
+    <span>description</span>
+    <span>categories</span>
+    <span class="money">amount</span>
+    <span></span>
+  </div>
+{% endif %}
+  {% for t in transactions %}
+  <div class="tx-row" data-why-url="/chat?why={{ t.id }}" title="Press and hold to ask why this was categorized">
+    <span class="tx-cell tx-date" data-label="date">{{ t.posted_on }}</span>
+    <span class="tx-cell tx-account" data-label="account">{{ t.account_name }}</span>
+    <span class="tx-cell tx-desc" data-label="description">
+      <strong>{{ t.description }}</strong>
+      <span class="subtle block">{{ t.counterparty }}{% if t.counterparty %} · {% endif %}#{{ t.id }} · {{ t.flow_kind | replace('_', ' ') }}{% if t.semantic_status != 'complete' %} · needs review: {{ t.semantic_reason }}{% endif %}</span>
+    </span>
+    <span class="tx-cell tx-cats" data-label="categories">{{ t.categories }}</span>
+    <span class="tx-cell tx-amount money {{ 'negative' if t.amount_cents < 0 else 'positive' }}" data-label="amount">{{ t.amount_cents | money }}</span>
+    <span class="tx-cell tx-actions">
+      <span class="action-row">
+        <a class="link" href="/txn/{{ t.id }}/edit">edit</a>
+        <a class="link" href="/chat?why={{ t.id }}">why?</a>
+      </span>
+    </span>
+  </div>
+  {% endfor %}
+  {% if not transactions and not append %}
+  <p class="tx-empty subtle">no transactions match these filters.</p>
+  {% endif %}
+  {% if next_cursor %}
+  <button class="ghost load-more"
+          hx-get="/transactions?cursor={{ next_cursor | urlencode }}{% if filter_qs %}&{{ filter_qs }}{% endif %}"
+          hx-target="this" hx-swap="outerHTML">load more</button>
+  {% endif %}
+{% if not append %}
+</div>
+<script>
+  (function () {
+    if (window.fnWhyHoldInstalled) return;
+    window.fnWhyHoldInstalled = true;
+    var active = null;
+    var threshold = 8;
+
+    function clear() {
+      if (active && active.timer) window.clearTimeout(active.timer);
+      active = null;
+    }
+
+    document.addEventListener('pointerdown', function (event) {
+      if (event.button && event.button !== 0) return;
+      if (event.target.closest('a,button,input,textarea,select,label')) return;
+      var row = event.target.closest('[data-why-url]');
+      if (!row) return;
+      active = {
+        row: row,
+        x: event.clientX,
+        y: event.clientY,
+        timer: window.setTimeout(function () {
+          var url = row.getAttribute('data-why-url');
+          clear();
+          if (url) window.location.assign(url);
+        }, 500)
+      };
+    });
+
+    document.addEventListener('pointermove', function (event) {
+      if (!active) return;
+      if (Math.abs(event.clientX - active.x) > threshold || Math.abs(event.clientY - active.y) > threshold) {
+        clear();
+      }
+    });
+    document.addEventListener('pointerup', clear);
+    document.addEventListener('pointercancel', clear);
+    document.addEventListener('pointerleave', clear, true);
+    document.addEventListener('scroll', clear, true);
+  })();
+</script>
+{% endif %}

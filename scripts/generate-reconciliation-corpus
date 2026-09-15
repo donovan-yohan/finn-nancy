@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+
+exec uv run --project "$REPO" --frozen python \
+  -m app.evals.fn149_corpus \
+  --output-dir "$REPO/tests/evals/data/fn149" \
+  "$@"

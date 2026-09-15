@@ -1,0 +1,826 @@
+{% extends "base.html" %}
+{% block title %}monthly close · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact close-hero">
+  <div>
+    <p class="eyebrow nancy">monthly close</p>
+    <h1>{{ state_copy.title }}</h1>
+    <p class="subtle close-hero-detail">{{ state_copy.detail }}</p>
+    <p><a class="link" href="/statements?month={{ selected_month }}">open evidence-backed statement</a></p>
+  </div>
+  <div class="close-hero-tools">
+    <span class="close-state-pill is-{{ close_state | replace('_', '-') }}">
+      {{ close_state | replace('_', ' ') }}
+    </span>
+    <form class="inline-form" method="get" action="/close">
+      <label for="close-month" class="subtle">closing month</label>
+      <select id="close-month" name="month" onchange="this.form.submit()">
+        {% for m in months %}
+        <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+</header>
+
+<main
+  class="grid single close-workspace"
+  data-close-state="{{ close_state }}"
+  data-snapshot-id="{{ snapshot_reference_id or '' }}"
+  data-snapshot-current="{{ 'true' if snapshot_current else 'false' }}"
+>
+  <section class="card span-2 close-truth-card {{ 'nancy-card' if exception_count else 'finn-card' }}">
+    <div class="close-truth-layout">
+      <div>
+        <p class="eyebrow {{ 'nancy' if exception_count else 'finn' }}">
+          {{ state_copy.eyebrow }}
+        </p>
+        {% if locked and current_snapshot %}
+        <h2>Snapshot #{{ current_snapshot.snapshot_id }} is current</h2>
+        <p class="subtle">
+          Frozen {{ current_snapshot.created_at }} by {{ current_snapshot.created_by }}.
+          Live ledger changes are locked until this period is reopened.
+        </p>
+        {% elif locked %}
+        <h2>Unverified legacy close</h2>
+        <p class="subtle">
+          No FN-147 snapshot proves this close clean. It remains an exception close
+          until it is reopened, reviewed, and closed again.
+        </p>
+        {% elif close_state == 'reopened' %}
+        <h2>The previous snapshot is historical</h2>
+        <p class="subtle">
+          Evidence can change again. Re-closing creates a new snapshot; it does not
+          overwrite the previous record.
+        </p>
+        {% else %}
+        <h2>Live evidence, not yet frozen</h2>
+        <p class="subtle">
+          {{ exception_count }} unresolved item{{ '' if exception_count == 1 else 's' }}
+          will determine whether this becomes a clean or exception close.
+        </p>
+        {% endif %}
+      </div>
+      <div class="close-truth-metrics" aria-label="Close status summary">
+        <div>
+          <span class="subtle">readiness</span>
+          <strong>{{ checklist.percent_complete }}%</strong>
+        </div>
+        <div>
+          <span class="subtle">unresolved</span>
+          <strong>{{ exception_count }}</strong>
+        </div>
+        <div>
+          <span class="subtle">acknowledged</span>
+          <strong>{{ acknowledgement_count }}</strong>
+        </div>
+      </div>
+    </div>
+    {% if close_state == 'closed_with_exceptions' %}
+    <p class="banner warn close-truth-warning" role="status">
+      Acknowledgement records who reviewed an exception and why. It does not
+      resolve the exception, change this snapshot, or make the close clean.
+    </p>
+    {% endif %}
+  </section>
+
+  {% if notice %}
+  <p class="banner warn span-2" role="status">{{ notice }}</p>
+  {% endif %}
+
+  <section id="close-action" class="card span-2 close-action-card" aria-labelledby="close-action-title">
+    {% if locked %}
+    <div class="card-head">
+      <div>
+        <p class="eyebrow nancy">locked period</p>
+        <h2 id="close-action-title">
+          {{ 'Reopen to resolve' if exception_count else 'Reopen to make a correction' }}
+        </h2>
+      </div>
+      <span class="db-pill">current snapshot stays immutable</span>
+    </div>
+    <p class="subtle">
+      Reopening unlocks accounting writes and makes snapshot
+      {% if current_snapshot %}#{{ current_snapshot.snapshot_id }}{% else %}the legacy close{% endif %}
+      historical. A future close creates a new cycle and snapshot.
+    </p>
+    <form
+      class="close-decision-form"
+      method="post"
+      action="/close/reopen"
+      data-required-submit
+    >
+      <input type="hidden" name="month" value="{{ selected_month }}">
+      <input
+        type="hidden"
+        name="operation_key"
+        value="close:web:reopen:{{ selected_month }}:{{ operation_nonce }}"
+      >
+      <label>
+        <span>Your name</span>
+        <input class="text-input" type="text" name="actor" autocomplete="name" required>
+      </label>
+      <label class="close-form-wide">
+        <span>Why are you reopening this month?</span>
+        <input class="text-input" type="text" name="reason" required>
+      </label>
+      <label class="close-form-wide">
+        <span>Evidence note <em class="subtle">(optional)</em></span>
+        <input class="text-input" type="text" name="evidence_note">
+      </label>
+      <label class="ack-row close-form-wide">
+        <input type="checkbox" name="confirm_reopen" value="1" required>
+        I understand the current snapshot becomes historical and edits become possible.
+      </label>
+      <p class="close-submit-requirements close-form-wide" data-form-requirements role="status" aria-live="polite">
+        Enter your name, a reason, and confirm the reopen to continue.
+      </p>
+      <button class="primary" type="submit" data-submit-control disabled aria-disabled="true">
+        {{ 'Reopen to resolve' if exception_count else 'Reopen month' }}
+      </button>
+    </form>
+    {% else %}
+    <div class="card-head">
+      <div>
+        <p class="eyebrow nancy">sign off · close decision</p>
+        <h2 id="close-action-title">{{ close_action_label }}</h2>
+      </div>
+      <span class="db-pill">{{ 'new cycle' if close_state == 'reopened' else 'first close' }}</span>
+    </div>
+    {% if exception_count %}
+    <p class="banner warn" role="status">
+      This is an exception close, not a clean close.
+      {% if unacknowledged_exception_count %}
+      Review and acknowledge {{ unacknowledged_exception_count }} active
+      exception{{ '' if unacknowledged_exception_count == 1 else 's' }} below
+      before signing off.
+      {% else %}
+      All {{ exception_count }} unresolved item{{ '' if exception_count == 1 else 's' }}
+      {{ 'has' if exception_count == 1 else 'have' }} durable review evidence and
+      will remain visible in the immutable snapshot.
+      {% endif %}
+    </p>
+    {% else %}
+    <p class="subtle">
+      No typed exceptions are active. The policy—not the button label—will derive
+      a clean close from the frozen evidence.
+    </p>
+    {% endif %}
+    {% if statement_setup_required %}
+    <div class="close-setup-gate">
+      <p class="banner warn" role="status">
+        Prepare the audited account-period matrix before reviewing exceptions.
+        This freezes stable exception identities so each acknowledgement applies
+        to the exact evidence you will close.
+      </p>
+      <form
+        method="post"
+        action="/close/prepare"
+        class="close-decision-form"
+        data-required-submit
+      >
+        <input type="hidden" name="month" value="{{ selected_month }}">
+        <label>
+          <span>Your name</span>
+          <input class="text-input" type="text" name="actor" autocomplete="name" required>
+        </label>
+        <label class="close-form-wide">
+          <span>Why are you preparing this month?</span>
+          <input
+            class="text-input"
+            type="text"
+            name="reason"
+            placeholder="What statement evidence are you preparing to review?"
+            required
+          >
+        </label>
+        <label class="ack-row close-form-wide">
+          <input type="checkbox" name="confirm_prepare" value="1" required>
+          I understand preparation creates an audited account-period matrix and
+          stabilizes exception identities for review.
+        </label>
+        <p class="close-submit-requirements close-form-wide" data-form-requirements role="status" aria-live="polite">
+          Enter your name, a reason, and confirm matrix preparation to continue.
+        </p>
+        <button class="ghost" type="submit" data-submit-control disabled aria-disabled="true">
+          Prepare audited matrix
+        </button>
+      </form>
+    </div>
+    {% endif %}
+    <form
+      class="close-decision-form"
+      method="post"
+      action="/close/signoff"
+      data-required-submit
+      data-policy-blocked="{{ 'true' if statement_setup_required or unacknowledged_exception_count else 'false' }}"
+      data-policy-blocked-reason="{% if statement_setup_required %}Close unavailable: prepare the audited statement matrix first.{% elif unacknowledged_exception_count %}Close unavailable: acknowledge {{ unacknowledged_exception_count }} active exception{{ '' if unacknowledged_exception_count == 1 else 's' }} below first.{% endif %}"
+    >
+      <input type="hidden" name="month" value="{{ selected_month }}">
+      <input
+        type="hidden"
+        name="operation_key"
+        value="close:web:signoff:{{ selected_month }}:{{ operation_nonce }}"
+      >
+      <label>
+        <span>Your name</span>
+        <input class="text-input" type="text" name="actor" autocomplete="name" required>
+      </label>
+      <label class="close-form-wide">
+        <span>Close reason</span>
+        <input
+          class="text-input"
+          type="text"
+          name="reason"
+          placeholder="What did you review before closing?"
+          required
+        >
+      </label>
+      <label class="ack-row close-form-wide">
+        <input type="checkbox" name="confirm_close" value="1" required>
+        I reviewed this evidence and understand the snapshot is immutable.
+      </label>
+      <p class="close-submit-requirements close-form-wide" data-form-requirements role="status" aria-live="polite">
+        {% if statement_setup_required %}
+        Close unavailable: prepare the audited statement matrix first.
+        {% elif unacknowledged_exception_count %}
+        Close unavailable: acknowledge {{ unacknowledged_exception_count }} active
+        exception{{ '' if unacknowledged_exception_count == 1 else 's' }} below first.
+        {% else %}
+        Enter your name, a close reason, and confirm the snapshot to continue.
+        {% endif %}
+      </p>
+      <button class="primary" type="submit" data-submit-control disabled aria-disabled="true">
+        {% if statement_setup_required %}
+        Prepare statement matrix first
+        {% elif unacknowledged_exception_count %}
+        Acknowledge {{ unacknowledged_exception_count }} exception{{ '' if unacknowledged_exception_count == 1 else 's' }} first
+        {% else %}
+        {{ 'Close cleanly' if exception_count == 0 else 'Close with exceptions' }}
+        {% endif %}
+      </button>
+    </form>
+    {% endif %}
+    <noscript>
+      <p class="banner warn">JavaScript is required to verify the close confirmation fields.</p>
+    </noscript>
+  </section>
+
+  <section class="card span-2" aria-labelledby="close-exceptions-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow nancy">close inbox · typed exceptions</p>
+        <h2 id="close-exceptions-title">
+          {{ exception_count }} unresolved item{{ '' if exception_count == 1 else 's' }}
+        </h2>
+      </div>
+      {% if exception_count %}
+      <span class="db-pill">{{ acknowledgement_count }} acknowledged</span>
+      {% else %}
+      <span class="db-pill">clear</span>
+      {% endif %}
+    </div>
+    {% if not exception_count %}
+    <p class="subtle">
+      No missing statements, unresolved lines, unclassified money-in, unconfirmed
+      categories, balance differences, evidence gaps, or manual adjustments remain.
+    </p>
+    {% else %}
+    <p class="subtle">
+      Fix items while the month is open. On a locked exception close, reopen before
+      changing accounting state. Every exception must have durable review evidence
+      before sign-off; acknowledgement alone leaves the warning active and cannot
+      turn an exception into a clean close.
+    </p>
+    {% if statement_setup_required %}
+    <p class="banner warn" role="status">
+      Prepare the audited statement matrix above before acknowledging these live
+      items. Evidence identities may change until preparation is complete.
+    </p>
+    {% endif %}
+    <div class="close-exception-list">
+      {% for item in exceptions %}
+      {% set exception_id = item.get('id') %}
+      <article
+        id="close-exception-{{ exception_id or loop.index }}"
+        class="close-exception exception-{{ item.exception_type | replace('_', '-') }}"
+        data-exception-class="{{ item.exception_type }}"
+        data-exception-id="{{ exception_id or 'pending' }}"
+      >
+        <div class="close-exception-head">
+          <div>
+            <p class="eyebrow nancy">{{ item.exception_type | replace('_', ' ') }}</p>
+            <h3>{{ item.reason }}</h3>
+            {% if item.get('display_title') %}
+            <p class="subtle close-exception-descriptor">{{ item.get('display_title') }}</p>
+            {% endif %}
+          </div>
+          {% if item.get('is_acknowledged') %}
+          <span class="close-exception-status is-acknowledged">acknowledged · unresolved</span>
+          {% else %}
+          <span class="close-exception-status">unresolved</span>
+          {% endif %}
+        </div>
+        <dl class="close-exception-meta">
+          <div>
+            <dt>subject</dt>
+            <dd>{{ item.subject_kind | replace('_', ' ') }}{% if item.subject_id %} · {{ item.subject_id }}{% endif %}</dd>
+          </div>
+          {% if item.amount_cents %}
+          <div>
+            <dt>amount</dt>
+            <dd>{{ item.amount_cents | money }}</dd>
+          </div>
+          {% endif %}
+          {% if exception_id %}
+          <div>
+            <dt>exception ID</dt>
+            <dd>#{{ exception_id }}</dd>
+          </div>
+          {% endif %}
+          <div>
+            <dt>evidence</dt>
+            <dd>{{ 'attached to record' if item.evidence else 'not supplied' }}</dd>
+          </div>
+        </dl>
+        <div class="action-row close-exception-actions">
+          {% if item.resolution_href %}
+          <a class="link" href="{{ item.resolution_href }}">
+            {{ 'View resolution path' if locked else 'Resolve before close' }}
+          </a>
+          {% endif %}
+          {% if locked %}
+          <span class="subtle">Reopen the month before changing this accounting state.</span>
+          {% endif %}
+        </div>
+
+        {% if not item.get('is_acknowledged')
+              and ((not locked and preclose_review_ready
+                    and item.get('exception_token'))
+                   or (locked and exception_id)) %}
+        <form
+          class="close-ack-form"
+          method="post"
+          action="{% if locked %}/close/exception/{{ exception_id }}/acknowledge{% else %}/close/preclose-exception/{{ item.get('exception_token') }}/acknowledge{% endif %}"
+          data-required-submit
+        >
+          <input type="hidden" name="month" value="{{ selected_month }}">
+          <input
+            type="hidden"
+            name="operation_key"
+            value="{% if locked %}close:web:ack:{{ exception_id }}{% else %}close:web:preclose-ack:{{ item.get('exception_token') }}{% endif %}:{{ selected_month }}:{{ operation_nonce }}"
+          >
+          <p class="close-ack-warning">
+            {% if locked %}
+            Acknowledgement records review only. This item will still be unresolved.
+            {% else %}
+            Durable acknowledgement is required before exception close. It records
+            review only; this item will still be unresolved.
+            {% endif %}
+          </p>
+          <label>
+            <span>Your name</span>
+            <input class="text-input" type="text" name="actor" autocomplete="name" required>
+          </label>
+          <label>
+            <span>Why can this remain open?</span>
+            <input class="text-input" type="text" name="reason" required>
+          </label>
+          <label>
+            <span>What evidence did you review?</span>
+            <input class="text-input" type="text" name="evidence_note" required>
+          </label>
+          <label class="ack-row close-form-wide">
+            <input
+              type="checkbox"
+              name="confirm_acknowledgement"
+              value="1"
+              required
+            >
+            I understand this records acknowledgement without resolving the exception.
+          </label>
+          <p class="close-submit-requirements close-form-wide" data-form-requirements role="status" aria-live="polite">
+            Complete actor, reason, evidence, and confirmation before acknowledging.
+          </p>
+          <button class="ghost" type="submit" data-submit-control disabled aria-disabled="true">
+            Acknowledge · keep unresolved
+          </button>
+        </form>
+        {% elif item.get('is_acknowledged') %}
+        <div
+          id="close-acknowledgement-{{ item.get('acknowledgement_id') }}"
+          class="close-ack-receipt"
+          role="status"
+        >
+          <strong>Acknowledged by {{ item.get('acknowledgement_actor') }}</strong>
+          <span>{{ item.get('acknowledgement_reason') }}</span>
+          <span class="nancy">
+            Still unresolved
+            {% if locked %}in snapshot #{{ current_snapshot_id }}{% else %}in live close evidence{% endif %}.
+          </span>
+        </div>
+        <details class="close-withdrawal-panel">
+          <summary>Withdraw this acknowledgement</summary>
+          <form
+            class="close-ack-form"
+            method="post"
+            action="{% if locked %}/close/exception/{{ exception_id }}/acknowledgement/{{ item.get('acknowledgement_id') }}/withdraw{% else %}/close/preclose-acknowledgement/{{ item.get('acknowledgement_id') }}/withdraw{% endif %}"
+            data-required-submit
+          >
+            <input type="hidden" name="month" value="{{ selected_month }}">
+            <input
+              type="hidden"
+              name="operation_key"
+              value="{% if locked %}close:web:ack-withdrawal{% else %}close:web:preclose-ack-withdrawal{% endif %}:{{ item.get('acknowledgement_id') }}:{{ selected_month }}:{{ operation_nonce }}"
+            >
+            <p class="close-ack-warning">
+              Withdrawal removes the review marker with a compensating audit
+              event. The exception and immutable snapshot stay unresolved.
+            </p>
+            <label>
+              <span>Your name</span>
+              <input class="text-input" type="text" name="actor" autocomplete="name" required>
+            </label>
+            <label>
+              <span>Why are you withdrawing it?</span>
+              <input class="text-input" type="text" name="reason" required>
+            </label>
+            <label>
+              <span>What evidence changed?</span>
+              <input class="text-input" type="text" name="evidence_note" required>
+            </label>
+            <label class="ack-row close-form-wide">
+              <input
+                type="checkbox"
+                name="confirm_withdrawal"
+                value="1"
+                required
+              >
+              I understand this appends a withdrawal and the exception remains unresolved.
+            </label>
+            <p class="close-submit-requirements close-form-wide" data-form-requirements role="status" aria-live="polite">
+              Complete actor, reason, evidence, and confirmation before withdrawing.
+            </p>
+            <button class="ghost" type="submit" data-submit-control disabled aria-disabled="true">
+              Withdraw acknowledgement
+            </button>
+          </form>
+        </details>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  {% if locked_assertions %}
+  <section class="card span-2 nancy-card" aria-labelledby="locked-assertions-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow nancy">live locked-period findings</p>
+        <h2 id="locked-assertions-title">
+          {{ locked_assertions | length }} balance difference{{ '' if locked_assertions | length == 1 else 's' }} need an audited reopen
+        </h2>
+      </div>
+      <span class="db-pill">snapshot remains immutable</span>
+    </div>
+    <p class="subtle">
+      These are live balance findings, not edits to the current snapshot.
+      Booking an adjustment first reopens the period through the audited override
+      path, then leaves the prior snapshot historical.
+    </p>
+    <div class="close-exception-list">
+      {% for item in locked_assertions %}
+      <article
+        class="close-exception exception-unexplained-balance-delta"
+        data-exception-class="unexplained_balance_delta"
+        data-assertion-account-id="{{ item.account_id }}"
+        data-assertion-asof-date="{{ item.posted_on }}"
+      >
+        <div class="close-exception-head">
+          <div>
+            <p class="eyebrow nancy">{{ item.source_label }}</p>
+            <h3>{{ item.title }}</h3>
+            <p class="subtle close-exception-descriptor">{{ item.detail }}</p>
+          </div>
+          <span class="close-exception-status">live difference</span>
+        </div>
+        <dl class="close-exception-meta">
+          <div>
+            <dt>assertion date</dt>
+            <dd>{{ item.posted_on }}</dd>
+          </div>
+          <div>
+            <dt>ledger delta</dt>
+            <dd>{{ item.amount_cents | money }}</dd>
+          </div>
+          <div>
+            <dt>adjustment to book</dt>
+            <dd>{{ (0 - item.amount_cents) | money }}</dd>
+          </div>
+        </dl>
+        <a class="link" href="{{ item.href }}">Review balance evidence</a>
+        <form
+          class="close-ack-form close-adjust-form"
+          method="post"
+          action="/close/assertion/adjust"
+          data-required-submit
+        >
+          <input type="hidden" name="month" value="{{ selected_month }}">
+          <input type="hidden" name="account_id" value="{{ item.account_id }}">
+          <input type="hidden" name="asof_date" value="{{ item.posted_on }}">
+          <input
+            type="hidden"
+            name="operation_key"
+            value="close:web:assertion-adjust:{{ item.account_id }}:{{ item.posted_on }}:{{ operation_nonce }}"
+          >
+          <p class="close-ack-warning">
+            This audited override reopens the month before booking the
+            reconciliation adjustment. Snapshot #{{ current_snapshot_id }}
+            remains immutable and becomes historical.
+          </p>
+          <label>
+            <span>Your name</span>
+            <input class="text-input" type="text" name="actor" autocomplete="name" required>
+          </label>
+          <label class="close-form-wide">
+            <span>Why is this override necessary?</span>
+            <input class="text-input" type="text" name="reason" required>
+          </label>
+          <label class="ack-row close-form-wide">
+            <input
+              type="checkbox"
+              name="confirm_adjustment"
+              value="1"
+              required
+            >
+            I understand this reopens the period and books an adjustment for {{ (0 - item.amount_cents) | money }} against the asserted balance.
+          </label>
+          <p class="close-submit-requirements close-form-wide" data-form-requirements role="status" aria-live="polite">
+            Enter your name, an override reason, and confirm the adjustment.
+          </p>
+          <button class="ghost" type="submit" data-submit-control disabled aria-disabled="true">
+            Reopen &amp; book adjustment
+          </button>
+        </form>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="card span-2 nancy-card" aria-labelledby="close-checklist-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow nancy">{{ checklist.complete_count }} of {{ checklist.total }} complete</p>
+        <h2 id="close-checklist-title">{{ checklist.percent_complete }}% ready · checklist</h2>
+      </div>
+      <span class="db-pill">{{ 'frozen in current snapshot' if locked else 'live' }}</span>
+    </div>
+    <div class="bar track" aria-hidden="true">
+      <i class="income" style="width: {{ checklist.percent_complete }}%"></i>
+    </div>
+    <div class="checklist">
+      {% for row in checklist.rows %}
+      <a class="checklist-row {{ 'is-complete' if row.complete else 'is-warn' }}" href="{{ row.href }}">
+        <span class="checklist-mark">{{ '✓' if row.complete else '!' }}</span>
+        <span class="checklist-body">
+          <b>{{ row.label }}</b>
+          <span class="subtle block">{{ row.detail }}</span>
+        </span>
+        <span class="checklist-count">{{ row.count if not row.complete else '' }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card span-2" aria-labelledby="statement-matrix-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow nancy">statement truth</p>
+        <h2 id="statement-matrix-title">Account-period matrix</h2>
+      </div>
+      {% if statement_blocker_count %}
+      <span class="db-pill">{{ statement_blocker_count }} unresolved</span>
+      {% else %}
+      <span class="db-pill">complete</span>
+      {% endif %}
+    </div>
+    <p class="subtle">
+      Every account is represented before its statement arrives. Missing or
+      unreconciled required statements become typed close exceptions; they never
+      disappear behind a percentage.
+    </p>
+    {% if statement_matrix | selectattr('materialized', 'equalto', false) | list %}
+    <div class="close-prepare-form">
+      <a class="link" href="#close-action">Prepare audited matrix above</a>
+      {% if locked %}
+      <span class="subtle">Reopen before changing statement expectations.</span>
+      {% endif %}
+    </div>
+    {% endif %}
+    <div class="table-wrap close-statement-wrap">
+      <table class="close-statement-table">
+        <thead>
+          <tr>
+            <th>account</th>
+            <th>requirement</th>
+            <th>lifecycle</th>
+            <th>evidence</th>
+            <th>action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in statement_matrix %}
+          <tr id="statement-expectation-{{ row.account_id }}">
+            <td data-label="Account">
+              <strong>{{ row.account_name }}</strong>
+              <span class="subtle block">{{ row.institution or row.account_kind }}</span>
+            </td>
+            <td data-label="Requirement">{{ row.requirement_state | replace('_', ' ') }}</td>
+            <td data-label="Lifecycle">{{ (row.lifecycle_state or '—') | replace('_', ' ') }}</td>
+            <td data-label="Evidence">
+              {{ row.document_count }} document{{ '' if row.document_count == 1 else 's' }}
+              · {{ row.line_count }} line{{ '' if row.line_count == 1 else 's' }}
+              {% if row.unresolved_line_count %}
+              <span class="subtle block">{{ row.unresolved_line_count }} unresolved</span>
+              {% endif %}
+            </td>
+            <td data-label="Action">
+              {% if row.requirement_state == 'unconfigured' %}
+              <a class="link" href="/manage">Configure policy</a>
+              {% elif row.materialized and row.requirement_state == 'required'
+                        and row.lifecycle_state == 'expected'
+                        and row.document_count == 0 and not locked %}
+              <form method="post" action="/close/statement/{{ row.id }}/waive" class="close-row-form">
+                <input type="hidden" name="month" value="{{ selected_month }}">
+                <input class="text-input" name="actor" placeholder="your name" required
+                       aria-label="Waiver actor for {{ row.account_name }}">
+                <input class="text-input" name="reason" placeholder="why no statement will be issued" required
+                       aria-label="Waiver reason for {{ row.account_name }}">
+                <button class="ghost" type="submit">Waive</button>
+              </form>
+              {% elif row.materialized and row.requirement_state == 'waived' and not locked %}
+              <form method="post" action="/close/statement/{{ row.id }}/restore" class="close-row-form">
+                <input type="hidden" name="month" value="{{ selected_month }}">
+                <input class="text-input" name="actor" placeholder="your name" required
+                       aria-label="Waiver restore actor for {{ row.account_name }}">
+                <input class="text-input" name="reason" placeholder="why the statement is required again" required
+                       aria-label="Waiver restore reason for {{ row.account_name }}">
+                <button class="ghost" type="submit">Restore</button>
+              </form>
+              {% elif row.requirement_state == 'required' and row.lifecycle_state != 'reconciled' %}
+              <a class="link" href="/recon?month={{ selected_month }}">Reconcile</a>
+              {% else %}
+              <span class="subtle">No action needed</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {% if locked and current_snapshot %}
+  {% set report = summary.get('summary', summary) %}
+  <section
+    class="card span-2"
+    aria-labelledby="close-report-title"
+    data-snapshot-id="{{ current_snapshot.snapshot_id }}"
+    data-snapshot-current="true"
+    id="close-current-report-{{ current_snapshot.snapshot_id }}"
+  >
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">current immutable report · here's your month</p>
+        <h2 id="close-report-title">Snapshot #{{ current_snapshot.snapshot_id }}</h2>
+      </div>
+      <span class="close-state-pill is-{{ current_snapshot.close_state | replace('_', '-') }}">
+        {{ current_snapshot.close_state | replace('_', ' ') }}
+      </span>
+    </div>
+    <p class="subtle">
+      Frozen {{ current_snapshot.created_at }} by {{ current_snapshot.created_by }}:
+      {{ current_snapshot.reason }}
+    </p>
+    <div class="stat-strip close-report-stats">
+      <article class="stat-card nancy-card">
+        <p class="eyebrow nancy">coverage</p>
+        <p class="stat-number">{{ report.get('coverage_pct', checklist.coverage_pct) }}%</p>
+      </article>
+      <article class="stat-card">
+        <p class="eyebrow">money out</p>
+        <p class="stat-number negative">
+          {% if report.get('money_out_cents') is not none %}{{ report.get('money_out_cents') | money }}{% else %}—{% endif %}
+        </p>
+      </article>
+      <article class="stat-card">
+        <p class="eyebrow">confirmed category total</p>
+        <p class="stat-number">
+          {% if report.get('resolved_expense_cents') is not none %}{{ report.get('resolved_expense_cents') | money }}{% else %}—{% endif %}
+        </p>
+      </article>
+      <article class="stat-card">
+        <p class="eyebrow">not yet confirmed</p>
+        <p class="stat-number">
+          {% if report.get('excluded_expense_cents') is not none %}{{ report.get('excluded_expense_cents') | money }}{% else %}—{% endif %}
+        </p>
+      </article>
+      <article class="stat-card">
+        <p class="eyebrow">net delta</p>
+        <p class="stat-number {{ 'negative' if report.get('net_delta_cents', 0) < 0 else '' }}">
+          {{ report.get('net_delta_cents', 0) | money }}
+        </p>
+      </article>
+      <article class="stat-card">
+        <p class="eyebrow">typed exceptions</p>
+        <p class="stat-number">{{ current_snapshot.exception_count }}</p>
+      </article>
+      <article class="stat-card">
+        <p class="eyebrow">transactions reviewed</p>
+        <p class="stat-number">{{ report.get('transactions_reviewed', 0) }}</p>
+      </article>
+      <article class="stat-card">
+        <p class="eyebrow">Goals funded</p>
+        <p class="stat-number">{{ report.get('goals_funded_count', 0) }}</p>
+      </article>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="card span-2" aria-labelledby="snapshot-history-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">immutable history</p>
+        <h2 id="snapshot-history-title">Close snapshots</h2>
+      </div>
+      <span class="db-pill">{{ snapshot_history | length }} snapshot{{ '' if snapshot_history | length == 1 else 's' }}</span>
+    </div>
+    {% if snapshot_history %}
+    <div class="close-history-list">
+      {% for row in snapshot_history %}
+      <article
+        id="close-snapshot-{{ row.snapshot_id }}"
+        class="close-history-item {{ 'is-current' if row.is_current else 'is-historical' }}"
+        data-snapshot-id="{{ row.snapshot_id }}"
+        data-snapshot-current="{{ 'true' if row.is_current else 'false' }}"
+      >
+        <div>
+          <p class="eyebrow {{ 'finn' if row.is_current else '' }}">
+            {{ 'current' if row.is_current else 'historical' }} snapshot
+          </p>
+          <h3>#{{ row.snapshot_id }} · cycle {{ row.cycle_number }}</h3>
+          <p class="subtle">{{ row.created_at }} · {{ row.created_by }}</p>
+        </div>
+        <div>
+          <span class="close-state-pill is-{{ row.close_state | replace('_', '-') }}">
+            {{ row.close_state | replace('_', ' ') }}
+          </span>
+          <p class="subtle">{{ row.exception_count }} exception{{ '' if row.exception_count == 1 else 's' }}</p>
+        </div>
+        <div class="close-history-reason">
+          <strong>Reason</strong>
+          <span class="subtle">{{ row.reason }}</span>
+        </div>
+        <div class="close-history-digest">
+          <strong>Evidence digest</strong>
+          <code>{{ row.snapshot_digest[:12] }}…</code>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="subtle">
+      No immutable FN-147 snapshot exists yet. Closing this month creates snapshot #1.
+    </p>
+    {% endif %}
+
+    {% if audit %}
+    <details class="close-legacy-audit">
+      <summary>Legacy compatibility audit</summary>
+      <div class="close-history-list">
+        {% for row in audit %}
+        <article class="close-history-item is-historical">
+          <div>
+            <p class="eyebrow">legacy event</p>
+            <h3>{{ row.entity }}{% if row.entity_id is not none %} #{{ row.entity_id }}{% endif %}</h3>
+            <p class="subtle">{{ row.created_at }}</p>
+          </div>
+          <div class="close-history-reason">
+            <strong>{{ row.field }}</strong>
+            <span class="subtle">{{ row.old_value }} → {{ row.new_value }}</span>
+          </div>
+          <div class="close-history-reason">
+            <strong>Reason</strong>
+            <span class="subtle">{{ row.reason }}</span>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+  </section>
+</main>
+<script defer src="/static/close.js"></script>
+{% endblock %}

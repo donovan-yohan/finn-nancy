@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+OUT_DIR="$REPO/dist"
+STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/finn-nancy-build.XXXXXX")"
+
+cleanup() {
+  rm -rf "$STAGE_DIR"
+}
+trap cleanup EXIT
+
+if [[ -L "$OUT_DIR" ]]; then
+  echo "refusing symlinked build output: $OUT_DIR" >&2
+  exit 2
+fi
+if [[ -e "$OUT_DIR" && ! -d "$OUT_DIR" ]]; then
+  echo "build output exists but is not a directory: $OUT_DIR" >&2
+  exit 2
+fi
+mkdir -p "$OUT_DIR"
+
+resolved_out="$(
+  python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$OUT_DIR"
+)"
+if [[ "$resolved_out" != "$REPO/dist" ]]; then
+  echo "refusing build output outside the fixed repository dist directory: $resolved_out" >&2
+  exit 2
+fi
+
+cd "$REPO"
+uv build --out-dir "$STAGE_DIR"
+
+mapfile -t wheels < <(find "$STAGE_DIR" -maxdepth 1 -type f -name '*.whl' -print)
+mapfile -t sdists < <(find "$STAGE_DIR" -maxdepth 1 -type f -name '*.tar.gz' -print)
+if [[ "${#wheels[@]}" -ne 1 || "${#sdists[@]}" -ne 1 ]]; then
+  echo "expected one wheel and one source distribution in isolated build staging" >&2
+  exit 1
+fi
+
+wheel_out="$OUT_DIR/${wheels[0]##*/}"
+sdist_out="$OUT_DIR/${sdists[0]##*/}"
+for artifact in "$wheel_out" "$sdist_out"; do
+  if [[ -L "$artifact" ]]; then
+    echo "refusing symlinked build artifact destination: $artifact" >&2
+    exit 2
+  fi
+done
+install -m 0644 "${wheels[0]}" "$wheel_out"
+install -m 0644 "${sdists[0]}" "$sdist_out"
+
+echo "built $wheel_out"
+echo "built $sdist_out"

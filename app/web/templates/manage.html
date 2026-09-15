@@ -1,0 +1,416 @@
+{% extends "base.html" %}
+{% block title %}manage · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div>
+    <p class="eyebrow">setup</p>
+    <h1>Manage</h1>
+    <p class="subtle">accounts, categories, opening balances.</p>
+  </div>
+</header>
+
+<main class="grid single">
+  <section class="card span-2" id="capture-privacy" aria-labelledby="capture-privacy-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">privacy and reliability</p>
+        <h2 id="capture-privacy-title">Capture transports</h2>
+      </div>
+      <span class="db-pill">
+        {{ "strict-local on" if strict_local_mode else "third-party opt-in allowed" }}
+      </span>
+    </div>
+    <p class="subtle">
+      Local-only routes stay between your device, host, and tailnet service.
+      Third-party routes remain blocked until their current disclosure is
+      explicitly accepted. Strict-local mode overrides consent.
+    </p>
+
+    <div class="capture-transport-list" role="list" aria-label="Capture transport classifications">
+      {% for transport in capture_transports %}
+      <article class="capture-transport-row" role="listitem">
+        <div>
+          <strong>{{ transport.label }}</strong>
+          <span class="capture-transport-class {{ transport.classification }}">
+            {% if transport.classification == "local_only" %}
+              Local-only
+            {% elif transport.classification == "direct_network" %}
+              Direct network
+            {% else %}
+              Third-party
+            {% endif %}
+          </span>
+          <p class="subtle">{{ transport.disclosure }}</p>
+          {% if transport.classification == "third_party" %}
+          <p class="subtle" aria-live="polite">
+            {% if strict_local_mode %}
+              Blocked by strict-local mode.
+            {% elif not transport.consented %}
+              Policy blocked until the current disclosure is accepted.
+            {% elif not transport.configured %}
+              Allowed by consent, but Telegram credentials are incomplete.
+            {% elif transport.running %}
+              Allowed, configured, and running.
+            {% else %}
+              Allowed and configured; the poller is starting or paused.
+            {% endif %}
+          </p>
+          {% endif %}
+        </div>
+        {% if transport.channel == "telegram" %}
+          {% if transport.consented %}
+          <form method="post" action="/manage/capture-transports/telegram">
+            <input type="hidden" name="decision" value="revoked">
+            <button class="ghost" type="submit">Revoke Telegram consent</button>
+          </form>
+          {% else %}
+          <form method="post" action="/manage/capture-transports/telegram">
+            <input type="hidden" name="decision" value="consented">
+            <label class="subtle">
+              <input type="checkbox" name="acknowledge" value="1" required>
+              I understand Telegram receives the original and finn-nancy status replies.
+            </label>
+            <button class="ghost" type="submit">Consent to Telegram transport</button>
+          </form>
+          {% endif %}
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+
+    <div class="metric-grid" aria-label="Content-free capture reliability">
+      <div><span class="subtle">accepted</span><strong>{{ capture_metrics.accepted }}</strong></div>
+      <div><span class="subtle">durable</span><strong>{{ capture_metrics.durable }}</strong></div>
+      <div><span class="subtle">retries</span><strong>{{ capture_metrics.retry_count }}</strong></div>
+      <div><span class="subtle">deduplicated</span><strong>{{ capture_metrics.dedup_count }}</strong></div>
+      <div><span class="subtle">terminal failures</span><strong>{{ capture_metrics.terminal_failures }}</strong></div>
+      <div>
+        <span class="subtle">phone durable-ack p90</span>
+        <strong>
+          {{ capture_metrics.online_durable_ack.p90_ms ~ " ms" if capture_metrics.online_durable_ack.p90_ms is not none else "not measured" }}
+        </strong>
+      </div>
+    </div>
+    <p class="subtle">
+      Reliability telemetry contains lifecycle states, timings, and counts only.
+      It excludes receipt text, merchants, account details, filenames, paths,
+      chat identifiers, tokens, and raw errors.
+    </p>
+  </section>
+
+  <section class="card span-2">
+    <div class="card-head">
+      <div><p class="eyebrow">ledger</p><h2>Accounts</h2></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>name</th>
+            <th>institution</th>
+            <th>kind</th>
+            <th>external ref</th>
+            <th>active</th>
+            <th></th>
+            <th>opening balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in accounts %}
+          <tr>
+            <td><input form="acct-{{ a.id }}" name="name" value="{{ a.name }}" required></td>
+            <td><input form="acct-{{ a.id }}" name="institution" value="{{ a.institution }}"></td>
+            <td>
+              <select form="acct-{{ a.id }}" name="kind">
+                {% for k in account_kinds %}
+                <option value="{{ k }}" {% if a.kind == k %}selected{% endif %}>{{ k }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td><input form="acct-{{ a.id }}" name="external_ref" value="{{ a.external_ref }}"></td>
+            <td>
+              <select form="acct-{{ a.id }}" name="is_active">
+                <option value="1" {% if a.is_active %}selected{% endif %}>active</option>
+                <option value="0" {% if not a.is_active %}selected{% endif %}>inactive</option>
+              </select>
+            </td>
+            <td>
+              <button class="ghost" type="submit" form="acct-{{ a.id }}">save</button>
+              <form id="acct-{{ a.id }}" action="/manage/accounts/{{ a.id }}" method="post"></form>
+            </td>
+            <td>
+              <form action="/manage/accounts/{{ a.id }}/opening" method="post">
+                <input name="amount" placeholder="0.00" size="8"
+                       value="{{ '%.2f'|format(openings[a.id].amount_cents / 100) if a.id in openings else '' }}">
+                <input type="date" name="posted_on"
+                       value="{{ openings[a.id].posted_on if a.id in openings else '' }}">
+                <button class="ghost" type="submit">set</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card-head" style="margin-top:1.25rem;">
+      <div><p class="eyebrow">add</p><h2>New account</h2></div>
+    </div>
+    <form action="/manage/accounts" method="post">
+      <input name="name" placeholder="name" required>
+      <input name="institution" placeholder="institution">
+      <select name="kind">
+        {% for k in account_kinds %}
+        <option value="{{ k }}">{{ k }}</option>
+        {% endfor %}
+      </select>
+      <input name="external_ref" placeholder="external ref">
+      <button class="ghost" type="submit">add account</button>
+    </form>
+  </section>
+
+  <section class="card span-2">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">statement truth</p>
+        <h2>Account statement policies</h2>
+        <p class="subtle">
+          Set what statement should arrive and when. Saving appends a prospective
+          policy version; already prepared months keep their audited snapshot.
+        </p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>account</th>
+            <th>effective</th>
+            <th>configuration</th>
+            <th>requirement</th>
+            <th>cadence</th>
+            <th>anchor</th>
+            <th>active from</th>
+            <th>active to</th>
+            <th>change reason</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in accounts %}
+          {% set p = statement_policies.get(a.id) %}
+          {% set latest = latest_statement_policies.get(a.id) %}
+          <tr>
+            <td>
+              <strong>{{ a.name }}</strong>
+              {% if p %}
+              <div class="subtle">
+                current for {{ statement_effective_month }}: {{ p.configuration_state }}
+                {% if p.requirement_mode %} · {{ p.requirement_mode }}{% endif %}
+                {% if p.cadence %} · {{ p.cadence }}{% endif %}
+              </div>
+              {% endif %}
+              {% if latest and latest.effective_from_month > statement_effective_month %}
+              <div class="subtle">
+                future from {{ latest.effective_from_month }}: {{ latest.configuration_state }}
+                {% if latest.requirement_mode %} · {{ latest.requirement_mode }}{% endif %}
+                {% if latest.cadence %} · {{ latest.cadence }}{% endif %}
+              </div>
+              {% endif %}
+            </td>
+            <td>
+              <input form="statement-policy-{{ a.id }}" type="month"
+                     name="effective_from_month"
+                     value="{{ statement_effective_month }}" required
+                     aria-label="Policy effective month for {{ a.name }}">
+            </td>
+            <td>
+              <select form="statement-policy-{{ a.id }}" name="configuration_state"
+                      aria-label="Statement policy configuration for {{ a.name }}">
+                {% for configuration in statement_configurations %}
+                <option value="{{ configuration }}"
+                        {% if p and p.configuration_state == configuration %}selected{% endif %}>
+                  {{ configuration }}
+                </option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              <select form="statement-policy-{{ a.id }}" name="requirement_mode"
+                      aria-label="Statement requirement for {{ a.name }}">
+                <option value="" {% if not p or not p.requirement_mode %}selected{% endif %}>
+                  —
+                </option>
+                {% for mode in statement_requirement_modes %}
+                <option value="{{ mode }}"
+                        {% if p and p.requirement_mode == mode %}selected{% endif %}>
+                  {{ mode }}
+                </option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              <select form="statement-policy-{{ a.id }}" name="cadence"
+                      aria-label="Statement cadence for {{ a.name }}">
+                <option value="" {% if not p or not p.cadence %}selected{% endif %}>—</option>
+                {% for cadence in statement_cadences %}
+                <option value="{{ cadence }}"
+                        {% if p and p.cadence == cadence %}selected{% endif %}>
+                  {{ cadence }}
+                </option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              <input form="statement-policy-{{ a.id }}" type="number"
+                     name="anchor_month" min="1" max="12" size="3"
+                     value="{{ p.anchor_month if p and p.anchor_month else '' }}"
+                     aria-label="Quarterly or annual anchor month for {{ a.name }}">
+            </td>
+            <td>
+              <input form="statement-policy-{{ a.id }}" type="date" name="active_from"
+                     value="{{ p.active_from if p and p.active_from else '' }}"
+                     aria-label="Inclusive active-from date for {{ a.name }}">
+            </td>
+            <td>
+              <input form="statement-policy-{{ a.id }}" type="date" name="active_to"
+                     value="{{ p.active_to if p and p.active_to else '' }}"
+                     aria-label="Inclusive active-to date for {{ a.name }}">
+            </td>
+            <td>
+              <input form="statement-policy-{{ a.id }}" name="reason"
+                     placeholder="why this policy applies" required
+                     aria-label="Statement policy change reason for {{ a.name }}">
+            </td>
+            <td>
+              <button class="ghost" type="submit"
+                      form="statement-policy-{{ a.id }}">save policy</button>
+              <form id="statement-policy-{{ a.id }}"
+                    action="/manage/accounts/{{ a.id }}/statement-policy"
+                    method="post"></form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="subtle">
+      Quarterly and annual requirements need an anchor month. Leave dates blank
+      for an unbounded active interval; any one-day overlap makes that month active.
+    </p>
+  </section>
+
+  <section class="card span-2" id="cardholders">
+    <div class="card-head">
+      <div><p class="eyebrow">people</p><h2>Cardholders</h2></div>
+    </div>
+    <p class="subtle">
+      Statements group spend by card, and only ever print the primary holder's
+      name. Name each card once and every future statement reports its spend
+      under that person.
+    </p>
+    {% if card_holders %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>card</th><th>name</th><th>account</th><th>first seen</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for card in card_holders %}
+              <tr{% if not card.is_named %} class="row-unnamed"{% endif %}>
+                <td>••{{ card.card_last4 }}</td>
+                <td>
+                  <form method="post" action="/manage/cardholders/{{ card.card_last4 }}"
+                        class="inline-form">
+                    <input type="text" name="display_name" maxlength="120"
+                           value="{{ card.display_name }}"
+                           placeholder="Unnamed card"
+                           aria-label="Name for card ending {{ card.card_last4 }}">
+                    <button class="ghost" type="submit">save</button>
+                  </form>
+                </td>
+                <td class="subtle">{{ card.account_name or "any account" }}</td>
+                <td class="subtle">{{ card.first_seen_at }}</td>
+                <td class="subtle">{% if not card.is_named %}unnamed{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if unnamed_card_count %}
+        <p class="subtle">
+          {{ unnamed_card_count }} card{{ '' if unnamed_card_count == 1 else 's' }}
+          without a name. Spend on
+          {{ 'it' if unnamed_card_count == 1 else 'them' }} still reports, under
+          a placeholder, and nothing is blocked.
+        </p>
+      {% endif %}
+    {% else %}
+      <p class="subtle">
+        No cards seen yet. Cards appear here once a statement with per-card
+        sections has been read.
+      </p>
+    {% endif %}
+  </section>
+
+  <section class="card span-2">
+    <div class="card-head">
+      <div><p class="eyebrow">budget</p><h2>Categories</h2></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>name</th>
+            <th>kind</th>
+            <th>owner</th>
+            <th>color</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in categories %}
+          <tr>
+            <td><span class="dot" style="background: {{ c.color }}"></span></td>
+            <td><input form="cat-{{ c.id }}" name="name" value="{{ c.name }}" required></td>
+            <td>{{ c.kind }}</td>
+            <td>
+              <select form="cat-{{ c.id }}" name="brand_owner">
+                {% for o in brand_owners %}
+                <option value="{{ o }}" {% if c.brand_owner == o %}selected{% endif %}>{{ o }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td><input form="cat-{{ c.id }}" type="color" name="color" value="{{ c.color }}"></td>
+            <td>
+              <button class="ghost" type="submit" form="cat-{{ c.id }}">save</button>
+              <form id="cat-{{ c.id }}" action="/manage/categories/{{ c.id }}" method="post"></form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card-head" style="margin-top:1.25rem;">
+      <div><p class="eyebrow">add</p><h2>New category</h2></div>
+    </div>
+    <form action="/manage/categories" method="post">
+      <input name="name" placeholder="name" required>
+      <select name="kind">
+        {% for k in category_kinds %}
+        <option value="{{ k }}">{{ k }}</option>
+        {% endfor %}
+      </select>
+      <select name="brand_owner">
+        {% for o in brand_owners %}
+        <option value="{{ o }}" {% if o == 'finn' %}selected{% endif %}>{{ o }}</option>
+        {% endfor %}
+      </select>
+      <input type="color" name="color" value="#4EA1FF">
+      <button class="ghost" type="submit">add category</button>
+    </form>
+  </section>
+</main>
+{% endblock %}

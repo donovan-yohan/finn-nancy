@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}backlog · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div>
+    <p class="eyebrow nancy">expense review</p>
+    <h1>Confirm expense categories</h1>
+    <p class="subtle">
+      {{ rows | length }} actionable transaction{{ '' if rows | length == 1 else 's' }}
+      shown · {{ metrics.uncategorized_count }} of {{ metrics.total }} expense splits
+      are still Uncategorized
+    </p>
+  </div>
+  <div class="action-row">
+    <a class="link nancy-link" href="/actions">approval queue{% if pending_action_count() %} · {{ pending_action_count() }}{% endif %}</a>
+    <button class="ghost compact-action" hx-get="/backlog/status" hx-target="#backlog-job" hx-swap="innerHTML">refresh jobs</button>
+  </div>
+</header>
+
+<main class="grid single">
+  <section class="card span-2 nancy-card">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow nancy">suggestions</p>
+        <h2>queue proposals</h2>
+      </div>
+    </div>
+    <div class="action-row">
+      <form hx-post="/backlog/suggest" hx-target="#backlog-job" hx-swap="innerHTML">
+        <input type="number" name="limit" min="1" max="100000" value="{{ default_limit }}" aria-label="suggestion limit">
+        <label class="ack-row"><input type="checkbox" name="include_closed" value="1"> include closed months</label>
+        <button class="ghost compact-action" type="submit">suggest N</button>
+      </form>
+      <form hx-post="/backlog/suggest" hx-target="#backlog-job" hx-swap="innerHTML">
+        <input type="hidden" name="limit" value="all">
+        <label class="ack-row"><input type="checkbox" name="include_closed" value="1"> include closed months</label>
+        <button class="ghost compact-action" type="submit">suggest all</button>
+      </form>
+    </div>
+    <p class="subtle">
+      Proposal sweeps stay conservative around reconciled and closed periods.
+      Reconciliation settles the amount, not its category evidence.
+    </p>
+    <div id="backlog-job" style="margin-top:.8rem;">
+      {% include "_backlog_job.html" %}
+    </div>
+  </section>
+
+  <section class="card span-2">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow nancy">review</p>
+        <h2>largest unresolved expense categories</h2>
+        <p class="subtle">
+          showing up to {{ list_limit }} transactions · cleared reconciled rows
+          remain visible until their active category evidence is accepted
+        </p>
+      </div>
+    </div>
+
+    {% if not rows %}
+    <p class="subtle">No purchase or fee transactions need category evidence.</p>
+    {% else %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>transaction</th>
+            <th class="money">amount</th>
+            <th>active backlog suggestion</th>
+            <th>neighbors</th>
+            <th>confirm</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          {% set mutation_supported = row.mutation_supported == 1 %}
+          {% set proposal = (proposals.get(row.id) or proposals.get(row.id | int)) if mutation_supported else none %}
+          <tr
+            id="{{ 'txn-' ~ row.id if row.transaction_resolution_row_number == 1 else 'txn-' ~ row.id ~ '-split-' ~ row.transaction_split_id }}"
+            data-transaction-id="{{ row.id }}"
+            data-transaction-split-id="{{ row.transaction_split_id }}"
+            data-resolution-status="{{ row.resolution_status }}"
+            data-mutation-supported="{{ 'true' if mutation_supported else 'false' }}"
+          >
+            <td>
+              <a class="link nancy-link" href="/txn/{{ row.id }}/edit">#{{ row.id }}</a>
+              <span class="block">{{ row.merchant }}</span>
+              <span class="subtle block">{{ row.posted_on }} · {{ row.description }}</span>
+              <span class="subtle block">
+                current category: {{ row.category_name }}
+                {% if row.recon_status == 'cleared' %} · reconciled{% endif %}
+              </span>
+              {% if not mutation_supported %}
+              <span class="subtle block">
+                split #{{ row.transaction_split_id }} of {{ row.split_count }} ·
+                review the full split transaction
+              </span>
+              {% endif %}
+            </td>
+            <td class="money negative">{{ (row.split_amount_cents if row.split_amount_cents is defined else row.amount_cents) | money }}</td>
+            <td>
+              {% if proposal %}
+              <span class="db-pill">{{ proposal.to_category_name or proposal.payload.to_category_id }}</span>
+              <span class="subtle block">{{ '%.0f'|format(proposal.confidence * 100) }}% · {{ proposal.evidence.method or proposal.kind }}</span>
+              <span class="subtle block">{{ proposal.rationale }}</span>
+              {% else %}
+              <span class="subtle">No active backlog proposal</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if proposal and proposal.evidence.neighbors %}
+              <div class="action-row">
+                {% for neighbor in proposal.evidence.neighbors %}
+                <span class="db-pill evidence-pill">
+                  <a href="/txn/{{ neighbor.transaction_id }}/edit">#{{ neighbor.transaction_id }}</a>
+                  <span>{{ neighbor.merchant }}</span>
+                  <span class="subtle">{{ neighbor.category }}</span>
+                </span>
+                {% endfor %}
+              </div>
+              {% elif proposal and proposal.evidence.similar_transaction_ids %}
+              <div class="action-row">
+                {% for txn_id in proposal.evidence.similar_transaction_ids %}
+                <a class="db-pill" href="/txn/{{ txn_id }}/edit">#{{ txn_id }}</a>
+                {% endfor %}
+              </div>
+              {% else %}
+              <span class="subtle">No neighbor evidence yet</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if not mutation_supported %}
+              <button
+                class="ghost compact-action"
+                type="button"
+                disabled
+                aria-label="Batch approval unavailable for multi-split transaction {{ row.id }}"
+              >batch unavailable</button>
+              <a class="link nancy-link block" href="/txn/{{ row.id }}/edit">review splits</a>
+              {% elif proposal %}
+              <form method="post" action="/actions/{{ proposal.id }}/approve">
+                <button class="ghost compact-action" type="submit">approve</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}

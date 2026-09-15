@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}activity · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div>
+    <p class="eyebrow">ledger</p>
+    <h1>Activity</h1>
+    <p class="subtle">every transaction, newest first.</p>
+  </div>
+</header>
+
+<main class="grid single">
+  {% if pending_flow_review_count %}
+  <section class="card span-2 nancy-card">
+    <p class="eyebrow nancy">needs review</p>
+    <h2>{{ pending_flow_review_count }} transaction(s) need accounting review</h2>
+    <p class="subtle">
+      Unknown flows and movements without required provenance stay out of income,
+      spending, and category totals. Review these before month-end close.
+    </p>
+    <a class="link nancy-link" href="/activity?semantic_review=1">review excluded movements</a>
+  </section>
+  {% endif %}
+  <section class="card span-2">
+    <div class="card-head">
+      <div><p class="eyebrow">recent</p><h2>transactions</h2></div>
+      <div>
+        <a class="link" href="/txn/new">+ add transaction</a>
+      </div>
+    </div>
+
+    <form class="tx-filters"
+          hx-get="/transactions"
+          hx-target="#tx"
+          hx-swap="innerHTML"
+          hx-trigger="submit, change delay:150ms, keyup changed delay:400ms">
+      <input class="tx-search" type="search" name="q" value="{{ filters.q }}"
+             placeholder="search description or merchant" aria-label="search transactions">
+      <select name="category_id" aria-label="filter by category">
+        <option value="">all categories</option>
+        {% for c in filter_categories %}
+        <option value="{{ c.id }}" {% if filters.category_id == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="account_id" aria-label="filter by account">
+        <option value="">all accounts</option>
+        {% for a in accounts %}
+        <option value="{{ a.id }}" {% if filters.account_id == a.id|string %}selected{% endif %}>{{ a.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="flow_kind" aria-label="filter by accounting flow">
+        <option value="">all accounting flows</option>
+        {% for flow in flow_kinds %}
+        <option value="{{ flow }}" {% if filters.flow_kind == flow %}selected{% endif %}>{{ flow | replace('_', ' ') }}</option>
+        {% endfor %}
+      </select>
+      <input type="date" name="date_from" value="{{ filters.date_from }}" aria-label="from date">
+      <input type="date" name="date_to" value="{{ filters.date_to }}" aria-label="to date">
+      {% if filters.semantic_review %}
+      <input type="hidden" name="semantic_review" value="1">
+      {% endif %}
+      <button class="ghost" type="submit">filter</button>
+      <a class="link" href="/activity">clear</a>
+    </form>
+
+    <div id="tx" class="table-wrap">
+      {% include "transactions_partial.html" %}
+    </div>
+  </section>
+</main>
+{% endblock %}

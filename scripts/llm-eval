@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: scripts/llm-eval [smoke|agent|all] [pytest args...]
+
+Runs opt-in live evals against an explicitly configured local OpenAI-compatible
+endpoint. The endpoint is preflighted before pytest starts. No .env file is
+read by this script.
+EOF
+}
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+MODE="${1:-smoke}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+case "$MODE" in
+  smoke|agent|all) ;;
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  *)
+    echo "unknown LLM eval mode: $MODE" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+BASE_URL="${LOCAL_LLM_BASE:-http://llm.example.invalid:17631/v1}"
+API_KEY="${LOCAL_LLM_KEY:-local-llm}"
+MODEL="${CHAT_MODEL:-qwen3.8-27b-unleashed}"
+MODELS_JSON="$(mktemp "${TMPDIR:-/tmp}/finn-nancy-models.XXXXXX")"
+RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/finn-nancy-llm-eval.XXXXXX")"
+trap 'rm -f "$MODELS_JSON"; rm -rf "$RUN_DIR"' EXIT
+
+curl --connect-timeout 5 --max-time 15 -fsS \
+  -H "Authorization: Bearer $API_KEY" \
+  "${BASE_URL%/}/models" >"$MODELS_JSON"
+
+python3 - "$MODELS_JSON" "$MODEL" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+
+payload = json.loads(open(sys.argv[1], encoding="utf-8").read())
+available = {str(item.get("id")) for item in payload.get("data", [])}
+if sys.argv[2] not in available:
+    raise SystemExit(f"configured model {sys.argv[2]!r} is not advertised by the endpoint")
+PY
+
+cd "$RUN_DIR"
+export OPENAI_BASE_URL="$BASE_URL"
+export OPENAI_API_KEY="$API_KEY"
+export ORCHESTRATOR_MODEL="$MODEL"
+export RUN_LLM_EVALS=1
+
+case "$MODE" in
+  smoke)
+    uv run --project "$REPO" --frozen pytest -q --rootdir="$REPO" --run-llm \
+      "$REPO/tests/evals/test_llm_smoke.py" "$@"
+    ;;
+  agent)
+    uv run --project "$REPO" --frozen pytest -q --rootdir="$REPO" --run-llm -m llm \
+      "$REPO/tests/test_recon_analyst.py" \
+      "$REPO/tests/evals/test_recon_insight.py" \
+      "$REPO/tests/test_chat_agent.py" \
+      "$REPO/tests/test_embeddings.py" \
+      "$@"
+    ;;
+  all)
+    uv run --project "$REPO" --frozen pytest -q --rootdir="$REPO" --run-llm -m llm \
+      "$REPO/tests" "$@"
+    ;;
+esac

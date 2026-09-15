@@ -1,0 +1,19 @@
+[Unit]
+Description=finn-nancy (%i) - local AI finance app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__REPO__
+EnvironmentFile=__ENV_DIR__/%i.env
+Environment=PYTHONUNBUFFERED=1
+ExecStartPre=__REPO__/.venv/bin/fn init-db --db ${DB_PATH}
+ExecStart=__REPO__/.venv/bin/fn serve --db ${DB_PATH} --addr ${ADDR}
+Restart=always
+RestartSec=3
+TimeoutStopSec=15
+UMask=0077
+
+[Install]
+WantedBy=default.target

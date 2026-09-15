@@ -1,0 +1,71 @@
+{# One poller for the whole run. poll_seconds is 0 once nothing is in flight,
+   which removes the hx-trigger entirely so the page stops asking. #}
+<div id="run-status"
+     {% if rollup.poll_seconds %}
+     hx-get="/imports/runs/{{ rollup.run_id }}/status"
+     hx-trigger="every {{ rollup.poll_seconds }}s"
+     hx-swap="outerHTML"
+     {% endif %}>
+
+  <p class="run-counts">
+    <strong>{{ rollup.settled }}</strong> imported ·
+    <strong>{{ rollup.needs_you }}</strong> need you ·
+    <strong>{{ rollup.working }}</strong> still working
+  </p>
+
+  {% if rollup.working %}
+    <p class="subtle">
+      You can close this tab. Processing continues, and this page shows the result.
+    </p>
+  {% endif %}
+
+  {% if rollup.attention_documents %}
+    <h2 class="run-heading">Needs you <span class="subtle">{{ rollup.needs_you }}</span></h2>
+    {% for doc in rollup.attention_documents %}
+      <div class="run-item attention">
+        <strong>{{ doc.original_name }}</strong>
+        {% if doc.failure %}
+          <span class="subtle">Couldn't read this file after
+            {{ doc.failure.attempts }} attempt{{ '' if doc.failure.attempts == 1 else 's' }}.
+            Nothing from it has been recorded.</span>
+          <button class="ghost"
+                  hx-post="/documents/{{ doc.id }}/retry"
+                  hx-target="#run-status"
+                  hx-swap="outerHTML">try again</button>
+        {% else %}
+          <span class="subtle">Read, and waiting on you to confirm it.</span>
+        {% endif %}
+        {% if doc.is_pdf %}
+          <a class="link" href="/review/pdf/{{ doc.id }}">check against the source</a>
+        {% else %}
+          <a class="link" href="/review">open review</a>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if rollup.settled %}
+    <h2 class="run-heading">Imported <span class="subtle">{{ rollup.settled }}</span></h2>
+    {% for doc in rollup.documents if not doc.needs_you and not doc.is_working %}
+      <div class="run-item settled">
+        <strong>{{ doc.original_name }}</strong>
+        <span class="subtle">{{ doc.status }}</span>
+        {% if doc.is_pdf %}<a class="link" href="/review/pdf/{{ doc.id }}">source</a>{% endif %}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if rollup.working %}
+    <h2 class="run-heading">Still working <span class="subtle">{{ rollup.working }}</span></h2>
+    {% for doc in rollup.documents if doc.is_working %}
+      <div class="run-item working">
+        <strong>{{ doc.original_name }}</strong>
+        <span class="subtle">reading it now</span>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if not rollup.total %}
+    <p class="subtle">This run has no documents.</p>
+  {% endif %}
+</div>

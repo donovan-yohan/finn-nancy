@@ -1,0 +1,286 @@
+{
+  "corpus_version": "fn149b-synthetic-descriptors.v1",
+  "outcomes": [
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:groceries"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:developer:orbital-market"
+      },
+      "template_id": "synthetic-template:developer:processor-prefix"
+    },
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:transport"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:developer:metro-cab"
+      },
+      "template_id": "synthetic-template:developer:terminal-location"
+    },
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:supplies"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:developer:paper-kite"
+      },
+      "template_id": "synthetic-template:developer:marketplace-truncation"
+    },
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:groceries"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:developer:shop-42-north"
+      },
+      "template_id": "synthetic-template:developer:legitimate-digits"
+    },
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:dining"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:developer:acme-cafe"
+      },
+      "template_id": "synthetic-template:developer:punctuation"
+    },
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:entertainment"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:developer:stream-forest"
+      },
+      "template_id": "synthetic-template:developer:subscription-suffix"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:developer:harbor-hardware"
+      },
+      "template_id": "synthetic-template:developer:merchant-only"
+    },
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:transport"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:developer:category-only"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:developer:ambiguous-alias"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:developer:no-evidence"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:developer:scope-conflict"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:developer:model-only"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:developer:web-only"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:developer:legacy-only"
+    },
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:groceries"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:sealed:copper-meadow"
+      },
+      "template_id": "synthetic-template:sealed:processor-prefix"
+    },
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:transport"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:sealed:city-rail"
+      },
+      "template_id": "synthetic-template:sealed:terminal-location"
+    },
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:supplies"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:sealed:ink-willow"
+      },
+      "template_id": "synthetic-template:sealed:marketplace-truncation"
+    },
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:supplies"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:sealed:studio-88-east"
+      },
+      "template_id": "synthetic-template:sealed:legitimate-digits"
+    },
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:dining"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:sealed:luna-bistro"
+      },
+      "template_id": "synthetic-template:sealed:punctuation"
+    },
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:entertainment"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:sealed:audio-tundra"
+      },
+      "template_id": "synthetic-template:sealed:subscription-suffix"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "assign",
+        "target_id": "synthetic-merchant:sealed:ridge-tools"
+      },
+      "template_id": "synthetic-template:sealed:merchant-only"
+    },
+    {
+      "category": {
+        "decision": "assign",
+        "target_id": "synthetic-category:transport"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:sealed:category-only"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:sealed:ambiguous-alias"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:sealed:no-evidence"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:sealed:scope-conflict"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:sealed:model-only"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:sealed:web-only"
+    },
+    {
+      "category": {
+        "decision": "abstain"
+      },
+      "merchant": {
+        "decision": "abstain"
+      },
+      "template_id": "synthetic-template:sealed:legacy-only"
+    }
+  ],
+  "schema_version": "fn149b-descriptor-gold.v1"
+}

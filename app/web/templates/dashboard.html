@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}finn-nancy · home{% endblock %}
+{% block content %}
+<header class="hero">
+  <div>
+    <p class="eyebrow">local finance</p>
+    <h1><span class="finn">Finn</span> &amp; <span class="nancy">Nancy</span></h1>
+    <p class="subtle">your money, on-device.</p>
+    <p class="subtle">
+      {% set pending = pending_action_count() %}
+      {% if review_count %}<a class="link" href="/review">review queue ({{ review_count }})</a> · {% endif %}
+      {% if pending %}<a class="link nancy-link" href="/actions">approvals ({{ pending }})</a> · {% endif %}
+      <a class="link nancy-link" href="/close">monthly close</a> ·
+      <a class="link" href="/statements">statements of accounts</a> ·
+      <a class="link" href="/manage">manage accounts &amp; categories</a>
+    </p>
+  </div>
+</header>
+
+<main class="grid">
+  <section class="stat-strip span-2" aria-label="summary">
+    <article class="stat-card">
+      <p class="eyebrow finn">money in</p>
+      <p class="stat-number positive">{{ stats.money_in_cents | money }}</p>
+    </article>
+    <article class="stat-card">
+      <p class="eyebrow nancy">money out</p>
+      <p class="stat-number negative">{{ stats.money_out_cents | money }}</p>
+    </article>
+    <article class="stat-card emphasis">
+      <p class="eyebrow">net</p>
+      <p class="stat-number {{ stats.net_class }}">{{ stats.net_cents | money }}</p>
+    </article>
+    <article class="stat-card">
+      <p class="eyebrow">latest month</p>
+      <p class="stat-number {{ 'negative' if latest_net_cents < 0 else 'positive' }}">{{ latest_net_cents | money }}</p>
+    </article>
+  </section>
+  {% if semantic_review_count %}
+  <section class="card span-2 nancy-card">
+    <p class="banner warn" role="alert">
+      {{ semantic_review_count }} transaction(s) are excluded from the totals above
+      because flow meaning or required provenance is incomplete.
+      <a class="link nancy-link" href="/activity?semantic_review=1">review them</a>
+    </p>
+  </section>
+  {% endif %}
+
+  <section class="card span-2">
+    <div class="card-head">
+      <div><p class="eyebrow">recent</p><h2>latest transactions</h2></div>
+      <a class="link" href="/activity">see all</a>
+    </div>
+    <div id="transactions" class="table-wrap">
+      {% include "transactions_partial.html" %}
+    </div>
+  </section>
+
+  <section class="card span-2">
+    <div class="card-head"><div><p class="eyebrow finn">cashflow</p><h2>monthly in / out</h2></div></div>
+    <div class="bars">
+      {% for m in cashflow %}
+      <a class="month-card period-entry-link" href="/statements?month={{ m.month }}">
+        <div class="month">{{ m.month }}</div>
+        <div class="bar-row"><span>in</span><b>{{ m.income_cents | money }}</b></div>
+        <div class="bar track"><i class="income" style="width: {{ m.income_width }}"></i></div>
+        <div class="bar-row"><span>out</span><b>{{ m.expense_cents | money }}</b></div>
+        <div class="bar track"><i class="expense" style="width: {{ m.expense_width }}"></i></div>
+        <div class="net {{ m.net_class }}">net {{ m.net_cents | money }}</div>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card finn-card">
+    <p class="eyebrow finn">finn</p>
+    <h2>top categories</h2>
+    <div class="category-list">
+      {% for c in categories %}
+      <div class="category-row">
+        <span class="dot" style="background: {{ c.color }}"></span>
+        <span>{{ c.category_name }}</span>
+        <b>{{ c.total_cents | money }}</b>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</main>
+{% endblock %}

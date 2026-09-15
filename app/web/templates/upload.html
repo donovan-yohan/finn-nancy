@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}upload · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div>
+    <p class="eyebrow finn">capture</p>
+    <h1>{% if capture_intent == "income" %}Capture income{% elif capture_intent == "expense" %}Capture an expense{% else %}Capture a receipt{% endif %}</h1>
+    <p class="subtle">The original enters the device outbox before it is sent.</p>
+  </div>
+  <a class="link" href="/">dashboard</a>
+</header>
+
+<main class="grid single">
+  <section class="card span-2">
+    <form
+      class="capture-page-form"
+      action="/upload"
+      method="post"
+      enctype="multipart/form-data"
+      data-capture-form
+      data-source="{{ capture_mode }}"
+      data-intent="{{ capture_intent }}"
+      data-proof-run-id="{{ proof_run_id }}"
+      data-device-cohort-id="{{ device_cohort_id }}"
+    >
+      <label for="capture-page-files">
+        <span>Receipt, invoice, or statement</span>
+        <input
+          id="capture-page-files"
+          type="file"
+          name="files"
+          accept="image/*,application/pdf"
+          {% if capture_mode == "camera" %}capture="environment"{% else %}multiple{% endif %}
+          required
+        >
+      </label>
+      <button class="primary" type="submit">Save to device outbox</button>
+    </form>
+    <p class="capture-page-help">Pending means this browser still owns recovery. Keep your original until Saved if the browser says its outbox can be evicted. “Saved” appears only after the server confirms its durable commit.</p>
+    <div id="results"></div>
+    {% for capture_id in server_capture_ids %}
+      <span hidden data-server-capture-id="{{ capture_id }}"></span>
+    {% endfor %}
+  </section>
+</main>
+{% endblock %}

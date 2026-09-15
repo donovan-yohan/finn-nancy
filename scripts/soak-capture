@@ -1,0 +1,306 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+COUNT=1000
+OUTPUT=""
+ALLOW_SMALL=0
+MUTATION=""
+
+usage() {
+  cat <<'EOF'
+usage: scripts/soak-capture [--count N] [--output manifest.json] [--allow-small]
+
+Runs a generated, isolated capture durability soak. The default and release
+minimum is 1,000 accepted uploads. --allow-small exists only for harness tests.
+The JSON manifest contains counts, timings, and source revision only.
+Test-only --mutation delete|corrupt requires --allow-small and proves the
+fresh-process durability verifier rejects missing or changed originals.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --count)
+      COUNT="${2:?--count requires a value}"
+      shift 2
+      ;;
+    --output)
+      OUTPUT="${2:?--output requires a value}"
+      shift 2
+      ;;
+    --allow-small)
+      ALLOW_SMALL=1
+      shift
+      ;;
+    --mutation)
+      MUTATION="${2:?--mutation requires delete or corrupt}"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown soak-capture argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if ! [[ "$COUNT" =~ ^[0-9]+$ ]] || [[ "$COUNT" -lt 1 ]]; then
+  echo "--count must be a positive integer" >&2
+  exit 2
+fi
+if [[ "$COUNT" -lt 1000 && "$ALLOW_SMALL" -ne 1 ]]; then
+  echo "release soak requires at least 1000 accepted uploads" >&2
+  exit 2
+fi
+if [[ -n "$MUTATION" && "$ALLOW_SMALL" -ne 1 ]]; then
+  echo "--mutation is test-only and requires --allow-small" >&2
+  exit 2
+fi
+if [[ -n "$MUTATION" && "$MUTATION" != "delete" && "$MUTATION" != "corrupt" ]]; then
+  echo "--mutation must be delete or corrupt" >&2
+  exit 2
+fi
+
+SOAK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/finn-nancy-fn146-soak.XXXXXX")"
+SOAK_DB="$SOAK_DIR/soak.sqlite"
+SOAK_DATA="$SOAK_DIR/data"
+CAPTURE_RESULT="$SOAK_DIR/capture-result.json"
+cleanup() {
+  rm -rf "$SOAK_DIR"
+}
+trap cleanup EXIT
+
+if [[ -z "$OUTPUT" ]]; then
+  OUTPUT="${TMPDIR:-/tmp}/finn-nancy-fn146-soak-manifest.json"
+fi
+mkdir -p "$(dirname "$OUTPUT")" "$SOAK_DATA"
+
+export DB_PATH="$SOAK_DB"
+export DATA_DIR="$SOAK_DATA"
+export STRICT_LOCAL_MODE=true
+export TELEGRAM_BOT_TOKEN=""
+export TELEGRAM_CHAT_ID=""
+export INBOX_DIR=""
+export TRIAGE_ENABLED=false
+export VERIFIER_LLM_JUDGE=false
+export EMBEDDINGS_ENABLED=false
+
+uv run --project "$REPO" --frozen python - "$COUNT" "$CAPTURE_RESULT" <<'PY'
+from __future__ import annotations
+
+import datetime as dt
+import json
+import sys
+import time
+from pathlib import Path
+from uuid import UUID
+
+from app.config import get_settings
+from app.db import engine, migrate, repo_captures
+from app.ingest.storage import capture
+
+count = int(sys.argv[1])
+output = Path(sys.argv[2])
+get_settings.cache_clear()
+settings = get_settings()
+migrate.init_db(settings.db_path)
+
+accepted = 0
+durable = 0
+started = time.perf_counter()
+for index in range(count):
+    raw = b"FN146-SYNTHETIC-CAPTURE\x00" + index.to_bytes(8, "big")
+    capture_id = str(
+        UUID(int=(0x146 << 112) | index)
+    )
+    accepted += 1
+    one_started = time.perf_counter()
+    result = capture(
+        raw=raw,
+        original_name="synthetic.bin",
+        channel="web",
+        declared_mime="application/octet-stream",
+        client_capture_id=capture_id,
+        source_metadata={
+            "source": "file",
+            "accepted_at": dt.datetime.now(dt.UTC).isoformat(),
+        },
+    )
+    elapsed_ms = max(0, round((time.perf_counter() - one_started) * 1000))
+    if result.get("durable") is True:
+        durable += 1
+    with engine.write_tx(settings.db_path) as conn:
+        repo_captures.record_client_event(
+            conn,
+            capture_id=capture_id,
+            client_event="online_durable_ack",
+            duration_ms=elapsed_ms,
+            sequence_no=1,
+        )
+
+result = {
+    "accepted": accepted,
+    "durable": durable,
+    "elapsed_ms": round((time.perf_counter() - started) * 1000),
+}
+output.write_text(json.dumps(result, sort_keys=True) + "\n")
+PY
+
+if [[ -n "$MUTATION" ]]; then
+  uv run --project "$REPO" --frozen python - "$SOAK_DB" "$SOAK_DATA" "$MUTATION" <<'PY'
+import sqlite3
+import sys
+from pathlib import Path
+
+db_path, data_dir, mutation = sys.argv[1:]
+conn = sqlite3.connect(db_path)
+try:
+    storage_ref = conn.execute(
+        "SELECT storage_ref FROM source_documents ORDER BY id LIMIT 1"
+    ).fetchone()[0]
+finally:
+    conn.close()
+target = (Path(data_dir).resolve() / storage_ref).resolve()
+if not target.is_relative_to(Path(data_dir).resolve()):
+    raise SystemExit("test mutation target escaped isolated data directory")
+if mutation == "delete":
+    target.unlink()
+else:
+    target.write_bytes(target.read_bytes() + b"\x00CORRUPTED")
+PY
+fi
+
+# A separate interpreter reopens SQLite and every stored original. This is the
+# durability proof: the accepting process and its open file descriptors are gone.
+uv run --project "$REPO" --frozen python - \
+  "$COUNT" "$CAPTURE_RESULT" "$OUTPUT" "$REPO" "$SOAK_DB" "$SOAK_DATA" <<'PY'
+from __future__ import annotations
+
+import datetime as dt
+import hashlib
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+from pathlib import Path
+
+count = int(sys.argv[1])
+capture_result = json.loads(Path(sys.argv[2]).read_text())
+output = Path(sys.argv[3])
+repo = Path(sys.argv[4])
+db_path = Path(sys.argv[5])
+data_root = Path(sys.argv[6]).resolve()
+
+conn = sqlite3.connect(db_path)
+conn.row_factory = sqlite3.Row
+try:
+    rows = conn.execute(
+        "SELECT storage_ref, sha256 FROM source_documents ORDER BY id"
+    ).fetchall()
+    counts = conn.execute(
+        """
+        SELECT
+          (SELECT COUNT(*) FROM capture_submissions),
+          (SELECT COUNT(*) FROM capture_provenance),
+          (SELECT COUNT(*) FROM source_documents),
+          (SELECT COUNT(*) FROM jobs WHERE type='ingest_document')
+        """
+    ).fetchone()
+    integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+    migration_head = conn.execute(
+        "SELECT filename FROM schema_migrations ORDER BY rowid DESC LIMIT 1"
+    ).fetchone()[0]
+    ack_values = sorted(
+        int(row[0])
+        for row in conn.execute(
+            """
+            SELECT duration_ms
+            FROM capture_events
+            WHERE event_kind='durable_ack'
+              AND reason_code='online_request'
+              AND duration_ms IS NOT NULL
+            """
+        )
+    )
+finally:
+    conn.close()
+
+containment_failures = 0
+missing_originals = 0
+sha256_failures = 0
+verified_originals = 0
+for row in rows:
+    candidate = (data_root / str(row["storage_ref"])).resolve()
+    if not candidate.is_relative_to(data_root):
+        containment_failures += 1
+        continue
+    if not candidate.is_file():
+        missing_originals += 1
+        continue
+    digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+    if digest != row["sha256"]:
+        sha256_failures += 1
+        continue
+    verified_originals += 1
+
+head = subprocess.check_output(
+    ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+).strip()
+tree = subprocess.check_output(
+    ["git", "rev-parse", "HEAD^{tree}"], cwd=repo, text=True
+).strip()
+expected_counts = (count, count, count, count)
+count_match = tuple(int(value) for value in counts) == expected_counts
+blob_failures = containment_failures + missing_originals + sha256_failures
+durable = int(capture_result["durable"])
+accepted = int(capture_result["accepted"])
+passed = (
+    count_match
+    and durable == accepted
+    and integrity == "ok"
+    and verified_originals == count
+    and blob_failures == 0
+)
+p90_index = max(0, -(-9 * len(ack_values) // 10) - 1) if ack_values else None
+manifest = {
+    "schema_version": 2,
+    "kind": "fn146_synthetic_point_durability",
+    "generated_at": dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat(),
+    "head_sha": head,
+    "tree_sha": tree,
+    "migration_head": migration_head,
+    "status": "passed" if passed else "failed",
+    "synthetic_only": True,
+    "content_free": True,
+    "fresh_process_verified": True,
+    "accepted": accepted,
+    "durable": durable,
+    "loss": accepted - durable,
+    "point_durability_pct": round(100.0 * durable / accepted, 4),
+    "source_documents": int(counts[2]),
+    "ingest_jobs": int(counts[3]),
+    "provenance_rows": int(counts[1]),
+    "verified_originals": verified_originals,
+    "containment_failures": containment_failures,
+    "missing_originals": missing_originals,
+    "sha256_failures": sha256_failures,
+    "online_durable_ack_p90_ms": (
+        ack_values[p90_index] if p90_index is not None else None
+    ),
+    "elapsed_ms": int(capture_result["elapsed_ms"]),
+    "integrity": integrity,
+    "physical_phone_proven": False,
+}
+output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+print(json.dumps(manifest, sort_keys=True))
+if not passed:
+    raise SystemExit("fresh-process capture durability verification failed")
+PY
+
+echo "capture soak manifest: $OUTPUT"

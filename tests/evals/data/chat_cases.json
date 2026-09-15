@@ -1,0 +1,12 @@
+[
+  {
+    "claim_id": "monthly-total",
+    "text": "Groceries were $120.00 in June.",
+    "citations": ["v_category_monthly:Groceries:2026-06"]
+  },
+  {
+    "claim_id": "generic-advice",
+    "text": "A lower restaurant budget would improve cashflow.",
+    "requires_citation": false
+  }
+]

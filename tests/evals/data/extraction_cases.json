@@ -1,0 +1,48 @@
+[
+  {
+    "id": "receipt-perfect",
+    "predicted": {
+      "merchant": "Loblaws",
+      "purchased_on": "2026-06-04",
+      "currency": "CAD",
+      "subtotal_cents": 2000,
+      "tax_cents": 260,
+      "tip_cents": 0,
+      "total_cents": 2260,
+      "card_last4": "1234"
+    },
+    "expected": {
+      "merchant": "Loblaws",
+      "purchased_on": "2026-06-04",
+      "currency": "CAD",
+      "subtotal_cents": 2000,
+      "tax_cents": 260,
+      "tip_cents": 0,
+      "total_cents": 2260,
+      "card_last4": "1234"
+    }
+  },
+  {
+    "id": "receipt-arithmetic-fail",
+    "predicted": {
+      "merchant": "Cafe",
+      "purchased_on": "2026-06-05",
+      "currency": "CAD",
+      "subtotal_cents": 1200,
+      "tax_cents": 156,
+      "tip_cents": 200,
+      "total_cents": 1400,
+      "card_last4": "9999"
+    },
+    "expected": {
+      "merchant": "Cafe",
+      "purchased_on": "2026-06-05",
+      "currency": "CAD",
+      "subtotal_cents": 1200,
+      "tax_cents": 156,
+      "tip_cents": 200,
+      "total_cents": 1556,
+      "card_last4": "9999"
+    }
+  }
+]

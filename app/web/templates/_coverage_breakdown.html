@@ -1,0 +1,28 @@
+{% if not rows %}
+<p class="subtle">no rows.</p>
+{% else %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>group</th>
+        <th class="money">spend</th>
+        <th class="money">matched</th>
+        <th class="money">unmatched</th>
+        <th>coverage</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.label or 'Unassigned' }}</td>
+        <td class="money">{{ row.statement_spend_cents | money }}</td>
+        <td class="money positive">{{ row.covered_spend_cents | money }}</td>
+        <td class="money negative">{{ row.unmatched_spend_cents | money }}</td>
+        <td>{{ row.coverage_pct }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

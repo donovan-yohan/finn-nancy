@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}{{ 'edit' if txn else 'add' }} transaction · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div>
+    <p class="eyebrow">ledger</p>
+    <h1>{{ 'Edit transaction' if txn else 'Add transaction' }}</h1>
+    {% if multi_split %}
+    <p class="subtle">multi-split — edit splits not supported yet. only date, description, counterparty and notes can be changed here.</p>
+    {% elif txn and txn.source == 'opening' %}
+    <p class="subtle">opening balance — amount and category are locked. only date, description, counterparty and notes can be changed here.</p>
+    {% endif %}
+  </div>
+</header>
+
+<main class="grid single">
+  <section class="card span-2">
+    {% if lock_error %}
+    <p class="banner warn" role="alert">{{ lock_error }}</p>
+    {% endif %}
+    {% if capture_provenance %}
+    <div class="capture-provenance" aria-label="Capture provenance">
+      {% for origin in capture_provenance %}
+      <span class="capture-transport-class {{ origin.transport_class }}">
+        {{ origin.transport_label }} · {{ origin.classification_label }}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <form method="post" action="{{ ('/txn/' ~ txn.id ~ '/edit') if txn else '/txn/new' }}">
+      <label>date
+        <input type="date" name="posted_on" value="{{ txn.posted_on if txn else today }}" required>
+      </label>
+      <label>description
+        <input type="text" name="description" value="{{ txn.description if txn else '' }}" required>
+      </label>
+      <label>counterparty
+        <input type="text" name="counterparty" value="{{ txn.counterparty if txn else '' }}">
+      </label>
+
+      {% if not txn %}
+      <label>account
+        <select name="account_id" required>
+          {% for a in accounts %}
+          <option value="{{ a.id }}">{{ a.name }} ({{ a.kind }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+
+      {% if not multi_split %}
+      {% set opening_locked = txn and txn.source == 'opening' %}
+      <label>amount (dollars)
+        <input type="text" inputmode="decimal" name="amount" value="{{ '%.2f'|format(split.amount_cents / 100) if split else '' }}" {{ 'disabled' if opening_locked else '' }} required>
+      </label>
+      <label>category
+        <select name="category_id" {{ 'disabled' if opening_locked else '' }} required>
+          {% for c in categories %}
+          <option value="{{ c.id }}" {{ 'selected' if split and split.category_id == c.id else '' }}>{{ c.name }} ({{ c.kind }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>flow meaning
+        <select name="flow_kind" {{ 'disabled' if opening_locked else '' }} required>
+          {% for flow in flow_kinds %}
+          <option value="{{ flow.value }}"
+            {{ 'selected' if txn and txn.flow_kind == flow.value else '' }}>
+            {{ flow.value | replace('_', ' ') }}
+          </option>
+          {% endfor %}
+        </select>
+        <span class="subtle">Choose unknown when the movement needs review; category still describes purpose.</span>
+      </label>
+      {% endif %}
+
+      <label>notes
+        <textarea name="notes">{{ txn.notes if txn else '' }}</textarea>
+      </label>
+
+      {% if lock_error %}
+      <label class="ack-row">
+        <input type="checkbox" name="override" value="1">
+        override the lock (audited)
+      </label>
+      {% endif %}
+
+      <div class="card-head">
+        <button class="ghost" type="submit">save</button>
+        <a class="link" href="/activity">cancel</a>
+      </div>
+    </form>
+
+    {% if txn %}
+    <form method="post" action="/txn/{{ txn.id }}/delete"
+          onsubmit='return confirm({{ ("Delete this transaction? " ~ txn.description) | tojson }})'>
+      {% if lock_error %}
+      <label class="ack-row">
+        <input type="checkbox" name="override" value="1">
+        override the lock to delete (audited)
+      </label>
+      {% endif %}
+      <button class="ghost" type="submit">delete transaction</button>
+    </form>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}

@@ -1,0 +1,542 @@
+{
+  "claims": [
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:groceries",
+        "target_name": "Synthetic Groceries"
+      },
+      "claim_id": "synthetic-claim:developer:orbital-market",
+      "match_text": "SYNTH DEV PAYRITE*ORBITAL-MARKET",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:developer:orbital-market",
+        "target_name": "Synthetic Orbital Market"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:transport",
+        "target_name": "Synthetic Transport"
+      },
+      "claim_id": "synthetic-claim:developer:metro-cab",
+      "match_text": "SYNTH DEV METRO-CAB",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:developer:metro-cab",
+        "target_name": "Synthetic Metro Cab"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:supplies",
+        "target_name": "Synthetic Supplies"
+      },
+      "claim_id": "synthetic-claim:developer:paper-kite",
+      "match_text": "SYNTH DEV MKTPL*PAPER-KITE-CO",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:developer:paper-kite",
+        "target_name": "Synthetic Paper Kite"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:groceries",
+        "target_name": "Synthetic Groceries"
+      },
+      "claim_id": "synthetic-claim:developer:shop-42-north",
+      "match_text": "SYNTH DEV SHOP-42-NORTH",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:developer:shop-42-north",
+        "target_name": "Synthetic Shop 42 North"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:dining",
+        "target_name": "Synthetic Dining"
+      },
+      "claim_id": "synthetic-claim:developer:acme-cafe",
+      "match_text": "SYNTH DEV ACME.CAFE/ROAST",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:developer:acme-cafe",
+        "target_name": "Synthetic Acme Cafe"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:entertainment",
+        "target_name": "Synthetic Entertainment"
+      },
+      "claim_id": "synthetic-claim:developer:stream-forest",
+      "match_text": "SYNTH DEV STREAM-FOREST",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:developer:stream-forest",
+        "target_name": "Synthetic Stream Forest"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "local_model",
+        "target_id": "synthetic-category:supplies",
+        "target_name": "Synthetic Supplies"
+      },
+      "claim_id": "synthetic-claim:developer:harbor-hardware",
+      "match_text": "SYNTH DEV HARBOR-HARDWARE",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:developer:harbor-hardware",
+        "target_name": "Synthetic Harbor Hardware"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:transport",
+        "target_name": "Synthetic Transport"
+      },
+      "claim_id": "synthetic-claim:developer:generic-fuel",
+      "match_text": "SYNTH DEV GENERIC-FUEL-PUMP",
+      "merchant": {
+        "source": "web_search",
+        "target_id": "synthetic-merchant:developer:generic-fuel",
+        "target_name": "Synthetic Generic Fuel"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:dining",
+        "target_name": "Synthetic Dining"
+      },
+      "claim_id": "synthetic-claim:developer:common-square-a",
+      "match_text": "SYNTH DEV COMMON-SQUARE",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:developer:common-square-a",
+        "target_name": "Synthetic Common Square A"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:supplies",
+        "target_name": "Synthetic Supplies"
+      },
+      "claim_id": "synthetic-claim:developer:common-square-b",
+      "match_text": "SYNTH DEV COMMON-SQUARE",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:developer:common-square-b",
+        "target_name": "Synthetic Common Square B"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:dining",
+        "target_name": "Synthetic Dining"
+      },
+      "claim_id": "synthetic-claim:developer:scoped-bakery",
+      "match_text": "SYNTH DEV SCOPED-BAKERY",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:developer:scoped-bakery",
+        "target_name": "Synthetic Scoped Bakery"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-other",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "local_model",
+        "target_id": "synthetic-category:supplies",
+        "target_name": "Synthetic Supplies"
+      },
+      "claim_id": "synthetic-claim:developer:model-lantern",
+      "match_text": "SYNTH DEV MODEL-LANTERN",
+      "merchant": {
+        "source": "local_model",
+        "target_id": "synthetic-merchant:developer:model-lantern",
+        "target_name": "Synthetic Model Lantern"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "web_search",
+        "target_id": "synthetic-category:supplies",
+        "target_name": "Synthetic Supplies"
+      },
+      "claim_id": "synthetic-claim:developer:web-cedar",
+      "match_text": "SYNTH DEV WEB-CEDAR",
+      "merchant": {
+        "source": "web_search",
+        "target_id": "synthetic-merchant:developer:web-cedar",
+        "target_name": "Synthetic Web Cedar"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "legacy_unverified",
+        "target_id": "synthetic-category:supplies",
+        "target_name": "Synthetic Supplies"
+      },
+      "claim_id": "synthetic-claim:developer:legacy-mosaic",
+      "match_text": "SYNTH DEV LEGACY-MOSAIC",
+      "merchant": {
+        "source": "legacy_unverified",
+        "target_id": "synthetic-merchant:developer:legacy-mosaic",
+        "target_name": "Synthetic Legacy Mosaic"
+      },
+      "scope": {
+        "account_id": "synthetic-account:developer-card",
+        "currency": "CAD",
+        "region": "CA-BC"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:groceries",
+        "target_name": "Synthetic Groceries"
+      },
+      "claim_id": "synthetic-claim:sealed:copper-meadow",
+      "match_text": "SYNTH SEA ACQPAY*COPPER-MEADOW",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:sealed:copper-meadow",
+        "target_name": "Synthetic Copper Meadow"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:transport",
+        "target_name": "Synthetic Transport"
+      },
+      "claim_id": "synthetic-claim:sealed:city-rail",
+      "match_text": "SYNTH SEA CITY-RAIL",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:sealed:city-rail",
+        "target_name": "Synthetic City Rail"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:supplies",
+        "target_name": "Synthetic Supplies"
+      },
+      "claim_id": "synthetic-claim:sealed:ink-willow",
+      "match_text": "SYNTH SEA MARKET*INK-WILLOW",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:sealed:ink-willow",
+        "target_name": "Synthetic Ink Willow"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:supplies",
+        "target_name": "Synthetic Supplies"
+      },
+      "claim_id": "synthetic-claim:sealed:studio-88-east",
+      "match_text": "SYNTH SEA STUDIO-88-EAST",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:sealed:studio-88-east",
+        "target_name": "Synthetic Studio 88 East"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:dining",
+        "target_name": "Synthetic Dining"
+      },
+      "claim_id": "synthetic-claim:sealed:luna-bistro",
+      "match_text": "SYNTH SEA LUNA.BISTRO/PIER",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:sealed:luna-bistro",
+        "target_name": "Synthetic Luna Bistro"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:entertainment",
+        "target_name": "Synthetic Entertainment"
+      },
+      "claim_id": "synthetic-claim:sealed:audio-tundra",
+      "match_text": "SYNTH SEA AUDIO-TUNDRA",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:sealed:audio-tundra",
+        "target_name": "Synthetic Audio Tundra"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    },
+    {
+      "category": {
+        "source": "local_model",
+        "target_id": "synthetic-category:supplies",
+        "target_name": "Synthetic Supplies"
+      },
+      "claim_id": "synthetic-claim:sealed:ridge-tools",
+      "match_text": "SYNTH SEA RIDGE-TOOLS",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:sealed:ridge-tools",
+        "target_name": "Synthetic Ridge Tools"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:transport",
+        "target_name": "Synthetic Transport"
+      },
+      "claim_id": "synthetic-claim:sealed:generic-transit",
+      "match_text": "SYNTH SEA GENERIC-TRANSIT-TAP",
+      "merchant": {
+        "source": "web_search",
+        "target_id": "synthetic-merchant:sealed:generic-transit",
+        "target_name": "Synthetic Generic Transit"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:dining",
+        "target_name": "Synthetic Dining"
+      },
+      "claim_id": "synthetic-claim:sealed:common-court-a",
+      "match_text": "SYNTH SEA COMMON-COURT",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:sealed:common-court-a",
+        "target_name": "Synthetic Common Court A"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:supplies",
+        "target_name": "Synthetic Supplies"
+      },
+      "claim_id": "synthetic-claim:sealed:common-court-b",
+      "match_text": "SYNTH SEA COMMON-COURT",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:sealed:common-court-b",
+        "target_name": "Synthetic Common Court B"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    },
+    {
+      "category": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-category:dining",
+        "target_name": "Synthetic Dining"
+      },
+      "claim_id": "synthetic-claim:sealed:scoped-deli",
+      "match_text": "SYNTH SEA SCOPED-DELI",
+      "merchant": {
+        "source": "confirmed_local",
+        "target_id": "synthetic-merchant:sealed:scoped-deli",
+        "target_name": "Synthetic Scoped Deli"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-other",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    },
+    {
+      "category": {
+        "source": "local_model",
+        "target_id": "synthetic-category:supplies",
+        "target_name": "Synthetic Supplies"
+      },
+      "claim_id": "synthetic-claim:sealed:model-aster",
+      "match_text": "SYNTH SEA MODEL-ASTER",
+      "merchant": {
+        "source": "local_model",
+        "target_id": "synthetic-merchant:sealed:model-aster",
+        "target_name": "Synthetic Model Aster"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    },
+    {
+      "category": {
+        "source": "web_search",
+        "target_id": "synthetic-category:supplies",
+        "target_name": "Synthetic Supplies"
+      },
+      "claim_id": "synthetic-claim:sealed:web-birch",
+      "match_text": "SYNTH SEA WEB-BIRCH",
+      "merchant": {
+        "source": "web_search",
+        "target_id": "synthetic-merchant:sealed:web-birch",
+        "target_name": "Synthetic Web Birch"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    },
+    {
+      "category": {
+        "source": "legacy_unverified",
+        "target_id": "synthetic-category:supplies",
+        "target_name": "Synthetic Supplies"
+      },
+      "claim_id": "synthetic-claim:sealed:legacy-prism",
+      "match_text": "SYNTH SEA LEGACY-PRISM",
+      "merchant": {
+        "source": "legacy_unverified",
+        "target_id": "synthetic-merchant:sealed:legacy-prism",
+        "target_name": "Synthetic Legacy Prism"
+      },
+      "scope": {
+        "account_id": "synthetic-account:sealed-card",
+        "currency": "CAD",
+        "region": "CA-ON"
+      }
+    }
+  ],
+  "knowledge_version": "fn149b-controlled-knowledge.v1",
+  "privacy": {
+    "contains_personal_data": false,
+    "production_data_forbidden": true,
+    "source": "invented_synthetic_claims"
+  }
+}

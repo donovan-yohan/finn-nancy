@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+{% block title %}Chat · finn-nancy{% endblock %}
+{% block content %}
+<section class="chat-shell" data-thread-id="{{ thread_id }}" data-seed-message="{{ seed_message | default('') | e }}">
+  <header class="chat-head">
+    <div>
+      <p class="eyebrow">local copilot</p>
+      <h1>Chat</h1>
+    </div>
+    <form method="post" action="/chat/new">
+      <button class="ghost" type="submit">New chat</button>
+    </form>
+  </header>
+
+  <div id="chat-list" class="chat-list" aria-live="polite">
+    {% for item in messages %}
+      <article class="chat-message {{ item.role }}">
+        <div class="chat-bubble">
+          <div class="chat-text">{{ item.content }}</div>
+          {% if item.role == 'assistant' and item.steps %}
+            <details class="chat-steps">
+              <summary>{{ item.steps | length }} step{% if item.steps | length != 1 %}s{% endif %}</summary>
+              <div class="chat-step-list">
+                {% for step in item.steps %}
+                  <section class="chat-step">
+                    <div class="chat-step-title">{{ step.tool }}</div>
+                    <pre>{{ step.input | tojson(indent=2) }}</pre>
+                    <pre>{{ step.output }}</pre>
+                  </section>
+                {% endfor %}
+              </div>
+            </details>
+          {% endif %}
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+
+  <form id="chat-form" class="chat-form" method="post" action="/chat/stream">
+    <textarea id="chat-input" name="message" rows="2" required autofocus placeholder="Ask about spending, budgets, goals, or transactions"></textarea>
+    <button class="ghost chat-send" type="submit">Send</button>
+  </form>
+</section>
+
+<script>
+  (function () {
+    var form = document.getElementById('chat-form');
+    var input = document.getElementById('chat-input');
+    var list = document.getElementById('chat-list');
+    var send = form.querySelector('button[type="submit"]');
+    var shell = document.querySelector('.chat-shell');
+    var seedMessage = shell ? (shell.getAttribute('data-seed-message') || '') : '';
+
+    function scrollToEnd() {
+      window.requestAnimationFrame(function () {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      });
+    }
+
+    function message(role, text) {
+      var article = document.createElement('article');
+      article.className = 'chat-message ' + role;
+      var bubble = document.createElement('div');
+      bubble.className = 'chat-bubble';
+      var body = document.createElement('div');
+      body.className = 'chat-text';
+      body.textContent = text || '';
+      bubble.appendChild(body);
+      article.appendChild(bubble);
+      list.appendChild(article);
+      scrollToEnd();
+      return { article: article, bubble: bubble, body: body };
+    }
+
+    function assistantTurn() {
+      var turn = message('assistant', '');
+      var details = document.createElement('details');
+      details.className = 'chat-steps';
+      details.hidden = true;
+      var summary = document.createElement('summary');
+      summary.textContent = '0 steps';
+      var stepList = document.createElement('div');
+      stepList.className = 'chat-step-list';
+      details.appendChild(summary);
+      details.appendChild(stepList);
+      turn.bubble.appendChild(details);
+      return {
+        article: turn.article,
+        body: turn.body,
+        details: details,
+        summary: summary,
+        stepList: stepList,
+        steps: [],
+        hasTokens: false,
+        warming: false
+      };
+    }
+
+    function updateSummary(turn) {
+      var count = turn.steps.length;
+      turn.details.hidden = count === 0;
+      turn.summary.textContent = count + ' step' + (count === 1 ? '' : 's');
+    }
+
+    function appendStep(turn, id, name, inputValue) {
+      var section = document.createElement('section');
+      section.className = 'chat-step';
+      var title = document.createElement('div');
+      title.className = 'chat-step-title';
+      title.textContent = name || 'tool';
+      var inputPre = document.createElement('pre');
+      inputPre.textContent = JSON.stringify(inputValue || {}, null, 2);
+      var outputPre = document.createElement('pre');
+      outputPre.textContent = '';
+      section.appendChild(title);
+      section.appendChild(inputPre);
+      section.appendChild(outputPre);
+      turn.stepList.appendChild(section);
+      turn.steps.push({ id: id || null, tool: name, output: outputPre });
+      updateSummary(turn);
+      scrollToEnd();
+    }
+
+    function finishStep(turn, id, name, output) {
+      var step = null;
+      if (id) {
+        for (var j = turn.steps.length - 1; j >= 0; j -= 1) {
+          if (!turn.steps[j].done && turn.steps[j].id === id) {
+            step = turn.steps[j];
+            break;
+          }
+        }
+      }
+      if (!step) {
+        for (var i = turn.steps.length - 1; i >= 0; i -= 1) {
+          if (!turn.steps[i].done && (!name || turn.steps[i].tool === name)) {
+            step = turn.steps[i];
+            break;
+          }
+        }
+      }
+      if (step) {
+        step.done = true;
+        step.output.textContent = output || '';
+      }
+      scrollToEnd();
+    }
+
+    function parseFrame(frame) {
+      if (!frame || frame.charAt(0) === ':') return null;
+      var eventName = 'message';
+      var data = [];
+      frame.split(/\r?\n/).forEach(function (line) {
+        if (line.indexOf('event:') === 0) eventName = line.slice(6).trim();
+        if (line.indexOf('data:') === 0) data.push(line.slice(5).trim());
+      });
+      if (!data.length) return null;
+      try {
+        var parsed = JSON.parse(data.join('\n'));
+        parsed.type = parsed.type || eventName;
+        return parsed;
+      } catch (_err) {
+        return null;
+      }
+    }
+
+    async function readStream(response, turn) {
+      var reader = response.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+      while (true) {
+        var chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        var index;
+        while ((index = buffer.indexOf('\n\n')) !== -1) {
+          var frame = buffer.slice(0, index);
+          buffer = buffer.slice(index + 2);
+          var event = parseFrame(frame);
+          if (!event) continue;
+          if (event.type === 'warming' && !turn.hasTokens) {
+            turn.warming = true;
+            turn.body.textContent = 'waking the model...';
+            turn.article.classList.add('is-warming');
+          } else if (event.type === 'step_start') {
+            appendStep(turn, event.id, event.tool, event.input);
+          } else if (event.type === 'step_end') {
+            finishStep(turn, event.id, event.tool, event.output);
+          } else if (event.type === 'token_reset') {
+            turn.body.textContent = '';
+            turn.hasTokens = false;
+            turn.warming = false;
+            turn.article.classList.remove('is-warming');
+          } else if (event.type === 'token') {
+            if (turn.warming) {
+              turn.body.textContent = '';
+              turn.article.classList.remove('is-warming');
+              turn.warming = false;
+            }
+            turn.hasTokens = true;
+            turn.body.textContent += event.text || '';
+            scrollToEnd();
+          } else if (event.type === 'done') {
+            turn.body.textContent = event.message || '';
+          } else if (event.type === 'error') {
+            turn.body.textContent = event.message || 'Chat request failed.';
+            turn.article.classList.remove('is-warming');
+          }
+        }
+      }
+    }
+
+    async function submitText(rawText) {
+      var text = (rawText || '').trim();
+      if (!text) return;
+      message('user', text);
+      input.value = '';
+      input.focus();
+      send.disabled = true;
+      var turn = assistantTurn();
+      try {
+        var data = new FormData();
+        data.append('message', text);
+        var response = await fetch('/chat/stream', {
+          method: 'POST',
+          headers: { 'Accept': 'text/event-stream' },
+          body: data
+        });
+        if (!response.ok || !response.body) throw new Error('bad response');
+        await readStream(response, turn);
+      } catch (_err) {
+        turn.body.textContent = 'Chat request failed.';
+      } finally {
+        send.disabled = false;
+      }
+    }
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      submitText(input.value);
+    });
+
+    input.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        if (!send.disabled) {
+          submitText(input.value);
+        }
+      }
+    });
+
+    input.focus();
+
+    if (seedMessage) {
+      window.setTimeout(function () {
+        submitText(seedMessage);
+      }, 0);
+    }
+
+    window.setInterval(function () {
+      fetch('/chat/ping', { method: 'POST' }).catch(function () {});
+    }, 600000);
+  })();
+</script>
+{% endblock %}

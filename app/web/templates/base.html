@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f2933">
+  <title>{% block title %}finn-nancy{% endblock %}</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+  <script defer src="/static/capture-store.js"></script>
+  <script defer src="/static/capture-outbox.js"></script>
+</head>
+<body class="app brand-{{ brand | default('shared') }}">
+  <main class="app-main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- upload status lands here as dismissable cards -->
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <section id="capture-center" class="capture-center" aria-labelledby="capture-center-title" hidden>
+    <header class="capture-center-head">
+      <div>
+        <p class="eyebrow finn">device outbox</p>
+        <h2 id="capture-center-title">Capture status</h2>
+      </div>
+      <div class="capture-center-tools">
+        <span id="capture-count" class="capture-count" aria-label="capture count">0</span>
+        <button
+          id="capture-toggle"
+          class="ghost compact-action capture-toggle"
+          type="button"
+          aria-controls="capture-center-body"
+          aria-expanded="true"
+        >Collapse</button>
+      </div>
+    </header>
+    <div id="capture-center-body">
+      <p id="capture-sync-note" class="capture-sync-note"></p>
+      <div id="capture-status-list" class="capture-status-list" role="list"></div>
+    </div>
+  </section>
+  <div id="capture-announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  {% include "_tabbar.html" %}
+
+  <script>
+    // Close the FAB speed-dial once an upload starts.
+    document.body.addEventListener('htmx:afterOnLoad', function () {
+      var open = document.querySelector('details.fab[open]');
+      if (open) open.open = false;
+    });
+
+    // Bottom-bar sheets are mutually exclusive: opening one closes the other,
+    // so the FAB speed-dial and the More menu can never overpaint each other.
+    document.querySelectorAll('details[name="nav-sheet"]').forEach(function (d) {
+      d.addEventListener('toggle', function () {
+        if (!d.open) return;
+        document.querySelectorAll('details[name="nav-sheet"]').forEach(function (other) {
+          if (other !== d) other.open = false;
+        });
+      });
+    });
+  </script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function () {});
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,604 @@
+#!/usr/bin/env python3
+"""Read-only exact-head, backup, service-owner, and live-socket audit."""
+from __future__ import annotations
+
+import argparse
+import ipaddress
+import json
+import os
+import re
+import subprocess
+import sys
+import uuid
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+from urllib.error import URLError
+from urllib.parse import urlsplit
+from urllib.request import urlopen
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+
+from scripts.backup_manifest_lib import (  # noqa: E402
+    ManifestError,
+    RELEASE_MANIFEST_MAX_AGE,
+    verify_manifest,
+)
+
+_UNIT_RE = re.compile(r"^finn-nancy(?:@[^.]+)?\.service$")
+_PID_RE = re.compile(r"\bpid=(\d+)\b")
+_DIGEST_RE = re.compile(r"[0-9a-f]{64}")
+_SHA_RE = re.compile(r"[0-9a-f]{40}")
+
+
+class AuditError(RuntimeError):
+    """The host cannot prove one exact release owner."""
+
+
+@dataclass(frozen=True)
+class ProcessInfo:
+    pid: int
+    ppid: int
+    args: tuple[str, ...]
+    cgroups: tuple[str, ...]
+    kind: str
+
+
+def _run(command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    try:
+        result = subprocess.run(
+            command,
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise AuditError(f"cannot execute {command[0]}: {exc}") from exc
+    if check and result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "no diagnostic output"
+        raise AuditError(f"{' '.join(command)} failed: {detail}")
+    return result
+
+
+def _git(*args: str) -> str:
+    return _run(["git", *args]).stdout.strip()
+
+
+def _systemctl(scope: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    command = ["systemctl"]
+    if scope == "user":
+        command.append("--user")
+    command.extend(args)
+    return _run(command, check=check)
+
+
+def _unit_names(scope: str, selected_service: str) -> set[str]:
+    names = {selected_service, "finn-nancy.service"}
+    commands = (
+        (
+            "list-units",
+            "--type=service",
+            "--all",
+            "--plain",
+            "--no-legend",
+            "finn-nancy.service",
+            "finn-nancy@*.service",
+        ),
+        (
+            "list-unit-files",
+            "--type=service",
+            "--no-legend",
+            "finn-nancy.service",
+            "finn-nancy@*.service",
+        ),
+    )
+    for command in commands:
+        output = _systemctl(scope, *command).stdout
+        for line in output.splitlines():
+            fields = line.split()
+            if fields and _UNIT_RE.fullmatch(fields[0]):
+                names.add(fields[0])
+    return names
+
+
+def _unit_properties(scope: str, unit: str) -> dict[str, str]:
+    keys = (
+        "LoadState",
+        "ActiveState",
+        "UnitFileState",
+        "MainPID",
+        "ControlGroup",
+        "WorkingDirectory",
+    )
+    output = _systemctl(
+        scope, "show", unit, f"--property={','.join(keys)}", "--no-pager"
+    ).stdout
+    properties: dict[str, str] = {}
+    for line in output.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            properties[key] = value
+    missing = [key for key in keys if key not in properties]
+    if missing:
+        raise AuditError(
+            f"systemctl {scope} did not return {missing} for {unit}; "
+            "cannot prove service ownership"
+        )
+    return properties
+
+
+def _service_inventory(
+    selected_scope: str, selected_service: str
+) -> tuple[dict[tuple[str, str], dict[str, str]], dict[str, str]]:
+    inventory: dict[tuple[str, str], dict[str, str]] = {}
+    for scope in ("system", "user"):
+        try:
+            names = _unit_names(scope, selected_service)
+            for name in sorted(names):
+                inventory[(scope, name)] = _unit_properties(scope, name)
+        except AuditError as exc:
+            raise AuditError(
+                f"cannot enumerate {scope} finn-nancy units: {exc}; "
+                "run the audit as the production account with access to both "
+                "the system and user systemd managers"
+            ) from exc
+
+    print("finn-nancy service inventory:")
+    for (scope, name), properties in sorted(inventory.items()):
+        print(
+            f"  scope={scope} unit={name} load={properties['LoadState']} "
+            f"active={properties['ActiveState']} enabled={properties['UnitFileState']}"
+        )
+
+    selected = inventory.get((selected_scope, selected_service))
+    if selected is None or selected["LoadState"] != "loaded":
+        raise AuditError(
+            f"selected {selected_scope} service is not loaded: {selected_service}"
+        )
+    if selected["ActiveState"] != "active":
+        raise AuditError(
+            f"selected {selected_scope} service is not active: {selected_service} "
+            f"({selected['ActiveState']})"
+        )
+    if selected["UnitFileState"] != "enabled":
+        raise AuditError(
+            f"selected {selected_scope} service is not enabled: {selected_service} "
+            f"({selected['UnitFileState']})"
+        )
+
+    competing = [
+        f"{scope}:{unit}"
+        for (scope, unit), properties in inventory.items()
+        if properties["ActiveState"] == "active"
+        and (scope, unit) != (selected_scope, selected_service)
+    ]
+    if competing:
+        raise AuditError(
+            "additional active finn-nancy units detected; stop and disable them: "
+            + ", ".join(sorted(competing))
+        )
+    return inventory, selected
+
+
+def _read_ppid(proc_dir: Path) -> int:
+    try:
+        for line in (proc_dir / "status").read_text().splitlines():
+            if line.startswith("PPid:"):
+                return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
+def _read_cgroups(proc_dir: Path) -> tuple[str, ...]:
+    cgroups: list[str] = []
+    try:
+        for line in (proc_dir / "cgroup").read_text().splitlines():
+            _, separator, path = line.partition(":")
+            if separator:
+                _, separator, path = path.partition(":")
+            if separator and path:
+                cgroups.append(path.strip())
+    except OSError:
+        pass
+    return tuple(cgroups)
+
+
+def _process_kind(args: tuple[str, ...], repo: Path = REPO) -> str | None:
+    for index, argument in enumerate(args[:-1]):
+        if Path(argument).name == "fn" and args[index + 1] == "serve":
+            return "fn-serve"
+
+    uvicorn = any(Path(argument).name.startswith("uvicorn") for argument in args)
+    uvicorn = uvicorn or any(
+        argument == "-m" and index + 1 < len(args) and args[index + 1] == "uvicorn"
+        for index, argument in enumerate(args)
+    )
+    if uvicorn:
+        joined = " ".join(args)
+        markers = (str(repo), "app.web", "finn-nancy", "finn_nancy")
+        if any(marker in joined for marker in markers):
+            return "finn-nancy-uvicorn"
+    return None
+
+
+def _server_processes(proc_root: Path = Path("/proc")) -> list[ProcessInfo]:
+    processes: list[ProcessInfo] = []
+    for proc_dir in proc_root.iterdir():
+        if not proc_dir.name.isdigit():
+            continue
+        try:
+            raw_args = (proc_dir / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        args = tuple(
+            part.decode(errors="replace") for part in raw_args if part
+        )
+        kind = _process_kind(args)
+        if kind is None:
+            continue
+        processes.append(
+            ProcessInfo(
+                pid=int(proc_dir.name),
+                ppid=_read_ppid(proc_dir),
+                args=args,
+                cgroups=_read_cgroups(proc_dir),
+                kind=kind,
+            )
+        )
+    return sorted(processes, key=lambda item: item.pid)
+
+
+def _in_cgroup(pid: int, control_group: str, proc_root: Path = Path("/proc")) -> bool:
+    target = control_group.rstrip("/")
+    return any(
+        path == target or path.startswith(f"{target}/")
+        for path in _read_cgroups(proc_root / str(pid))
+    )
+
+
+def _is_descendant(
+    pid: int, main_pid: int, proc_root: Path = Path("/proc")
+) -> bool:
+    current = pid
+    seen: set[int] = set()
+    while current > 0 and current not in seen:
+        if current == main_pid:
+            return True
+        seen.add(current)
+        current = _read_ppid(proc_root / str(current))
+    return False
+
+
+def _validate_process_owner(
+    selected: dict[str, str], proc_root: Path = Path("/proc")
+) -> tuple[int, str, list[ProcessInfo]]:
+    try:
+        main_pid = int(selected["MainPID"])
+    except ValueError as exc:
+        raise AuditError(f"invalid selected service MainPID: {selected['MainPID']!r}") from exc
+    control_group = selected["ControlGroup"].rstrip("/")
+    if main_pid <= 0 or not control_group or not control_group.startswith("/"):
+        raise AuditError(
+            "selected service has no MainPID/ControlGroup; it may be transitioning"
+        )
+    if not _in_cgroup(main_pid, control_group, proc_root):
+        raise AuditError(
+            f"selected service MainPID {main_pid} is not in ControlGroup {control_group}"
+        )
+
+    processes = _server_processes(proc_root)
+    print("finn-nancy direct server process inventory:")
+    for process in processes:
+        owner = (
+            "selected"
+            if _in_cgroup(process.pid, control_group, proc_root)
+            and _is_descendant(process.pid, main_pid, proc_root)
+            else "outside-selected-service"
+        )
+        print(
+            f"  pid={process.pid} ppid={process.ppid} kind={process.kind} owner={owner}"
+        )
+
+    outside = [
+        process.pid
+        for process in processes
+        if not _in_cgroup(process.pid, control_group, proc_root)
+        or not _is_descendant(process.pid, main_pid, proc_root)
+    ]
+    if outside:
+        raise AuditError(
+            "unmanaged finn-nancy fn serve/uvicorn processes detected; stop them: "
+            + ", ".join(str(pid) for pid in outside)
+        )
+    if not processes:
+        raise AuditError(
+            "no finn-nancy fn serve/uvicorn process found; inspect the selected "
+            "service ExecStart and process state"
+        )
+    return main_pid, control_group, processes
+
+
+def _parse_local_base_url(base_url: str) -> tuple[str, int]:
+    parsed = urlsplit(base_url)
+    if (
+        parsed.scheme != "http"
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in ("", "/")
+    ):
+        raise AuditError(
+            "--base-url must be an origin-only loopback HTTP URL such as "
+            "http://127.0.0.1:8770"
+        )
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise AuditError(f"invalid --base-url port: {base_url}") from exc
+    if parsed.hostname is None or port is None:
+        raise AuditError("--base-url must include a loopback host and explicit port")
+    try:
+        loopback = ipaddress.ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        loopback = parsed.hostname.lower() == "localhost"
+    if not loopback:
+        raise AuditError(f"--base-url is not loopback: {base_url}")
+    return parsed.hostname, port
+
+
+def _validate_ss_listener_address(local_address: str, expected_port: int) -> str:
+    if local_address.startswith("["):
+        closing = local_address.find("]")
+        if closing < 0 or local_address[closing + 1 : closing + 2] != ":":
+            raise AuditError(f"cannot parse ss listener address: {local_address!r}")
+        host = local_address[1:closing]
+        port_text = local_address[closing + 2 :]
+    else:
+        host, separator, port_text = local_address.rpartition(":")
+        if not separator or not host:
+            raise AuditError(f"cannot parse ss listener address: {local_address!r}")
+    if port_text != str(expected_port):
+        raise AuditError(
+            f"ss returned unexpected listener port for {local_address!r}; "
+            f"expected {expected_port}"
+        )
+
+    unzoned_host = host.split("%", 1)[0]
+    if unzoned_host in {"*", "0.0.0.0", "::"}:
+        raise AuditError(
+            f"audited port {expected_port} has wildcard listener {local_address!r}"
+        )
+    try:
+        address = ipaddress.ip_address(unzoned_host)
+    except ValueError as exc:
+        raise AuditError(f"cannot parse ss listener address: {local_address!r}") from exc
+    loopback = address.is_loopback
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        loopback = address.ipv4_mapped.is_loopback
+    if not loopback:
+        raise AuditError(
+            f"audited port {expected_port} has non-loopback listener {local_address!r}"
+        )
+    return str(address)
+
+
+def _validate_listener_owner(
+    base_url: str,
+    main_pid: int,
+    control_group: str,
+    proc_root: Path = Path("/proc"),
+) -> None:
+    _, port = _parse_local_base_url(base_url)
+    result = _run(["ss", "-H", "-ltnp", f"sport = :{port}"])
+    rows = [line for line in result.stdout.splitlines() if line.strip()]
+    if not rows:
+        raise AuditError(f"no TCP listener found for --base-url port {port}")
+    listener_pids = {
+        int(match)
+        for row in rows
+        for match in _PID_RE.findall(row)
+    }
+    print(f"listener inventory for loopback port {port}:")
+    for row in rows:
+        fields = row.split()
+        if len(fields) < 4:
+            raise AuditError(f"cannot parse ss listener row: {row!r}")
+        pids = ",".join(_PID_RE.findall(row)) or "unavailable"
+        local_address = fields[3]
+        _validate_ss_listener_address(local_address, port)
+        print(f"  local={local_address} pids={pids}")
+    if not listener_pids:
+        raise AuditError(
+            f"listener process metadata is unavailable for port {port}; rerun with "
+            "permissions that let ss report PIDs"
+        )
+    outside = [
+        pid
+        for pid in listener_pids
+        if not _in_cgroup(pid, control_group, proc_root)
+        or not _is_descendant(pid, main_pid, proc_root)
+    ]
+    if outside:
+        raise AuditError(
+            f"port {port} has listener PIDs outside the selected service chain: "
+            + ", ".join(str(pid) for pid in sorted(outside))
+        )
+
+
+def _fetch_bytes(url: str) -> bytes:
+    try:
+        with urlopen(url, timeout=15) as response:
+            return response.read()
+    except (OSError, URLError) as exc:
+        raise AuditError(f"live request failed for {url}: {exc}") from exc
+
+
+def _fetch_version(base_url: str) -> dict[str, Any]:
+    url = f"{base_url.rstrip('/')}/version"
+    try:
+        payload = json.loads(_fetch_bytes(url))
+    except json.JSONDecodeError as exc:
+        raise AuditError(f"invalid JSON from {url}") from exc
+    if not isinstance(payload, dict):
+        raise AuditError(f"version payload is not an object: {url}")
+    return payload
+
+
+def _validate_version(
+    payload: dict[str, Any],
+    expected_sha: str,
+    manifest: dict[str, Any],
+    label: str,
+) -> None:
+    required = {
+        "build_sha",
+        "database_identity",
+        "schema_digest",
+        "expected_migration_digest",
+        "applied_migration_digest",
+        "migration_status",
+        "migration_sequence_matches",
+    }
+    missing = required - payload.keys()
+    if missing:
+        raise AuditError(f"{label} version payload missing: {sorted(missing)}")
+    if payload["build_sha"] != expected_sha:
+        raise AuditError(
+            f"{label} build {payload['build_sha']!r} does not match expected {expected_sha}"
+        )
+    identity = payload["database_identity"]
+    try:
+        canonical_identity = str(uuid.UUID(identity)) if isinstance(identity, str) else ""
+    except ValueError:
+        canonical_identity = ""
+    if canonical_identity != identity:
+        raise AuditError(f"{label} database_identity is not a canonical UUID")
+    for key in ("schema_digest", "expected_migration_digest", "applied_migration_digest"):
+        if not isinstance(payload[key], str) or not _DIGEST_RE.fullmatch(payload[key]):
+            raise AuditError(f"{label} {key} is not a SHA-256 digest")
+    if (
+        payload["migration_status"] != "ok"
+        or payload["migration_sequence_matches"] is not True
+        or payload["expected_migration_digest"] != payload["applied_migration_digest"]
+    ):
+        raise AuditError(f"{label} database migration sequence does not match code")
+    if payload["database_identity"] != manifest["source"]["database_identity"]:
+        raise AuditError(
+            f"{label} database identity does not match the backup manifest source"
+        )
+    if payload["schema_digest"] != manifest["candidate"]["schema_digest"]:
+        raise AuditError(
+            f"{label} schema digest does not match the migrated backup proof"
+        )
+    if (
+        payload["applied_migration_digest"]
+        != manifest["candidate"]["migration_digest"]
+    ):
+        raise AuditError(
+            f"{label} migration digest does not match the migrated backup proof"
+        )
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Read-only exact-head audit. It never restarts services, reads an "
+            "environment file, changes a checkout, or mutates a source, backup, "
+            "or live database. Manifest verification migrates only a temporary "
+            "proof copy."
+        )
+    )
+    parser.add_argument("--expected-sha", default="HEAD")
+    parser.add_argument("--scope", choices=("system", "user"), default="user")
+    parser.add_argument("--instance", default="prod")
+    parser.add_argument("--base-url")
+    parser.add_argument("--tailnet-url")
+    parser.add_argument("--backup-manifest", type=Path)
+    parser.add_argument("--live", action="store_true")
+    return parser
+
+
+def main() -> int:
+    args = _parser().parse_args()
+    try:
+        expected = _git("rev-parse", f"{args.expected_sha}^{{commit}}")
+        head = _git("rev-parse", "HEAD")
+        origin_main = _git("rev-parse", "refs/remotes/origin/main^{commit}")
+        if not _SHA_RE.fullmatch(expected):
+            raise AuditError(f"expected release did not resolve to a full SHA: {expected}")
+        if head != expected:
+            raise AuditError(f"HEAD {head} does not equal expected release {expected}")
+        if head != origin_main:
+            raise AuditError(
+                f"HEAD {head} does not equal local origin/main {origin_main}; "
+                "fetch and verify the merge"
+            )
+        status = _git("status", "--porcelain", "--untracked-files=normal")
+        if status:
+            raise AuditError(f"release checkout is not clean:\n{status}")
+        print(f"release checkout ok: {head}")
+
+        manifest: dict[str, Any] | None = None
+        if args.backup_manifest is not None:
+            manifest, backup = verify_manifest(
+                args.backup_manifest,
+                max_age=RELEASE_MANIFEST_MAX_AGE,
+            )
+            print(
+                "backup manifest ok: "
+                f"backup={backup} sha256={manifest['backup']['sha256']}"
+            )
+
+        if not args.live:
+            return 0
+        if args.base_url is None or manifest is None:
+            raise AuditError("--live requires --base-url and --backup-manifest")
+
+        selected_service = f"finn-nancy@{args.instance}.service"
+        _, selected = _service_inventory(args.scope, selected_service)
+        if (
+            not selected["WorkingDirectory"]
+            or Path(selected["WorkingDirectory"]).resolve(strict=False) != REPO
+        ):
+            raise AuditError(
+                "selected service WorkingDirectory is "
+                f"{selected['WorkingDirectory']!r}, expected {REPO}"
+            )
+        main_pid, control_group, _ = _validate_process_owner(selected)
+        _validate_listener_owner(args.base_url, main_pid, control_group)
+
+        _fetch_bytes(f"{args.base_url.rstrip('/')}/healthz")
+        local_version = _fetch_version(args.base_url)
+        _validate_version(local_version, expected, manifest, "local")
+        if args.tailnet_url:
+            tailnet_version = _fetch_version(args.tailnet_url)
+            _validate_version(tailnet_version, expected, manifest, "tailnet")
+            compared = (
+                "build_sha",
+                "database_identity",
+                "schema_digest",
+                "expected_migration_digest",
+                "applied_migration_digest",
+            )
+            if any(tailnet_version[key] != local_version[key] for key in compared):
+                raise AuditError(
+                    "tailnet version payload does not identify the audited local service"
+                )
+
+        print(
+            "live release ok: "
+            f"scope={args.scope} service={selected_service} sha={expected} "
+            f"main_pid={main_pid} control_group={control_group}"
+        )
+    except (AuditError, ManifestError, OSError) as exc:
+        print(f"release audit failed: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

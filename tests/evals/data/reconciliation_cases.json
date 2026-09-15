@@ -1,0 +1,17 @@
+[
+  {
+    "statement_line_id": 10,
+    "expected_transaction_id": 100,
+    "predicted_transaction_id": 100
+  },
+  {
+    "statement_line_id": 11,
+    "expected_transaction_id": 101,
+    "predicted_transaction_id": 101
+  },
+  {
+    "statement_line_id": 12,
+    "expected_transaction_id": null,
+    "predicted_transaction_id": null
+  }
+]

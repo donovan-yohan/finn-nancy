@@ -1,0 +1,28 @@
+{
+  "binary_assets": {
+    "app/web/static/icon-192.png": "f72dacb430283998d1a98d09f7a8a4f59bad04bbb1af214e94546f53533959c5",
+    "app/web/static/icon-512.png": "087e754da59271f2e34a1d4ac0b6715879aade93f87caa9bd3f71f8000fceb50",
+    "app/web/static/icon-maskable-512.png": "d999491256c3cdd92507c761e8977e4931f9e550008c6b18f7c799255f1ec60b"
+  },
+  "declaration": "Fixture files are deterministic synthetic data; opaque binaries are reviewed public assets.",
+  "fixtures": {
+    "fixtures/sample.sql": "7ab42738da4bdf3f55e136c4f0457078f840aaa6b60ff7fc13baa798a67f38df",
+    "tests/evals/data/chat_cases.json": "e2c765fdc65310d251b7ac49335020f4aa74f088bdb634166a2fa4f1c49dd29a",
+    "tests/evals/data/classification_cases.json": "886a112800add5872372ff665a6077cf5808841c06641d51c16148bc09034f3b",
+    "tests/evals/data/extraction_cases.json": "bbfc747ccfedd8ed65af52c175d9a09eae9c877d8c6cfec7bdf9aeced331bf49",
+    "tests/evals/data/fn149/developer.predictions.v1.jsonl": "d303d967ea400af4dcac55d9aa31f53d8ebb5cb9fe463a580259b529ed114b71",
+    "tests/evals/data/fn149/developer.v1.jsonl": "6be3c8e8d55d273cf76a5a6c84a86f461cd9644ca3f616e59289ad52c2f63460",
+    "tests/evals/data/fn149/manifest.v1.json": "7a5918d92596aa938b5ad4002d3ce68704123a0756e9cd4f1c1ecfd60bd69074",
+    "tests/evals/data/fn149/policy.v1.json": "cb41bb8179981161369150784adf490dd4de4768e617d6e4dcc71c0782d781da",
+    "tests/evals/data/fn149/sealed.predictions.v1.jsonl": "89400640aa0f2eebfce0266f79ac243221a5a711571454a5565d47b82f19dd9b",
+    "tests/evals/data/fn149/sealed.v1.jsonl": "6c1674a58e945e505ed4b00e7837cbdfa79801df26a004496b97329d15457cd7",
+    "tests/evals/data/reconciliation_cases.json": "fb9ab756409e093e00cd4dc52ac860e76f1cfd5b25d05ce32fb2671b8c95e167",
+    "tests/fixtures/accounting/golden_month.json": "a3902dc0db7a20bffc5acf2332c7caed466eeefba8eb6385a6928c0ad5869766",
+    "tests/fixtures/fn149b/gold.v1.json": "045d224252b5ec4be0dbb8f8031f4692307235fb908d0466b8b447e7b082cd52",
+    "tests/fixtures/fn149b/knowledge.v1.json": "4296e14bc1715f680112f21c9f2ad51af9d21228246a8288688dd268812baa1c",
+    "tests/fixtures/fn149b/manifest.v1.json": "3caa667c216d241e3c6a7dc8fa89ebd5c2fd7daaf9ca2677f70e41bc98321afb",
+    "tests/fixtures/fn149b/policy.v1.json": "939a68951ba17123d249add84e69105ac69d8ff48740dd1f51ba33160a157952",
+    "tests/fixtures/fn149b/public.v1.json": "1be4bd10576dc6a11b7e34a59562743b2eb967a5e23c41ebf6b9ee0e2fa10d00"
+  },
+  "schema": "finn-nancy-public-release-manifest.v1"
+}

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO"
+
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  BASE_REF="${LINT_BASE_REF:-origin/main}"
+  if git rev-parse --verify --quiet "$BASE_REF^{commit}" >/dev/null; then
+    base="$(git merge-base HEAD "$BASE_REF")"
+    git diff --check "$base"...HEAD
+  fi
+  git diff --check
+  git diff --cached --check
+fi
+
+./scripts/public-release-audit
+
+mapfile -t bash_files < <(
+  {
+    find deploy -type f -name '*.sh' -print
+    find scripts -maxdepth 1 -type f -print
+  } | sort
+)
+for file in "${bash_files[@]}"; do
+  if [[ "$(head -n 1 "$file")" == "#!/usr/bin/env bash" ]]; then
+    bash -n "$file"
+  fi
+done
+
+uv run --frozen python -m compileall -q app tests
+uv run --frozen python -m json.tool app/web/static/manifest.webmanifest >/dev/null

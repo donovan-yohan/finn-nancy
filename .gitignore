@@ -1,0 +1,21 @@
+# private financial data lives here; never commit real imports
+/data/
+
+# local build outputs
+/bin/
+/dist/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# editor/os noise
+.DS_Store
+.env
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+.ruff_cache/

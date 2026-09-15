@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}statement source · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <div>
+    <p class="eyebrow">desktop verification</p>
+    <h1>{{ document.original_name }}</h1>
+    {% if parsed %}
+      <p class="subtle">
+        {{ parsed.institution }} ·
+        {% if parsed.account_last4 %}account ••{{ parsed.account_last4 }} · {% endif %}
+        {{ parsed.period_start_on }} to {{ parsed.period_end_on }} ·
+        {{ rows|length }} rows · read without a language model
+      </p>
+    {% endif %}
+    <a class="link" href="/review">review queue</a> · <a class="link" href="/review/import">imports</a>
+  </div>
+</header>
+
+{% if blockers %}
+<section class="banner warn lens-gate">
+  <strong>Nothing from this statement has been recorded.</strong>
+  <p>The rows could not reproduce the totals the statement prints about itself.</p>
+  <ul>
+    {% for blocker in blockers %}
+      <li>
+        {{ blocker.message }}
+        {% if blocker.row_number %}
+          <a class="link" href="#row-{{ blocker.row_number }}">show me row {{ blocker.row_number }}</a>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="lens" id="lens">
+  <div class="lens-pane lens-pages" id="lens-pages">
+    <p class="eyebrow">source · {{ pages|length }} page{{ '' if pages|length == 1 else 's' }}</p>
+    {% for page in pages %}
+      <figure class="page-canvas" id="page-{{ page.number }}" style="--aspect: {{ '%.4f'|format(page.aspect) }}">
+        <img src="/review/pdf/{{ document.id }}/page/{{ page.number }}.png"
+             alt="Page {{ page.label }} of the statement"
+             loading="{{ 'eager' if page.number == 0 else 'lazy' }}" decoding="async">
+        {% for row in rows %}
+          {% for box in row.boxes %}
+            {% if box.page == page.number %}
+              <a class="region{{ ' region-detail' if not loop.first }}"
+                 id="region-{{ row.number }}-{{ loop.index0 }}"
+                 href="#row-{{ row.number }}"
+                 data-row="{{ row.number }}"
+                 aria-label="Source for row {{ row.number }}"
+                 style="--x0:{{ box.x0 }}; --y0:{{ box.y0 }}; --x1:{{ box.x1 }}; --y1:{{ box.y1 }}"></a>
+            {% endif %}
+          {% endfor %}
+        {% endfor %}
+        <figcaption class="subtle">page {{ page.label }}</figcaption>
+      </figure>
+    {% endfor %}
+  </div>
+
+  <div class="lens-pane lens-rows" id="lens-rows">
+    <p class="eyebrow">extracted rows</p>
+    {% for section in sections %}
+      <div class="lens-section">
+        <h2 class="lens-section-head">
+          {% if not section.card_last4 %}
+            all rows
+          {% elif section.holder_named %}
+            {{ section.holder }} <span class="subtle">••{{ section.card_last4 }}</span>
+          {% else %}
+            <span class="subtle">Unnamed card</span> ••{{ section.card_last4 }}
+            <a class="link" href="/manage#cardholders">name it</a>
+          {% endif %}
+          <span class="subtle">{{ section.rows|length }} rows ·
+            {{ '%.2f'|format(section.total_cents / 100) }}</span>
+        </h2>
+        {% for row in section.rows %}
+          <a class="lens-row{{ ' is-credit' if row.amount_cents < 0 }}"
+             id="row-{{ row.number }}"
+             href="#region-{{ row.number }}-0"
+             data-row="{{ row.number }}">
+            <span class="lens-row-n">{{ row.number }}</span>
+            <span class="lens-row-date">{{ row.posted_on }}</span>
+            <span class="lens-row-desc">
+              {{ row.merchant or row.description }}
+              {% if row.locality %}<em class="subtle">{{ row.locality }}</em>{% endif %}
+              {% if row.detail %}<em class="subtle">{{ row.detail }}</em>{% endif %}
+            </span>
+            <span class="lens-row-amt">{{ '%.2f'|format(row.amount_cents / 100) }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    {% endfor %}
+    {% if not rows %}
+      <p class="subtle">No rows were extracted from this statement.</p>
+    {% endif %}
+  </div>
+</section>
+
+<script defer src="/static/evidence-lens.js"></script>
+{% endblock %}

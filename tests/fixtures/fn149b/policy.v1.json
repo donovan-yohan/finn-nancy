@@ -1,0 +1,78 @@
+{
+  "approved_production_tuple": null,
+  "automatic_evidence_sources": [
+    "confirmed_local"
+  ],
+  "automation_authority": "disabled_pending_approved_production_gate",
+  "minimum_eligible_per_split": {
+    "developer": {
+      "category": 630,
+      "merchant": 630
+    },
+    "sealed": {
+      "category": 630,
+      "merchant": 630
+    }
+  },
+  "minimum_independent_clusters_per_split": {
+    "developer": {
+      "category": 600,
+      "merchant": 600
+    },
+    "sealed": {
+      "category": 600,
+      "merchant": 600
+    }
+  },
+  "policy_version": "fn149b-precision-policy.v1",
+  "required_cohort_counts_per_split": {
+    "developer": {
+      "ambiguous_alias": 20,
+      "category_only_confirmed": 30,
+      "legacy_alias_only": 20,
+      "legitimate_merchant_digits": 100,
+      "marketplace_truncation": 100,
+      "merchant_only_confirmed": 30,
+      "model_hint_only": 20,
+      "no_evidence": 20,
+      "processor_prefix": 100,
+      "punctuation_variants": 100,
+      "scope_conflict": 20,
+      "subscription_suffix": 100,
+      "terminal_location_codes": 100,
+      "web_hint_only": 20
+    },
+    "sealed": {
+      "ambiguous_alias": 20,
+      "category_only_confirmed": 30,
+      "legacy_alias_only": 20,
+      "legitimate_merchant_digits": 100,
+      "marketplace_truncation": 100,
+      "merchant_only_confirmed": 30,
+      "model_hint_only": 20,
+      "no_evidence": 20,
+      "processor_prefix": 100,
+      "punctuation_variants": 100,
+      "scope_conflict": 20,
+      "subscription_suffix": 100,
+      "terminal_location_codes": 100,
+      "web_hint_only": 20
+    }
+  },
+  "thresholds": {
+    "confidence_level": 0.95,
+    "false_assignments_max": 0,
+    "precision_lower_bound_min": 0.995,
+    "precision_min": 0.995,
+    "required_abstention_rate": 1.0,
+    "supported_cohort_coverage_min": 1.0
+  },
+  "versions": {
+    "controlled_scorer_version": "fn149b-controlled-reference.v1",
+    "corpus_version": "fn149b-synthetic-descriptors.v1",
+    "gold_schema_version": "fn149b-descriptor-gold.v1",
+    "input_schema_version": "fn149b-descriptor-input.v1",
+    "knowledge_version": "fn149b-controlled-knowledge.v1",
+    "prediction_schema_version": "fn149b-descriptor-prediction.v1"
+  }
+}

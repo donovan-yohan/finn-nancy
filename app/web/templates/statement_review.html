@@ -1,0 +1,467 @@
+{% extends "base.html" %}
+{% block title %}statement review · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact statement-review-head">
+  <div>
+    <p class="eyebrow">month-end evidence</p>
+    <h1>Review statement</h1>
+    <p class="subtle">
+      <a class="link" href="/review">review queue</a>
+      · {{ doc.original_name }}
+      · revision {{ review.revision }}
+      {% if review.period_month %}
+      · <a class="link" href="/recon?month={{ review.period_month }}">reconcile this month</a>
+      · <a class="link" href="/statements?month={{ review.period_month }}">period statement</a>
+      {% endif %}
+    </p>
+  </div>
+  <div class="statement-state" aria-label="Statement review state">
+    <span class="statement-state-pill is-{{ review.review_state }}">
+      {{ review.review_state | replace('_', ' ') }}
+    </span>
+    {% if expectation_link %}
+    <span class="statement-state-pill">
+      period {{ expectation_link.lifecycle_state }}
+    </span>
+    {% endif %}
+  </div>
+</header>
+
+<main class="statement-review-main">
+  {% if notice %}
+  <p class="banner statement-notice" role="status">{{ notice }}</p>
+  {% endif %}
+
+  <section class="card statement-gate" aria-labelledby="statement-gate-title">
+    <div>
+      <p class="eyebrow">approval gate</p>
+      <h2 id="statement-gate-title">
+        {% if completeness.complete %}
+        Source and rows are complete
+        {% elif completeness.hard_blockers %}
+        Resolve hard blockers
+        {% else %}
+        Review or explain remaining blockers
+        {% endif %}
+      </h2>
+      <p class="subtle">
+        {% if review.source_kind == 'structured_rows' %}
+        {{ completeness.source_anchor_count }} source anchor{{ 's' if completeness.source_anchor_count != 1 else '' }}
+        {% else %}
+        {{ completeness.observed_page_count }} source page{{ 's' if completeness.observed_page_count != 1 else '' }}
+        {% endif %}
+        · {{ completeness.active_row_count }} active row{{ 's' if completeness.active_row_count != 1 else '' }}
+        · {{ completeness.excluded_row_count }} excluded
+      </p>
+    </div>
+    <div class="statement-blockers">
+      {% for blocker in completeness.hard_blockers %}
+      <span class="statement-blocker is-hard">{{ blocker | replace('_', ' ') }}</span>
+      {% endfor %}
+      {% for blocker in completeness.review_blockers %}
+      <span class="statement-blocker">{{ blocker | replace('_', ' ') }}</span>
+      {% endfor %}
+      {% if completeness.complete %}
+      <span class="statement-blocker is-clear">all checks passed</span>
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="statement-workspace">
+    <aside class="card statement-source" aria-labelledby="statement-source-title">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">immutable source</p>
+          <h2 id="statement-source-title">
+            {{ 'Imported row evidence' if review.source_kind == 'structured_rows' else 'Statement pages' }}
+          </h2>
+        </div>
+        <a class="link" href="/review/doc/{{ doc.id }}/file" target="_blank" rel="noopener">
+          open separately
+        </a>
+      </div>
+      {% if review.source_kind == 'structured_rows' %}
+      <p class="subtle">
+        {{ structured_import.adapter_version if structured_import else 'version unavailable' }}
+        · each ledger candidate points to an immutable raw-row locator
+        · the full original is available above.
+      </p>
+      {% if structured_import %}
+      <dl class="statement-source-facts">
+        <dt>Import state</dt>
+        <dd>{{ structured_import.status | replace('_', ' ') }}</dd>
+        <dt>Rows</dt>
+        <dd>{{ structured_import.row_count }}</dd>
+        <dt>Overlap</dt>
+        <dd>{{ structured_import.overlap_kind }}</dd>
+      </dl>
+      {% endif %}
+      {% else %}
+      {% if pages %}
+      <nav class="statement-page-links" aria-label="Statement pages">
+        {% for page in pages %}
+        <a href="/review/doc/{{ doc.id }}/file#page={{ page.page_number }}"
+           target="statement-source">
+          page {{ page.page_number }}
+          {% if not page.included_in_extraction %}· not extracted{% endif %}
+        </a>
+        {% endfor %}
+      </nav>
+      {% else %}
+      <p class="banner warn">
+        This legacy import has no page anchors. Re-ingest the source to create
+        verifiable page evidence.
+      </p>
+      {% endif %}
+      <iframe
+        class="statement-source-frame"
+        name="statement-source"
+        src="/review/doc/{{ doc.id }}/file#page=1"
+        title="Source statement: {{ doc.original_name }}"
+      ></iframe>
+      {% endif %}
+    </aside>
+
+    <section class="card statement-metadata" aria-labelledby="statement-metadata-title">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">typed statement identity</p>
+          <h2 id="statement-metadata-title">Metadata</h2>
+        </div>
+        <span class="subtle">every save is audited</span>
+      </div>
+      <form method="post" action="/review/statement/{{ doc.id }}/metadata"
+            class="statement-form-grid">
+        <input type="hidden" name="expected_revision" value="{{ review.revision }}">
+        <label>
+          <span>Account</span>
+          <select name="account_id" required>
+            <option value="">select account</option>
+            {% for account in accounts %}
+            <option value="{{ account.id }}"
+                    {% if review.account_id == account.id %}selected{% endif %}>
+              {{ account.name }} · {{ account.institution or account.kind }}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>{{ 'Source anchor' if review.source_kind == 'structured_rows' else 'Source page' }}</span>
+          <input type="number" name="source_page" min="1"
+                 max="{{ completeness.source_anchor_count or 1 }}" value="1" required>
+        </label>
+        <label>
+          <span>Period starts</span>
+          <input type="date" name="period_start_on"
+                 value="{{ review.period_start_on or '' }}">
+        </label>
+        <label>
+          <span>Actual closing date</span>
+          <input type="date" name="period_end_on"
+                 value="{{ review.period_end_on or '' }}">
+        </label>
+        <label>
+          <span>Statement issued</span>
+          <input type="date" name="statement_issued_on"
+                 value="{{ review.statement_issued_on or '' }}">
+        </label>
+        <label>
+          <span>Currency</span>
+          <input type="text" name="currency" maxlength="3"
+                 value="{{ review.currency }}" autocapitalize="characters" required>
+        </label>
+        <label>
+          <span>Opening balance</span>
+          <input type="text" name="opening_balance" inputmode="decimal"
+                 value="{{ '%.2f'|format(review.opening_balance_cents / 100) if review.opening_balance_cents is not none else '' }}">
+        </label>
+        <label>
+          <span>Closing balance</span>
+          <input type="text" name="closing_balance" inputmode="decimal"
+                 value="{{ '%.2f'|format(review.closing_balance_cents / 100) if review.closing_balance_cents is not none else '' }}">
+        </label>
+        <label>
+          <span>Activity</span>
+          <select name="activity_kind" required>
+            {% for value, label in [
+              ('unknown', 'Needs confirmation'),
+              ('transactions', 'Contains transactions'),
+              ('zero_activity', 'Explicitly no transactions')
+            ] %}
+            <option value="{{ value }}"
+                    {% if review.activity_kind == value %}selected{% endif %}>
+              {{ label }}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        {% if review.source_kind != 'structured_rows' %}
+        <label>
+          <span>Printed page count</span>
+          <input type="number" name="declared_page_count" min="1"
+                 value="{{ review.declared_page_count if review.declared_page_count is not none else '' }}">
+        </label>
+        {% else %}
+        <input type="hidden" name="declared_page_count" value="">
+        {% endif %}
+        <label>
+          <span>Printed transaction count</span>
+          <input type="number" name="declared_row_count" min="0"
+                 value="{{ review.declared_row_count if review.declared_row_count is not none else '' }}">
+        </label>
+        <label class="statement-form-wide">
+          <span>Why are you confirming or correcting this?</span>
+          <input type="text" name="reason"
+                 placeholder="Confirmed against page 1" required>
+        </label>
+        <div class="statement-form-wide">
+          <button class="primary" type="submit">Save metadata</button>
+        </div>
+      </form>
+      <p class="subtle statement-fingerprint">
+        Account fingerprint:
+        {% if review.account_fingerprint %}
+        present · {{ review.fingerprint_version }}
+        {% else %}
+        missing
+        {% endif %}
+      </p>
+    </section>
+  </div>
+
+  <section class="card statement-rows" aria-labelledby="statement-rows-title">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">ledger candidates</p>
+        <h2 id="statement-rows-title">Statement rows</h2>
+      </div>
+      <span class="subtle">excluded rows remain as evidence</span>
+    </div>
+
+    <div class="statement-row-list">
+      {% for line in lines %}
+      <article
+        id="statement-line-{{ line.id }}"
+        class="statement-row is-{{ line.review_disposition }}"
+      >
+        <div class="statement-row-summary">
+          <div>
+            <strong>{{ line.raw_description }}</strong>
+            <span>{{ line.posted_on }} · {{ line.currency }}
+              {% if line.is_pending %}· pending{% endif %}
+            </span>
+          </div>
+          <div class="statement-row-amount">
+            <strong>{{ line.amount_cents | money }}</strong>
+            <span>
+              {{ line.review_disposition }}
+              · confidence {{ (line.row_confidence * 100) | round | int }}%
+            </span>
+          </div>
+        </div>
+        <div class="statement-row-tools">
+          {% if line.source_anchor_id %}
+          {% if review.source_kind == 'structured_rows' %}
+          <a class="link" href="/review/doc/{{ doc.id }}/file" target="_blank"
+             rel="noopener">raw row evidence</a>
+          <span class="subtle">{{ line.source_locator_json }}</span>
+          {% else %}
+          <a class="link"
+             href="/review/doc/{{ doc.id }}/file#page={{ line.source_page_number }}"
+             target="statement-source">source evidence</a>
+          {% endif %}
+          {% else %}
+          <span class="subtle">source anchor missing</span>
+          {% endif %}
+          {% if line.review_disposition == 'active' %}
+          <details>
+            <summary>Edit row</summary>
+            <form method="post"
+                  action="/review/statement/{{ doc.id }}/row/{{ line.id }}"
+                  class="statement-row-form">
+              <input type="hidden" name="expected_review_revision" value="{{ review.revision }}">
+              <input type="hidden" name="expected_line_revision" value="{{ line.review_revision }}">
+              <label><span>{{ 'Source anchor' if review.source_kind == 'structured_rows' else 'Page' }}</span>
+                <input type="number" name="source_page" min="1"
+                       max="{{ completeness.source_anchor_count or 1 }}"
+                       value="{{ line.source_anchor_ordinal if review.source_kind == 'structured_rows' else (line.source_page_number or 1) }}" required>
+              </label>
+              <label><span>Date</span>
+                <input type="date" name="posted_on" value="{{ line.posted_on }}" required>
+              </label>
+              <label class="statement-form-wide"><span>Description</span>
+                <input type="text" name="description"
+                       value="{{ line.raw_description }}" required>
+              </label>
+              <label><span>Signed amount</span>
+                <input type="text" name="amount" inputmode="decimal"
+                       value="{{ '%.2f'|format(line.amount_cents / 100) }}" required>
+              </label>
+              <label><span>Currency</span>
+                <input type="text" name="currency" maxlength="3"
+                       value="{{ line.currency }}" required>
+              </label>
+              <label><span>Running balance</span>
+                <input type="text" name="balance" inputmode="decimal"
+                       value="{{ '%.2f'|format(line.balance_cents / 100) if line.balance_cents is not none else '' }}">
+              </label>
+              <label class="statement-check">
+                <input type="checkbox" name="is_pending"
+                       {% if line.is_pending %}checked{% endif %}>
+                <span>Pending transaction</span>
+              </label>
+              <label class="statement-form-wide"><span>Correction reason</span>
+                <input type="text" name="reason"
+                       placeholder="Corrected against source page" required>
+              </label>
+              <button class="ghost" type="submit">Save row correction</button>
+            </form>
+          </details>
+          <form method="post"
+                action="/review/statement/{{ doc.id }}/row/{{ line.id }}/exclude"
+                class="statement-inline-action">
+            <input type="hidden" name="expected_review_revision" value="{{ review.revision }}">
+            <input type="hidden" name="expected_line_revision" value="{{ line.review_revision }}">
+            <label>
+              <span class="sr-only">Reason for excluding {{ line.raw_description }}</span>
+              <input type="text" name="reason" placeholder="Why is this not a transaction?"
+                     required>
+            </label>
+            <button class="ghost" type="submit">Exclude</button>
+          </form>
+          {% else %}
+          <form method="post"
+                action="/review/statement/{{ doc.id }}/row/{{ line.id }}/restore"
+                class="statement-inline-action">
+            <input type="hidden" name="expected_review_revision" value="{{ review.revision }}">
+            <input type="hidden" name="expected_line_revision" value="{{ line.review_revision }}">
+            <label>
+              <span class="sr-only">Reason for restoring {{ line.raw_description }}</span>
+              <input type="text" name="reason" placeholder="Why should this row return?"
+                     required>
+            </label>
+            <button class="ghost" type="submit">Restore</button>
+          </form>
+          {% endif %}
+        </div>
+      </article>
+      {% else %}
+      <p class="subtle">No extracted rows. Confirm explicit zero activity or add the missing rows.</p>
+      {% endfor %}
+    </div>
+
+    <details class="statement-add-row">
+      <summary>Add a missing statement row</summary>
+      <form method="post" action="/review/statement/{{ doc.id }}/row"
+            class="statement-row-form">
+        <input type="hidden" name="expected_review_revision" value="{{ review.revision }}">
+        <label><span>{{ 'Source anchor' if review.source_kind == 'structured_rows' else 'Page' }}</span>
+          <input type="number" name="source_page" min="1"
+                 max="{{ completeness.source_anchor_count or 1 }}" value="1" required>
+        </label>
+        <label><span>Date</span>
+          <input type="date" name="posted_on" required>
+        </label>
+        <label class="statement-form-wide"><span>Description</span>
+          <input type="text" name="description" required>
+        </label>
+        <label><span>Signed amount</span>
+          <input type="text" name="amount" inputmode="decimal" required>
+        </label>
+        <label><span>Currency</span>
+          <input type="text" name="currency" maxlength="3"
+                 value="{{ review.currency }}" required>
+        </label>
+        <label><span>Running balance</span>
+          <input type="text" name="balance" inputmode="decimal">
+        </label>
+        <label class="statement-check">
+          <input type="checkbox" name="is_pending">
+          <span>Pending transaction</span>
+        </label>
+        <label class="statement-form-wide"><span>Addition reason</span>
+          <input type="text" name="reason"
+                 placeholder="Missing row visible on source page" required>
+        </label>
+        <button class="ghost" type="submit">Add audited row</button>
+      </form>
+    </details>
+  </section>
+
+  <section class="card statement-approval" aria-labelledby="statement-approval-title">
+    <div>
+      <p class="eyebrow">finish review</p>
+      <h2 id="statement-approval-title">Approve for reconciliation</h2>
+      <p class="subtle">
+        Approval records the actual closing-date balance assertion. Transaction
+        statements are queued for matching; explicit zero-activity statements
+        reconcile only when their balance proof is complete.
+      </p>
+    </div>
+    <form method="post" action="/review/statement/{{ doc.id }}/approve"
+          class="statement-approval-form">
+      <input type="hidden" name="expected_revision" value="{{ review.revision }}">
+      <label>
+        <span>Approval reason</span>
+        <input type="text" name="reason"
+               value="Source pages and statement rows reviewed" required>
+      </label>
+      <label>
+        <span>Override explanation</span>
+        <textarea name="override_reason" rows="3"
+                  placeholder="Required only to accept review-level blockers"></textarea>
+      </label>
+      <button class="primary" type="submit"
+              {% if completeness.hard_blockers %}disabled aria-disabled="true"{% endif %}>
+        Approve statement
+      </button>
+    </form>
+  </section>
+
+  {% if review.period_month and review.review_state == "approved" %}
+  <section class="card statement-approval">
+    <div>
+      <p class="eyebrow">next step</p>
+      <h2>Continue to reconciliation</h2>
+      <p class="subtle">
+        Statement corrections remain auditable. Reconciliation is the only step
+        that can match or promote these rows into the ledger.
+      </p>
+    </div>
+    <a class="primary" href="/recon?month={{ review.period_month }}">Reconcile {{ review.period_month }}</a>
+  </section>
+  {% endif %}
+
+  <details class="card statement-audit">
+    <summary>Audit history · {{ audit | length }} event{{ 's' if audit | length != 1 else '' }}</summary>
+    <ol>
+      {% for event in audit %}
+      <li>
+        <strong>{{ event.event_kind | replace('_', ' ') }}</strong>
+        · {{ event.actor }} · {{ event.created_at }}
+        <span>{{ event.reason }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+  </details>
+
+  <section class="card statement-archive">
+    <div>
+      <h2>Archive this source</h2>
+      <p class="subtle">
+        The source, extracted claims, rows, and audit stay preserved. Active
+        rows are excluded from reconciliation and reports.
+      </p>
+    </div>
+    <form method="post" action="/review/statement/{{ doc.id }}/archive"
+          onsubmit="return confirm('Archive this statement while preserving its evidence?')">
+      <label>
+        <span class="sr-only">Archive reason</span>
+        <input type="text" name="reason" placeholder="Why is this source unusable?"
+               required>
+      </label>
+      <button class="ghost" type="submit">Archive source</button>
+    </form>
+  </section>
+</main>
+{% endblock %}

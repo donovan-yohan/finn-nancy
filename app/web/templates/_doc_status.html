@@ -1,0 +1,31 @@
+{% if pending %}
+<div class="doc-status"
+     hx-get="/documents/{{ doc.id }}/status"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML">
+  processing #{{ doc.id }} ({{ doc.status }})…
+</div>
+{% elif failure %}
+{# Terminal: the job ran out of attempts, so polling stops and the user is
+   told what happened instead of watching a spinner that will never resolve. #}
+<div class="doc-status failed">
+  <strong>#{{ doc.id }}: couldn't read this file.</strong>
+  <span class="subtle">Tried {{ failure.attempts }} time{{ '' if failure.attempts == 1 else 's' }}.
+    The original is safe.</span>
+  <button class="ghost"
+          hx-post="/documents/{{ doc.id }}/retry"
+          hx-target="closest .doc-status"
+          hx-swap="outerHTML">try again</button>
+</div>
+{% else %}
+<div class="doc-status done">
+  {% if txn %}
+    logged: <strong>{{ txn.description }}</strong> {{ txn.amount_cents | money }}
+    {% if category_name %}<span class="subtle">[{{ category_name }}]</span>{% endif %}
+  {% elif doc %}
+    #{{ doc.id }}: {{ doc.status }}{% if doc.status == 'needs_review' %} — needs review{% endif %}
+  {% else %}
+    not found
+  {% endif %}
+</div>
+{% endif %}
