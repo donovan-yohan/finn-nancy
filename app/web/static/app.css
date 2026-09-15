@@ -120,8 +120,10 @@ h2 { font-size: 1rem; letter-spacing: -.02em; }
 /* Pill links are atomic inline-level boxes: a plain inline element's
    padding/border does not contribute to line-box height, so wrapped pill
    rows overlapped on mobile. Inline-flex makes the full pill box drive the
-   line height; long labels wrap inside the border instead of clipping. */
-.link {
+   line height; long labels wrap inside the border instead of clipping.
+   :where() keeps this a zero-specificity default so an explicit .block
+   (or any other display rule) still wins regardless of source order. */
+:where(.link) {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;

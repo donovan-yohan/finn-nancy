@@ -33,7 +33,8 @@ def test_dashboard_renders(sample_db, monkeypatch):
 
 
 def test_dashboard_nav_pills_wrap_without_overlap(sample_db, monkeypatch):
-    """Pill links must be atomic inline-flex boxes, and the hero nav row
+    """Pill links must be atomic inline-flex boxes (zero-specificity default
+    so explicit display rules like .block still win), and the hero nav row
     must wrap via a flex container with gaps — not middot-separated inline
     pills whose boxes overflow the line box and overlap on mobile."""
     client = _client(sample_db, monkeypatch)
@@ -42,7 +43,8 @@ def test_dashboard_nav_pills_wrap_without_overlap(sample_db, monkeypatch):
     css = (
         Path(__file__).parents[1] / "app" / "web" / "static" / "app.css"
     ).read_text()
-    assert ".link {\n  display: inline-flex;" in css
+    # Whitespace-tolerant: pins the rule and declaration, not its formatting.
+    assert re.search(r":where\(\s*\.link\s*\)\s*\{[^}]*display:\s*inline-flex;", css)
     # The hero nav is a gap-separated chip row, not inline middot-separated pills.
     assert '<p class="link-row subtle">' in r.text
     hero = r.text.split('<header class="hero">')[1].split("</header>")[0]
