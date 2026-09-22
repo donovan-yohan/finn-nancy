@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Processing · finn-nancy{% endblock %}
+{% block content %}
+<header class="hero compact">
+  <h1>Processing</h1>
+  <a class="link" href="/upload">Upload files</a>
+</header>
+<div class="grid single">
+  <section id="capture-center" class="capture-center" aria-labelledby="capture-center-title" hidden>
+    <header class="capture-center-head">
+      <h2 id="capture-center-title">On this device</h2>
+      <span id="capture-count" class="capture-count" aria-label="files on this device">0</span>
+    </header>
+    <p id="capture-sync-note" class="capture-sync-note"></p>
+    <div id="capture-status-list" class="capture-status-list" role="list"></div>
+  </section>
+  <section class="card" aria-labelledby="uploaded-heading">
+    <div class="card-head"><h2 id="uploaded-heading">Uploaded files</h2><a class="link" href="/processing?page={{ page }}">Refresh</a></div>
+    <noscript><p class="subtle">Device-pending uploads need JavaScript. Uploaded files are listed below.</p></noscript>
+    <div class="capture-status-list" id="server-document-list">
+      {% for doc in documents %}
+      <article class="capture-status-item" data-server-document-id="{{ doc.id }}">
+        <div class="capture-status-copy">
+          <strong>{{ doc.original_name }}</strong>
+          {% set pending = doc.status == 'staged' %}
+          {% set failure = extraction_failure(doc) %}
+          {% set txn = none %}
+          {% include "_doc_status.html" %}
+        </div>
+        <div class="capture-status-actions">
+          {% if doc.import_run_id %}<a class="link compact-action" href="/imports/runs/{{ doc.import_run_id }}">Batch</a>{% endif %}
+          <a class="link compact-action" href="/review">Review</a>
+        </div>
+      </article>
+      {% else %}
+      <p class="subtle">No uploaded files.</p>
+      {% endfor %}
+    </div>
+    {% if page > 1 or has_more %}
+    <nav class="link-row" aria-label="File pages">
+      {% if page > 1 %}<a class="link" href="/processing?page={{ page - 1 }}">Previous</a>{% endif %}
+      <span class="subtle">Page {{ page }}</span>
+      {% if has_more %}<a class="link" href="/processing?page={{ page + 1 }}">Next</a>{% endif %}
+    </nav>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

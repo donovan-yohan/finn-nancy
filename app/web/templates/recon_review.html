@@ -7,10 +7,10 @@
     <h1>Reconciliation</h1>
     <p class="subtle">{{ review_items | length }} line{{ 's' if review_items | length != 1 else '' }} waiting on a match.</p>
     <p class="link-row subtle">
-      <a class="link nancy-link" href="/actions">approval queue{% if active_proposal_count %} · {{ active_proposal_count }}{% endif %}</a>
+      <a class="link" href="/actions">approval queue{% if active_proposal_count %} · {{ active_proposal_count }}{% endif %}</a>
       {% if selected_month %}
       <a class="link" href="/statements?month={{ selected_month }}">period statement</a>
-      <a class="link nancy-link" href="/close?month={{ selected_month }}">monthly close</a>
+      <a class="link" href="/close?month={{ selected_month }}">monthly close</a>
       {% endif %}
     </p>
   </div>
@@ -40,7 +40,7 @@
   <section class="card span-2" id="positive-flow-review">
     <div class="card-head">
       <div>
-        <p class="eyebrow nancy">month-end decision queue</p>
+        <p class="eyebrow finn">month-end decision queue</p>
         <h2>Money in to explain</h2>
         <p class="subtle">A credit is not income until you confirm what moved. Scores rank evidence only; they never approve a decision.</p>
       </div>
@@ -663,7 +663,7 @@
   {% if selected_month %}
   <section class="card span-2 period-next-actions">
     <div>
-      <p class="eyebrow nancy">finish month-end</p>
+      <p class="eyebrow finn">finish month-end</p>
       <h2>Inspect the reconciled result</h2>
       <p class="subtle">
         The statement shows income, money out, vague-descriptor status, and exact

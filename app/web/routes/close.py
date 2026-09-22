@@ -246,7 +246,7 @@ def _context(conn: sqlite3.Connection, raw_month: str | None) -> dict:
     statement_blockers = [row for row in statement_matrix if row["blocking"]]
     return {
         "active": "more",
-        "brand": "nancy",
+        "brand": "finn",
         "selected_month": month,
         "months": months,
         "checklist": check,

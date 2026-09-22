@@ -147,7 +147,8 @@ def test_malformed_and_foreign_imports_have_actionable_fail_closed_ui(app_env):
 def test_mobile_capture_remains_receipt_first_and_excludes_structured_formats(app_env):
     response = _client().get("/upload")
     assert response.status_code == 200
-    assert "capture a receipt" in response.text.lower()
+    assert "<h1>Upload files</h1>" in response.text
+    assert "Receipt, invoice, or statement" in response.text
     assert 'data-intent="receipt"' in response.text
     assert 'accept="image/*,application/pdf"' in response.text
     assert ".csv" not in response.text.lower()

@@ -3,9 +3,8 @@
 {% block content %}
 <header class="hero compact">
   <div>
-    <p class="eyebrow nancy">nancy advisory</p>
+    <p class="eyebrow nancy">Nancy</p>
     <h1>Insights</h1>
-    <p class="subtle">budget drift, category trends, leisure, big-ticket spend, and runway.</p>
     {% if selected_month %}
     <p><a class="link" href="/statements?month={{ selected_month }}">open evidence-backed statement</a></p>
     {% endif %}
@@ -20,7 +19,8 @@
 </header>
 
 <main class="grid">
-  <section class="card span-2 nancy-card">
+  <details class="card span-2 home-history nancy-card">
+    <summary class="nancy">Monthly summary</summary>
     <div class="card-head">
       <div><p class="eyebrow nancy">monthly summary</p><h2>{{ selected_month }}</h2></div>
       <form method="post" action="/insights/prose/generate">
@@ -36,9 +36,9 @@
     <div class="prose-body">{{ insight_prose.body }}</div>
     <p class="subtle compact-head">Generated {{ insight_prose.created_at }} · {{ insight_prose.model }}</p>
     {% else %}
-    <p class="subtle">No cached summary yet. Generate one and refresh after the worker finishes.</p>
+    <p class="subtle">Generate a summary, then refresh when processing finishes.</p>
     {% endif %}
-  </section>
+  </details>
 
   <section class="stat-strip span-2" aria-label="budget summary">
     <article class="stat-card nancy-card">
@@ -46,7 +46,7 @@
       <p class="stat-number">{{ budget_summary.budget_cents | money }}</p>
     </article>
     <article class="stat-card">
-      <p class="eyebrow finn">actual</p>
+      <p class="eyebrow">actual</p>
       <p class="stat-number negative">{{ budget_summary.actual_cents | money }}</p>
     </article>
     <article class="stat-card emphasis">
@@ -84,9 +84,9 @@
     {% endif %}
   </section>
 
-  <section class="card finn-card">
+  <section class="card nancy-card">
     <div class="card-head">
-      <div><p class="eyebrow finn">runway</p><h2>Cashflow</h2></div>
+      <div><p class="eyebrow nancy">runway</p><h2>Cashflow</h2></div>
     </div>
     {% if runway %}
     <p class="big-number {{ 'negative' if runway.net_cents < 0 else 'positive' }}">{{ runway.net_cents | money }}</p>
@@ -113,6 +113,7 @@
     </div>
   </section>
 
+  {% if trends %}
   <section class="card">
     <div class="card-head"><div><p class="eyebrow nancy">category trends</p><h2>Month over month</h2></div></div>
     <div class="table-wrap">
@@ -131,8 +132,10 @@
     </div>
   </section>
 
+  {% endif %}
+  {% if top_merchants %}
   <section class="card">
-    <div class="card-head"><div><p class="eyebrow finn">merchants</p><h2>Top spend</h2></div></div>
+    <div class="card-head"><div><p class="eyebrow nancy">merchants</p><h2>Top spend</h2></div></div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>merchant</th><th class="money">spent</th><th class="money">count</th></tr></thead>
@@ -149,6 +152,7 @@
     </div>
   </section>
 
+  {% endif %}
   <section class="card span-2 nancy-card">
     <div class="card-head">
       <div><p class="eyebrow nancy">new recurring watchlist</p><h2>{{ selected_month }}</h2></div>
@@ -343,6 +347,7 @@
     {% endif %}
   </section>
 
+  {% if recurring %}
   <section class="card span-2">
     <div class="card-head"><div><p class="eyebrow nancy">recurring candidates</p><h2>Repeated merchants</h2></div></div>
     <div class="table-wrap">
@@ -361,5 +366,6 @@
       </table>
     </div>
   </section>
+  {% endif %}
 </main>
 {% endblock %}

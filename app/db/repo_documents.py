@@ -13,6 +13,17 @@ def get_document(conn: sqlite3.Connection, doc_id: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM source_documents WHERE id=?", (doc_id,)).fetchone()
 
 
+def processing_documents(conn: sqlite3.Connection, *, limit: int = 51, offset: int = 0) -> list[sqlite3.Row]:
+    """List uploaded files, with unfinished work ahead of completed history."""
+    return conn.execute(
+        """SELECT * FROM source_documents
+           ORDER BY CASE WHEN status IN ('staged', 'needs_review') THEN 0 ELSE 1 END,
+                    id DESC
+           LIMIT ? OFFSET ?""",
+        (limit, offset),
+    ).fetchall()
+
+
 def insert_source_document(conn: sqlite3.Connection, *, kind: str, original_name: str,
                            storage_ref: str, sha256: str, mime_type: str,
                            status: str = "staged", metadata: dict | None = None) -> int:

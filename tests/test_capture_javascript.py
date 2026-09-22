@@ -61,3 +61,8 @@ def test_capture_store_contract():
 def test_capture_intake_keeps_21_files_and_continues_bounded_drain():
     result = _node("--test", "tests/js/test_capture_intake.cjs")
     _assert_node_passed(result, expected=2)
+
+
+def test_capture_toast_lifecycle_and_storage_failures():
+    result = _node("--test", "tests/js/test_capture_toast.cjs")
+    _assert_node_passed(result, expected=5)

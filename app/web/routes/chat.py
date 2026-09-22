@@ -117,7 +117,7 @@ async def chat_page(request: Request, why: int | None = None):
         "chat.html",
         {
             "active": "chat",
-            "brand": "shared",
+            "brand": "nancy",
             "thread_id": thread_id,
             "messages": messages,
             "seed_message": seed_message,
