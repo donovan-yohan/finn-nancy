@@ -136,6 +136,22 @@ async function navigate(cdp, url, reload) {
     await cdp.call("Page.navigate", { url });
   }
   await loaded;
+  // Capture initialization reads IndexedDB before binding inputs. Page load
+  // alone does not prove that a programmatic selection can be handled yet.
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const input = await cdp.call("Runtime.evaluate", {
+      expression: "document.querySelector('#capture-files-input')",
+    });
+    const objectId = input.result && input.result.objectId;
+    if (objectId) {
+      const bound = await cdp.call("DOMDebugger.getEventListeners", { objectId });
+      await cdp.call("Runtime.releaseObject", { objectId });
+      if (bound.listeners.some(listener => listener.type === "change")) return;
+    }
+    await pause(50);
+  }
+  throw new Error("capture input did not become ready after navigation");
 }
 
 async function waitForValue(cdp, body, predicate, timeoutMs) {
