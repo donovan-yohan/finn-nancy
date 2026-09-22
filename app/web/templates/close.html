@@ -3,7 +3,7 @@
 {% block content %}
 <header class="hero compact close-hero">
   <div>
-    <p class="eyebrow nancy">monthly close</p>
+    <p class="eyebrow finn">monthly close</p>
     <h1>{{ state_copy.title }}</h1>
     <p class="subtle close-hero-detail">{{ state_copy.detail }}</p>
     <p><a class="link" href="/statements?month={{ selected_month }}">open evidence-backed statement</a></p>
@@ -92,7 +92,7 @@
     {% if locked %}
     <div class="card-head">
       <div>
-        <p class="eyebrow nancy">locked period</p>
+        <p class="eyebrow finn">locked period</p>
         <h2 id="close-action-title">
           {{ 'Reopen to resolve' if exception_count else 'Reopen to make a correction' }}
         </h2>
@@ -142,7 +142,7 @@
     {% else %}
     <div class="card-head">
       <div>
-        <p class="eyebrow nancy">sign off · close decision</p>
+        <p class="eyebrow finn">sign off · close decision</p>
         <h2 id="close-action-title">{{ close_action_label }}</h2>
       </div>
       <span class="db-pill">{{ 'new cycle' if close_state == 'reopened' else 'first close' }}</span>
@@ -269,7 +269,7 @@
   <section class="card span-2" aria-labelledby="close-exceptions-title">
     <div class="card-head">
       <div>
-        <p class="eyebrow nancy">close inbox · typed exceptions</p>
+        <p class="eyebrow finn">close inbox · typed exceptions</p>
         <h2 id="close-exceptions-title">
           {{ exception_count }} unresolved item{{ '' if exception_count == 1 else 's' }}
         </h2>
@@ -309,7 +309,7 @@
       >
         <div class="close-exception-head">
           <div>
-            <p class="eyebrow nancy">{{ item.exception_type | replace('_', ' ') }}</p>
+            <p class="eyebrow finn">{{ item.exception_type | replace('_', ' ') }}</p>
             <h3>{{ item.reason }}</h3>
             {% if item.get('display_title') %}
             <p class="subtle close-exception-descriptor">{{ item.get('display_title') }}</p>
@@ -474,10 +474,10 @@
   </section>
 
   {% if locked_assertions %}
-  <section class="card span-2 nancy-card" aria-labelledby="locked-assertions-title">
+  <section class="card span-2 finn-card" aria-labelledby="locked-assertions-title">
     <div class="card-head">
       <div>
-        <p class="eyebrow nancy">live locked-period findings</p>
+        <p class="eyebrow finn">live locked-period findings</p>
         <h2 id="locked-assertions-title">
           {{ locked_assertions | length }} balance difference{{ '' if locked_assertions | length == 1 else 's' }} need an audited reopen
         </h2>
@@ -499,7 +499,7 @@
       >
         <div class="close-exception-head">
           <div>
-            <p class="eyebrow nancy">{{ item.source_label }}</p>
+            <p class="eyebrow finn">{{ item.source_label }}</p>
             <h3>{{ item.title }}</h3>
             <p class="subtle close-exception-descriptor">{{ item.detail }}</p>
           </div>
@@ -569,10 +569,10 @@
   </section>
   {% endif %}
 
-  <section class="card span-2 nancy-card" aria-labelledby="close-checklist-title">
+  <section class="card span-2 finn-card" aria-labelledby="close-checklist-title">
     <div class="card-head">
       <div>
-        <p class="eyebrow nancy">{{ checklist.complete_count }} of {{ checklist.total }} complete</p>
+        <p class="eyebrow finn">{{ checklist.complete_count }} of {{ checklist.total }} complete</p>
         <h2 id="close-checklist-title">{{ checklist.percent_complete }}% ready · checklist</h2>
       </div>
       <span class="db-pill">{{ 'frozen in current snapshot' if locked else 'live' }}</span>
@@ -597,7 +597,7 @@
   <section class="card span-2" aria-labelledby="statement-matrix-title">
     <div class="card-head">
       <div>
-        <p class="eyebrow nancy">statement truth</p>
+        <p class="eyebrow finn">statement truth</p>
         <h2 id="statement-matrix-title">Account-period matrix</h2>
       </div>
       {% if statement_blocker_count %}
@@ -705,8 +705,8 @@
       {{ current_snapshot.reason }}
     </p>
     <div class="stat-strip close-report-stats">
-      <article class="stat-card nancy-card">
-        <p class="eyebrow nancy">coverage</p>
+      <article class="stat-card finn-card">
+        <p class="eyebrow finn">coverage</p>
         <p class="stat-number">{{ report.get('coverage_pct', checklist.coverage_pct) }}%</p>
       </article>
       <article class="stat-card">

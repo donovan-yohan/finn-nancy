@@ -17,31 +17,8 @@
     {% block content %}{% endblock %}
   </main>
 
-  <!-- upload status lands here as dismissable cards -->
+  <!-- One transient upload notification; full status lives on /processing. -->
   <div id="toast" class="toast" aria-live="polite"></div>
-
-  <section id="capture-center" class="capture-center" aria-labelledby="capture-center-title" hidden>
-    <header class="capture-center-head">
-      <div>
-        <p class="eyebrow finn">device outbox</p>
-        <h2 id="capture-center-title">Capture status</h2>
-      </div>
-      <div class="capture-center-tools">
-        <span id="capture-count" class="capture-count" aria-label="capture count">0</span>
-        <button
-          id="capture-toggle"
-          class="ghost compact-action capture-toggle"
-          type="button"
-          aria-controls="capture-center-body"
-          aria-expanded="true"
-        >Collapse</button>
-      </div>
-    </header>
-    <div id="capture-center-body">
-      <p id="capture-sync-note" class="capture-sync-note"></p>
-      <div id="capture-status-list" class="capture-status-list" role="list"></div>
-    </div>
-  </section>
   <div id="capture-announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 
   {% include "_tabbar.html" %}

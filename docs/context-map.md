@@ -8,6 +8,7 @@ This map points contributors to the executable contracts before they change beha
 - `app/web/app.py` and `app/web/routes/` — FastAPI application assembly and HTTP/UI routes.
 - `app/workers/` — durable background-job execution.
 - `app/config.py` — environment-backed configuration and local/egress controls.
+- `docs/UI_DESIGN.md` — navigation, Finn/Nancy colors, and durable upload presentation.
 
 ## Persistence and accounting
 

@@ -195,7 +195,7 @@ def _blocked_response(
             "months": months,
             "home_currency": home_currency,
             "active": "statements",
-            "brand": "shared",
+            "brand": "finn",
         },
         status_code=status_code,
     )
@@ -382,7 +382,7 @@ def _render_statement(
             "report_origin": report_origin,
             "home_currency": statement.home_currency,
             "active": "statements",
-            "brand": "shared",
+            "brand": "finn",
         },
     )
 

@@ -4,6 +4,7 @@ const CACHE_NAME = "finn-nancy-__CACHE_VERSION__";
 const APP_SHELL = [
   "/",
   "/upload",
+  "/processing",
   "/manifest.webmanifest",
   "/static/app.css",
   "/static/capture-store.js",

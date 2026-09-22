@@ -11,7 +11,7 @@
     <nav class="period-journey-links" aria-label="Month-end workflow">
       <a class="link" href="/review/import">Import final statement</a>
       <a class="link" href="/recon?month={{ selected_month }}">Reconcile</a>
-      <a class="link nancy-link" href="/close?month={{ selected_month }}">Close month</a>
+      <a class="link" href="/close?month={{ selected_month }}">Close month</a>
     </nav>
   </div>
   <div class="period-statement-controls">
@@ -54,8 +54,8 @@
   {% endif %}
 >
   {% if not statement %}
-  <section class="card span-2 nancy-card period-report-blocked" role="alert">
-    <p class="eyebrow nancy">report unavailable · fail closed</p>
+  <section class="card span-2 finn-card period-report-blocked" role="alert">
+    <p class="eyebrow finn">report unavailable · fail closed</p>
     {% if error_kind == "unsupported_currency" %}
     <h2>Currency evidence cannot be combined truthfully</h2>
     <p class="subtle">
@@ -83,12 +83,12 @@
     <div class="action-row">
       <a class="link" href="/review?month={{ selected_month }}">Review source evidence</a>
       <a class="link" href="/recon?month={{ selected_month }}">Review reconciliation</a>
-      <a class="link nancy-link" href="/close?month={{ selected_month }}">Inspect close state</a>
+      <a class="link" href="/close?month={{ selected_month }}">Inspect close state</a>
     </div>
   </section>
   {% else %}
   <section
-    class="card span-2 period-report-truth {{ 'finn-card' if report_origin == 'frozen_snapshot' else 'nancy-card' }}"
+    class="card span-2 period-report-truth finn-card"
     aria-labelledby="period-report-truth-title"
   >
     <div class="period-report-truth-layout">
@@ -155,7 +155,7 @@
     </p>
     <div class="period-reference-links" aria-label="Close evidence">
       {% for exception_id in statement.close.exception_ids %}
-      <a class="link nancy-link" href="/close?month={{ selected_month }}#close-exception-{{ exception_id }}">
+      <a class="link" href="/close?month={{ selected_month }}#close-exception-{{ exception_id }}">
         exception #{{ exception_id }}
       </a>
       {% endfor %}
@@ -218,7 +218,7 @@
   <section class="card span-2" aria-labelledby="expense-resolution-title">
     <div class="card-head">
       <div>
-        <p class="eyebrow nancy">merchant and category confidence</p>
+        <p class="eyebrow finn">merchant and category confidence</p>
         <h2 id="expense-resolution-title">Expense resolution</h2>
       </div>
       <span class="db-pill">{{ bucket_metrics | length }} breakdown bucket{{ '' if bucket_metrics | length == 1 else 's' }}</span>
@@ -474,7 +474,7 @@
 
   <section class="card span-2 period-next-actions" aria-labelledby="period-next-actions-title">
     <div>
-      <p class="eyebrow nancy">continue month-end</p>
+      <p class="eyebrow finn">continue month-end</p>
       <h2 id="period-next-actions-title">No dead ends</h2>
       <p class="subtle">
         Import the final statement, clear vague descriptors and transfers, then

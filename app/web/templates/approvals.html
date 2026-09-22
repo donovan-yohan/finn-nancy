@@ -4,17 +4,17 @@
 {% if mode == 'audit' %}
 <header class="hero compact">
   <div>
-    <p class="eyebrow nancy">approval audit</p>
+    <p class="eyebrow finn">approval audit</p>
     <h1>Action #{{ proposal.id }}</h1>
     <p class="subtle">{{ proposal.kind }} · {{ proposal.status_label }}</p>
   </div>
-  <a class="link nancy-link" href="/actions">approval queue</a>
+  <a class="link" href="/actions">approval queue</a>
 </header>
 
 <main class="grid single">
   <section class="card span-2">
     <div class="card-head">
-      <div><p class="eyebrow nancy">proposal</p><h2>{{ proposal.kind }}</h2></div>
+      <div><p class="eyebrow finn">proposal</p><h2>{{ proposal.kind }}</h2></div>
       <span class="db-pill">{{ proposal.status_label }}</span>
     </div>
     <p>{{ proposal.rationale }}</p>
@@ -39,7 +39,7 @@
 
   <section class="card span-2">
     <div class="card-head">
-      <div><p class="eyebrow nancy">history</p><h2>Audit trail</h2></div>
+      <div><p class="eyebrow finn">history</p><h2>Audit trail</h2></div>
     </div>
     <div class="table-wrap">
       <table>
@@ -82,13 +82,13 @@
 {% else %}
 <header class="hero compact">
   <div>
-    <p class="eyebrow nancy">human approval</p>
+    <p class="eyebrow finn">human approval</p>
     <h1>Approval queue</h1>
     <p class="subtle">{{ proposals | length }} proposal{{ 's' if proposals | length != 1 else '' }} awaiting review.</p>
   </div>
   <div class="action-row">
-    <a class="link nancy-link" href="/backlog">backlog</a>
-    <a class="link nancy-link" href="/recon">reconciliation</a>
+    <a class="link" href="/backlog">backlog</a>
+    <a class="link" href="/recon">reconciliation</a>
   </div>
 </header>
 
@@ -100,10 +100,10 @@
   {% endif %}
 
   {% for proposal in proposals %}
-  <article class="card span-2 nancy-card" id="proposal-{{ proposal.id }}">
+  <article class="card span-2 finn-card" id="proposal-{{ proposal.id }}">
     <div class="card-head">
       <div>
-        <p class="eyebrow nancy">{{ proposal.kind }} · {{ '%.0f'|format(proposal.confidence * 100) }}% confidence</p>
+        <p class="eyebrow finn">{{ proposal.kind }} · {{ '%.0f'|format(proposal.confidence * 100) }}% confidence</p>
         <h2>{{ proposal.rationale or 'Agent proposed action' }}</h2>
         <p class="subtle">run {{ proposal.agent_run_id or 'unknown' }} · created {{ proposal.created_at }}</p>
       </div>
@@ -142,7 +142,7 @@
         {% endfor %}
       </span>
       {% endif %}
-      <a class="link nancy-link" href="/actions/{{ proposal.id }}/audit">audit history</a>
+      <a class="link" href="/actions/{{ proposal.id }}/audit">audit history</a>
     </div>
 
     {% if proposal.locked_month %}

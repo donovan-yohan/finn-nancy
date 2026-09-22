@@ -36,9 +36,10 @@ class CaptureControlParser(HTMLParser):
 def test_upload_page_renders_durable_accessible_capture(app_env):
     r = _client().get("/upload")
     assert r.status_code == 200
-    assert "capture a receipt" in r.text.lower()
-    assert "enters the device outbox before it is sent" in r.text.lower()
-    assert "“saved” appears only after the server confirms" in r.text.lower()
+    assert "upload files" in r.text.lower()
+    assert "keep your originals until saved confirms the server has a copy" in r.text.lower()
+    assert 'href="/processing"' in r.text
+    assert 'id="capture-center"' not in r.text
 
     parser = CaptureControlParser()
     parser.feed(r.text)
@@ -63,7 +64,7 @@ def test_upload_page_renders_durable_accessible_capture(app_env):
 def test_capture_shortcut_context_is_bounded_and_camera_ready(app_env):
     response = _client().get("/upload?mode=camera&intent=income")
     assert response.status_code == 200
-    assert "capture income" in response.text.lower()
+    assert "upload income" in response.text.lower()
     assert 'data-source="camera"' in response.text
     assert 'data-intent="income"' in response.text
     assert 'capture="environment"' in response.text

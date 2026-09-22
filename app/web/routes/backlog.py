@@ -68,7 +68,7 @@ def backlog_page(request: Request):
             "proposals": proposals,
             "jobs": jobs,
             "active": "more",
-            "brand": "nancy",
+            "brand": "finn",
             "default_limit": 25,
             "list_limit": DEFAULT_BACKLOG_LIST_LIMIT,
         },

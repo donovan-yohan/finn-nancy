@@ -3,11 +3,9 @@
 {% block content %}
 <header class="hero compact">
   <div>
-    <p class="eyebrow finn">capture</p>
-    <h1>{% if capture_intent == "income" %}Capture income{% elif capture_intent == "expense" %}Capture an expense{% else %}Capture a receipt{% endif %}</h1>
-    <p class="subtle">The original enters the device outbox before it is sent.</p>
+    <h1>{% if capture_intent == "income" %}Upload income{% elif capture_intent == "expense" %}Upload an expense{% else %}Upload files{% endif %}</h1>
   </div>
-  <a class="link" href="/">dashboard</a>
+  <a class="link" href="/processing">Processing</a>
 </header>
 
 <main class="grid single">
@@ -34,9 +32,9 @@
           required
         >
       </label>
-      <button class="primary" type="submit">Save to device outbox</button>
+      <button class="primary" type="submit">Upload</button>
     </form>
-    <p class="capture-page-help">Pending means this browser still owns recovery. Keep your original until Saved if the browser says its outbox can be evicted. “Saved” appears only after the server confirms its durable commit.</p>
+    <p class="capture-page-help">Keep your originals until Saved confirms the server has a copy. Offline uploads wait on this device.</p>
     <div id="results"></div>
     {% for capture_id in server_capture_ids %}
       <span hidden data-server-capture-id="{{ capture_id }}"></span>

@@ -136,6 +136,22 @@ async function navigate(cdp, url, reload) {
     await cdp.call("Page.navigate", { url });
   }
   await loaded;
+  // Capture initialization reads IndexedDB before binding inputs. Page load
+  // alone does not prove that a programmatic selection can be handled yet.
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const input = await cdp.call("Runtime.evaluate", {
+      expression: "document.querySelector('#capture-files-input')",
+    });
+    const objectId = input.result && input.result.objectId;
+    if (objectId) {
+      const bound = await cdp.call("DOMDebugger.getEventListeners", { objectId });
+      await cdp.call("Runtime.releaseObject", { objectId });
+      if (bound.listeners.some(listener => listener.type === "change")) return;
+    }
+    await pause(50);
+  }
+  throw new Error("capture input did not become ready after navigation");
 }
 
 async function waitForValue(cdp, body, predicate, timeoutMs) {
@@ -272,6 +288,24 @@ async function main() {
     );
     assert.equal(selectedBatchSize, 21);
 
+    // Uploads acknowledge once without mounting a permanent overlay. The
+    // linked queue is precached, so the same action works offline.
+    await waitForValue(cdp,
+      "return document.querySelector('.capture-toast-link')?.textContent;",
+      value => value && value.includes("21 files queued"), 10_000);
+    assert.equal(await evaluate(cdp, "return document.querySelector('#capture-center') === null;"), true);
+    const toastGeometry = await evaluate(cdp, [
+      "const toast = document.querySelector('.capture-toast').getBoundingClientRect();",
+      "const nav = document.querySelector('.tabbar').getBoundingClientRect();",
+      "return {left:toast.left,right:toast.right,bottom:toast.bottom,navTop:nav.top,width:innerWidth};",
+    ].join("\n"));
+    assert.ok(toastGeometry.left >= 0 && toastGeometry.right <= toastGeometry.width);
+    assert.ok(toastGeometry.bottom <= toastGeometry.navTop, "toast must not cover navigation");
+    const queueLoaded = cdp.event("Page.loadEventFired", 15_000);
+    await evaluate(cdp, "document.querySelector('.capture-toast-link').click(); return true;");
+    await queueLoaded;
+    assert.equal(await evaluate(cdp, "return location.pathname;"), "/processing");
+
     const pendingBatch = await waitForValue(
       cdp,
       [
@@ -387,6 +421,7 @@ async function main() {
         "return (await FinnCaptureStore.listCaptures()).length;",
       ].join("\n")
     );
+    await navigate(cdp, url, false);
     await cdp.call("Network.emulateNetworkConditions", {
       offline: true,
       latency: 0,
@@ -416,6 +451,10 @@ async function main() {
       cdp,
       "document.querySelector('[data-capture-form]').requestSubmit(); return true;"
     );
+    await waitForValue(cdp,
+      "return document.querySelector('.capture-toast-link')?.textContent;",
+      value => value && value.includes("1 file queued"), 5_000);
+    await navigate(cdp, baseUrl + "/processing", false);
 
     const pending = await waitForValue(
       cdp,
@@ -435,7 +474,7 @@ async function main() {
       function (value) {
         return (
           value &&
-          value.state === "pending" &&
+          ["pending", "retry"].includes(value.state) &&
           value.fileSize > 0 &&
           /Pending/.test(value.statusText) &&
           value.retryCount >= 1
@@ -457,7 +496,7 @@ async function main() {
       assert.match(pending.statusText, /not protected from eviction/);
     }
 
-    await navigate(cdp, url, true);
+    await navigate(cdp, baseUrl + "/processing", true);
     const afterReload = await waitForValue(
       cdp,
       [
@@ -472,14 +511,16 @@ async function main() {
         "};",
       ].join("\n"),
       function (value) {
-        return value && value.state === "pending";
+        // A wakeup already running when connectivity changes may attempt once;
+        // retry is still device-pending, never a durable server acknowledgement.
+        return value && ["pending", "retry"].includes(value.state);
       },
       5_000
     );
     assert.equal(afterReload.id, pending.id);
     assert.equal(afterReload.fileSize, pending.fileSize);
     assert.equal(afterReload.controlled, true);
-    assert.match(afterReload.heading, /Capture a receipt/);
+    assert.equal(afterReload.heading, "Processing");
 
     await evaluate(
       cdp,
@@ -534,7 +575,7 @@ async function main() {
         "};",
       ].join("\n"),
       function (value) {
-        return value && value.state === "retry";
+        return value && value.state === "retry" && value.postIds.length === 1 && /timed out/.test(value.error);
       },
       5_000
     );
@@ -590,11 +631,11 @@ async function main() {
         "  return { name: button.innerText.trim(), left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, tag: button.tagName };",
         "});",
         "const panel = document.querySelector('#capture-center').getBoundingClientRect();",
-        "const toggle = document.querySelector('#capture-toggle').getBoundingClientRect();",
+
         "return {",
         "  pickerRects: pickerRects,",
         "  panel: { left: panel.left, right: panel.right, top: panel.top, bottom: panel.bottom },",
-        "  toggle: { width: toggle.width, height: toggle.height },",
+        "  position: getComputedStyle(document.querySelector('#capture-center')).position,",
         "  overflow: document.documentElement.scrollWidth - window.innerWidth,",
         "  liveRole: document.querySelector('#capture-announcer').getAttribute('role'),",
         "  liveMode: document.querySelector('#capture-announcer').getAttribute('aria-live')",
@@ -604,36 +645,13 @@ async function main() {
     assert.equal(mobileUx.overflow <= 0, true);
     assert.equal(mobileUx.liveRole, "status");
     assert.equal(mobileUx.liveMode, "polite");
-    assert.ok(mobileUx.toggle.width >= 44);
-    assert.ok(mobileUx.toggle.height >= 44);
+    assert.ok(!["fixed", "sticky", "absolute"].includes(mobileUx.position));
     for (const control of mobileUx.pickerRects) {
       assert.equal(control.tag, "BUTTON");
       assert.ok(control.height >= 44, control.name + " touch target is too short");
       assert.ok(control.width >= 44, control.name + " touch target is too narrow");
-      const overlapsPanel =
-        control.left < mobileUx.panel.right &&
-        control.right > mobileUx.panel.left &&
-        control.top < mobileUx.panel.bottom &&
-        control.bottom > mobileUx.panel.top;
-      assert.equal(
-        overlapsPanel,
-        false,
-        control.name + " is blocked by the capture-status panel"
-      );
     }
-    const collapseState = await evaluate(
-      cdp,
-      [
-        "const toggle = document.querySelector('#capture-toggle');",
-        "toggle.click();",
-        "return {",
-        "  expanded: toggle.getAttribute('aria-expanded'),",
-        "  bodyHidden: document.querySelector('#capture-center-body').hidden",
-        "};",
-      ].join("\n")
-    );
-    assert.equal(collapseState.expanded, "false");
-    assert.equal(collapseState.bodyHidden, true);
+    assert.equal(await evaluate(cdp, "return document.querySelector('#capture-toggle') === null;"), true);
 
     const ax = await cdp.call("Accessibility.getFullAXTree");
     const accessibleButtons = ax.nodes
@@ -645,7 +663,9 @@ async function main() {
       });
     assert.ok(accessibleButtons.includes("Take photo"));
     assert.ok(accessibleButtons.includes("Upload files"));
-    assert.ok(accessibleButtons.includes("Save to device outbox"));
+    await navigate(cdp, baseUrl + "/", false);
+    assert.equal(await evaluate(cdp, "return document.querySelector('#capture-center') === null;"), true);
+    assert.equal(await evaluate(cdp, "return document.querySelector('#toast').childElementCount;"), 0);
 
     console.log(
       JSON.stringify(

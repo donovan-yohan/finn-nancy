@@ -199,7 +199,7 @@ def actions_queue(request: Request):
             "subscription_decisions": repo_budgets.SUBSCRIPTION_WATCHLIST_DECISIONS,
             "next_snooze_date": _first_day_next_month(),
             "active": "more",
-            "brand": "nancy",
+            "brand": "finn",
         },
     )
 
@@ -378,6 +378,6 @@ def action_audit(request: Request, proposal_id: int):
             "audit_rows": trail,
             "line_months": line_months,
             "active": "more",
-            "brand": "nancy",
+            "brand": "finn",
         },
     )

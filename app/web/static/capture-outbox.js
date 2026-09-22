@@ -17,6 +17,7 @@
   let backgroundSyncSupported = false;
   let storagePersistence = "unknown";
   let proofContext = null;
+  let toastTimer = null;
 
   function element(id) {
     return document.getElementById(id);
@@ -29,6 +30,36 @@
     window.setTimeout(function () {
       region.textContent = message;
     }, 20);
+  }
+
+  function notifyUpload(message, persistent) {
+    const region = element("toast");
+    if (!region) return;
+    window.clearTimeout(toastTimer);
+    const notice = document.createElement("div");
+    notice.className = "capture-toast";
+    let hovering = false;
+    const link = document.createElement("a");
+    link.className = "capture-toast-link";
+    link.href = "/processing";
+    link.textContent = message + " · View processing";
+    const dismiss = actionButton("Dismiss", "capture-toast-dismiss", function () {
+      window.clearTimeout(toastTimer);
+      notice.remove();
+    });
+    notice.append(link, dismiss);
+    function expire() {
+      window.clearTimeout(toastTimer);
+      if (!persistent) toastTimer = window.setTimeout(function () {
+        if (!hovering && !notice.contains(document.activeElement)) notice.remove();
+      }, 8_000);
+    }
+    notice.addEventListener("pointerenter", function () { hovering = true; window.clearTimeout(toastTimer); });
+    notice.addEventListener("focusin", function () { window.clearTimeout(toastTimer); });
+    notice.addEventListener("pointerleave", function () { hovering = false; expire(); });
+    notice.addEventListener("focusout", expire);
+    region.replaceChildren(notice);
+    expire();
   }
 
   function displayStatus(record) {
@@ -51,7 +82,7 @@
     if (record.state === "sending") {
       return {
         label: "Pending",
-        detail: "Sending the original with its stable capture id.",
+        detail: "Uploading. Keep the original until Saved.",
       };
     }
     if (record.state === "retry") {
@@ -74,7 +105,7 @@
     if (record.state === "processing") {
       return {
         label: "Processing",
-        detail: "The saved original is being read locally.",
+        detail: "Reading the file.",
       };
     }
     if (record.state === "needs_review") {
@@ -131,13 +162,6 @@
     state.textContent = status.label;
     copy.appendChild(state);
 
-    const provenance = document.createElement("span");
-    provenance.className = "capture-detail";
-    provenance.textContent =
-      "Local-only · " +
-      String(record.source || "web").replace(/_/g, " ");
-    copy.appendChild(provenance);
-
     const detail = document.createElement("span");
     detail.id = idBase + "-detail";
     detail.className = "capture-detail";
@@ -191,8 +215,8 @@
     } else if (record.state === "failed" && !record.file) {
       const link = document.createElement("a");
       link.className = "link compact-action";
-      link.href = "/backlog";
-      link.textContent = "Resolve";
+      link.href = "/processing";
+      link.textContent = "Refresh status";
       actions.appendChild(link);
     }
 
@@ -222,24 +246,36 @@
     const list = element("capture-status-list");
     const count = element("capture-count");
     const syncNote = element("capture-sync-note");
-    if (!center || !list || !count || !syncNote) return;
 
     let records;
     try {
       records = await store.listCaptures();
     } catch (error) {
-      center.hidden = false;
       captureError =
-        "This browser could not open the capture outbox. Do not select another file.";
-      syncNote.textContent =
-        captureError;
+        "Device storage is unavailable. Keep your originals; uploads cannot start.";
+      if (center && syncNote) {
+        center.hidden = false;
+        syncNote.textContent = captureError;
+      }
+      notifyUpload(captureError, true);
       announce("The capture outbox is unavailable.");
       return;
     }
+    const navCount = element("processing-nav-count");
+    if (navCount) {
+      const unfinished = records.filter(function (record) { return record.state !== "filed"; }).length;
+      navCount.textContent = String(unfinished);
+      navCount.hidden = unfinished === 0;
+    }
+    if (!center || !list || !count || !syncNote) return;
+    // Keep device-owned originals until acknowledgement. A visible server row
+    // can represent an acknowledged file without showing it twice.
+    const serverIds = new Set(Array.from(document.querySelectorAll("[data-server-document-id]"))
+      .map(function (node) { return Number(node.dataset.serverDocumentId); }));
+    records = records.filter(function (record) { return record.file || !serverIds.has(record.serverDocumentId); });
     center.hidden = records.length === 0 && !captureError;
     count.textContent = String(records.length);
-    // Never hide an old failed/Pending original behind an arbitrary rendering
-    // cap. The panel itself scrolls, and each item remains recoverable.
+    // Device-owned originals are never capped or hidden behind history paging.
     list.replaceChildren(...records.map(captureItem));
 
     const deviceOwned = records.some(function (record) {
@@ -547,7 +583,8 @@
         ["pending", "sending", "retry", "failed"].indexOf(record.state) !== -1
       ) {
         await store.updateCapture(record.id, function (current) {
-          if (!current.offlineStartedAt) {
+          if (current.file && !current.offlineStartedAt &&
+              ["pending", "sending", "retry", "failed"].includes(current.state)) {
             current.offlineStartedAt = new Date(when).toISOString();
           }
           return current;
@@ -567,6 +604,10 @@
         Number.isFinite(started)
       ) {
         await store.updateCapture(record.id, function (current) {
+          // The snapshot can race another online event or durable acknowledgement.
+          // Fence the same offline episode inside the IndexedDB update.
+          if (!current.file || current.offlineStartedAt !== record.offlineStartedAt ||
+              !["pending", "retry", "failed"].includes(current.state)) return current;
           current.offlineStartedAt = null;
           current.offlineRecoveryMs = Math.max(0, when - started);
           current.offlineRecoverySequence =
@@ -750,6 +791,7 @@
   async function enqueueFiles(files, metadata) {
     const selected = Array.from(files || []);
     if (!selected.length) return false;
+    let added = 0;
     try {
       const persistence = await refreshStoragePersistence(true);
       for (const file of selected) {
@@ -764,6 +806,7 @@
           })
         );
         await store.putCapture(record);
+        added += 1;
         announce(
           "Pending " +
             record.name +
@@ -777,9 +820,12 @@
       announce(
         captureError
       );
+      notifyUpload(added + " of " + selected.length + " files added. " + captureError, true);
       await render();
+      if (added) drain();
       return false;
     }
+    notifyUpload(added + (added === 1 ? " file" : " files") + " queued", false);
     await render();
     await registerBackgroundSync();
     await render();
@@ -820,18 +866,6 @@
     });
   }
 
-  function bindCaptureCenter() {
-    const toggle = element("capture-toggle");
-    const body = element("capture-center-body");
-    if (!toggle || !body) return;
-    toggle.addEventListener("click", function () {
-      const expanded = toggle.getAttribute("aria-expanded") === "true";
-      toggle.setAttribute("aria-expanded", String(!expanded));
-      toggle.textContent = expanded ? "Expand" : "Collapse";
-      body.hidden = expanded;
-    });
-  }
-
   async function importFallbackShareCaptures() {
     const nodes = Array.from(document.querySelectorAll("[data-server-capture-id]"));
     for (const node of nodes) {
@@ -845,6 +879,7 @@
         if (!response.ok) continue;
         const status = await response.json();
         await store.importDurableCapture(status);
+        notifyUpload("Shared files saved", false);
         announce("Saved shared capture. The server stored the original.");
       } catch (_error) {
         announce("Could not load the shared capture status.");
@@ -881,7 +916,6 @@
       proofContext = await store.getProofContext(Date.now());
     }
     bindCaptureInputs();
-    bindCaptureCenter();
     window.addEventListener("online", async function () {
       announce("Back online. Retrying pending captures.");
       try {
@@ -935,6 +969,7 @@
   document.addEventListener("DOMContentLoaded", function () {
     init().catch(function () {
       announce("Durable capture could not start in this browser.");
+      notifyUpload("Uploads unavailable. Keep your originals", true);
     });
   });
 })();

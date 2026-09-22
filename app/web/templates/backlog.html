@@ -3,7 +3,7 @@
 {% block content %}
 <header class="hero compact">
   <div>
-    <p class="eyebrow nancy">expense review</p>
+    <p class="eyebrow finn">expense review</p>
     <h1>Confirm expense categories</h1>
     <p class="subtle">
       {{ rows | length }} actionable transaction{{ '' if rows | length == 1 else 's' }}
@@ -12,16 +12,16 @@
     </p>
   </div>
   <div class="action-row">
-    <a class="link nancy-link" href="/actions">approval queue{% if pending_action_count() %} · {{ pending_action_count() }}{% endif %}</a>
+    <a class="link" href="/actions">approval queue{% if pending_action_count() %} · {{ pending_action_count() }}{% endif %}</a>
     <button class="ghost compact-action" hx-get="/backlog/status" hx-target="#backlog-job" hx-swap="innerHTML">refresh jobs</button>
   </div>
 </header>
 
 <main class="grid single">
-  <section class="card span-2 nancy-card">
+  <section class="card span-2 finn-card">
     <div class="card-head">
       <div>
-        <p class="eyebrow nancy">suggestions</p>
+        <p class="eyebrow finn">suggestions</p>
         <h2>queue proposals</h2>
       </div>
     </div>
@@ -49,7 +49,7 @@
   <section class="card span-2">
     <div class="card-head">
       <div>
-        <p class="eyebrow nancy">review</p>
+        <p class="eyebrow finn">review</p>
         <h2>largest unresolved expense categories</h2>
         <p class="subtle">
           showing up to {{ list_limit }} transactions · cleared reconciled rows
@@ -84,7 +84,7 @@
             data-mutation-supported="{{ 'true' if mutation_supported else 'false' }}"
           >
             <td>
-              <a class="link nancy-link" href="/txn/{{ row.id }}/edit">#{{ row.id }}</a>
+              <a class="link" href="/txn/{{ row.id }}/edit">#{{ row.id }}</a>
               <span class="block">{{ row.merchant }}</span>
               <span class="subtle block">{{ row.posted_on }} · {{ row.description }}</span>
               <span class="subtle block">
@@ -137,7 +137,7 @@
                 disabled
                 aria-label="Batch approval unavailable for multi-split transaction {{ row.id }}"
               >batch unavailable</button>
-              <a class="link nancy-link block" href="/txn/{{ row.id }}/edit">review splits</a>
+              <a class="link block" href="/txn/{{ row.id }}/edit">review splits</a>
               {% elif proposal %}
               <form method="post" action="/actions/{{ proposal.id }}/approve">
                 <button class="ghost compact-action" type="submit">approve</button>

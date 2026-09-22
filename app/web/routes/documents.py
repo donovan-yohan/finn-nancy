@@ -23,6 +23,22 @@ CAPTURE_SOURCES = {"camera", "file", "share", "shortcut", "web"}
 CAPTURE_INTENTS = {"receipt", "statement", "expense", "income", "unspecified"}
 
 
+@router.get("/processing", response_class=HTMLResponse)
+def processing_page(request: Request, page: int = Query(default=1, ge=1)):
+    settings = get_settings()
+    with engine.read_conn(settings.db_path, read_only=settings.read_only) as conn:
+        documents = repo_documents.processing_documents(conn, limit=51, offset=(page - 1) * 50)
+    return templates.TemplateResponse(
+        request,
+        "processing.html",
+        {
+            "active": "more", "brand": "finn", "page": page,
+            "documents": documents[:50], "has_more": len(documents) > 50,
+            "extraction_failure": repo_documents.extraction_failure,
+        },
+    )
+
+
 @router.get("/upload", response_class=HTMLResponse)
 def upload_page(
     request: Request,

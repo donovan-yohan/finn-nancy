@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.db import migrate
+from app.db import engine, migrate, repo_documents
 
 
 def _client(sample_db, monkeypatch):
@@ -37,6 +37,12 @@ def test_dashboard_nav_pills_wrap_without_overlap(sample_db, monkeypatch):
     so explicit display rules like .block still win), and the hero nav row
     must wrap via a flex container with gaps — not middot-separated inline
     pills whose boxes overflow the line box and overlap on mobile."""
+    with engine.write_tx(sample_db) as conn:
+        repo_documents.insert_source_document(
+            conn, kind="receipt", original_name="synthetic-review.jpg",
+            storage_ref="synthetic-only", sha256="7" * 64,
+            mime_type="image/jpeg", status="needs_review",
+        )
     client = _client(sample_db, monkeypatch)
     r = client.get("/")
     assert r.status_code == 200
