@@ -9,6 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +20,17 @@ class Settings(BaseSettings):
     db_path: Path = Path("data/local.sqlite")
     data_dir: Path = Path("data")
     chat_checkpoint_db: str = "chat_checkpoints.sqlite"
+
+    # Native Hermes chat gateway; disabled until explicitly configured. Secrets
+    # remain server-side. The gateway must be loopback-only and profile-scoped.
+    hermes_chat_url: str = ""
+    hermes_chat_profile: str = "namako-finance"
+    hermes_chat_token: SecretStr | None = Field(
+        default=None, repr=False,
+    )
+    hermes_chat_token_file: Path | None = Field(
+        default=None, repr=False,
+    )
 
     # server
     addr: str = "127.0.0.1:8080"

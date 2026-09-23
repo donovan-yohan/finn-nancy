@@ -93,8 +93,11 @@ def worker(db: str = typer.Option(None, help="SQLite path")):
 
 
 @app.command("mcp-serve")
-def mcp_serve(db: str = typer.Option(None, help="SQLite path")):
-    """Run the MCP server over stdio."""
+def mcp_serve(
+    db: str = typer.Option(None, help="SQLite path"),
+    read_only: bool = typer.Option(False, "--read-only", help="Expose report tools only"),
+):
+    """Run the MCP server over stdio (use --read-only for chat profiles)."""
     if db:
         os.environ["DB_PATH"] = db
         get_settings.cache_clear()
@@ -105,7 +108,7 @@ def mcp_serve(db: str = typer.Option(None, help="SQLite path")):
             typer.echo("install the mcp group: uv sync --group mcp")
             raise typer.Exit(1) from exc
         raise
-    _m()
+    _m(read_only=read_only)
 
 
 @app.command()

@@ -9,6 +9,7 @@ This map points contributors to the executable contracts before they change beha
 - `app/workers/` — durable background-job execution.
 - `app/config.py` — environment-backed configuration and local/egress controls.
 - `docs/UI_DESIGN.md` — navigation, Finn/Nancy colors, and durable upload presentation.
+- `docs/HERMES_CHAT.md` and `app/hermes_chat/` — native Hermes chat bridge, authority and recovery contract.
 
 ## Persistence and accounting
 
