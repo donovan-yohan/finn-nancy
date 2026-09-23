@@ -253,14 +253,53 @@ test('back-forward cache restores a connection without resending a draft', () =>
   assert.equal(h.ids['chat-input'].value, 'Synthetic pending draft');
 });
 
+for (const code of ['gateway_request_failed', 'gateway_disconnected', 'uncertain_send']) {
+  for (const edited of [false, true]) {
+    test(`${code} preserves uncertain delivery and ${edited ? 'edited' : 'original'} draft across recovery`, () => {
+      const h = harness(); h.snapshot(); h.submit('Synthetic pending send');
+      const originalSocket = h.socket;
+      const draft = edited ? 'Edited synthetic draft' : 'Synthetic pending send';
+      h.ids['chat-input'].value = draft;
+      originalSocket.receive({ type: 'error', code, message: 'Synthetic gateway error' });
+      const warning = h.ids['chat-uncertain'].textContent;
+      assert.match(warning, /Delivery is uncertain/i);
+      assert.match(warning, /check the restored conversation/i);
+      assert.match(warning, /Nothing is resent automatically/i);
+      assert.equal(h.ids['chat-uncertain'].hidden, false);
+      assert.equal(h.ids['chat-input'].value, draft);
+      assert.equal(originalSocket.sent.length, 1);
+      originalSocket.close();
+      assert.equal(h.ids['chat-uncertain'].textContent, warning);
+      assert.equal(h.ids['chat-send'].disabled, true);
+      h.tick();
+      // Neither an empty history nor a recovered reply proves which UUID ran.
+      h.snapshot(edited ? { messages: [
+        { role: 'user', content: 'Synthetic pending send' },
+        { role: 'assistant', content: 'Synthetic recovered reply' },
+      ] } : {});
+      assert.equal(h.ids['chat-error'].textContent, '');
+      assert.equal(h.ids['chat-uncertain'].textContent, warning);
+      assert.equal(h.ids['chat-uncertain'].hidden, false);
+      assert.equal(h.ids['chat-input'].value, draft);
+      assert.equal(h.socket.sent.length, 0);
+      assert.equal(originalSocket.sent.length, 1);
+    });
+  }
+}
+
 test('rejected submission keeps the edited draft and reports failure instead of waiting forever', () => {
   const h = harness(); h.snapshot(); h.submit('Synthetic question');
   h.ids['chat-input'].value = 'Edited synthetic question';
   h.socket.receive({ type: 'error', code: 'invalid_request', message: '<b>Cannot send</b>' });
   assert.equal(h.ids['chat-input'].value, 'Edited synthetic question');
   assert.equal(h.ids['chat-error'].textContent, '<b>Cannot send</b>');
+  assert.equal(h.ids['chat-uncertain'].textContent, '');
   assert.doesNotMatch(h.ids['chat-status'].textContent, /acceptance/);
   assert.equal(h.ids['chat-send'].disabled, false);
+  h.socket.close(); h.tick(); h.snapshot();
+  assert.equal(h.ids['chat-uncertain'].textContent, '');
+  assert.equal(h.ids['chat-input'].value, 'Edited synthetic question');
+  assert.equal(h.socket.sent.length, 0);
 });
 
 test('duplicate request frames cannot re-enable an answer already sent on this connection', () => {

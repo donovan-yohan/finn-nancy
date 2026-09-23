@@ -18,6 +18,7 @@
   const empty = byId('chat-empty');
   const enabled = shell.dataset.chatEnabled === 'true';
   const retryDelays = [500, 1000, 2000, 4000, 8000];
+  const uncertainDelivery = 'Delivery is uncertain. Your draft is kept; check the restored conversation before sending it again. Nothing is resent automatically.';
   const requests = new Map();
   let questionSequence = 0;
   let socket;
@@ -307,7 +308,14 @@
           if (turn) turn.outcome.textContent = 'Response failed.';
           turn = null;
         }
-        if (pending) pending = null; // Rejected submission: its draft is still present.
+        if (pending) {
+          // An RPC failure is not proof of rejection. Keep this notice through
+          // close and snapshot recovery, which cannot confirm a submission UUID.
+          if (['gateway_request_failed', 'gateway_disconnected', 'uncertain_send'].includes(event.code)) {
+            notice(uncertain, uncertainDelivery);
+          }
+          pending = null; // The draft remains; no error automatically resends it.
+        }
         stopping = false;
         status.textContent = running ? 'Namako is working…' : 'Request failed.';
         break;
@@ -357,7 +365,7 @@
       request.note.textContent = 'Disconnected. Waiting for the server to confirm this request is still pending.';
     }
     if (pending) {
-      notice(uncertain, 'Delivery is uncertain. Your draft is kept; check the restored conversation before sending it again. Nothing is resent automatically.');
+      notice(uncertain, uncertainDelivery);
     }
     controls();
     if (leaving) return;

@@ -138,7 +138,8 @@ class Bridge:
             allowed = params.get("choices", [])
             projected = {"command": text(params.get("command")),
                          "description": text(params.get("description")),
-                         "choices": [choice for choice in ("once", "deny") if choice in allowed]}
+                         # Denial is always safe; grants still require upstream permission.
+                         "choices": [choice for choice in ("once", "deny") if choice == "deny" or choice in allowed]}
         else:
             projected = {key: params[key] for key in (
                 "question", "choices", "multi_select", "questions", "answers") if key in params}

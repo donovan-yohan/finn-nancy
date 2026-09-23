@@ -6,7 +6,9 @@ from pathlib import Path
 import shutil
 import subprocess
 
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 
 def _client(app_env):
@@ -59,10 +61,54 @@ def test_chat_thread_cookie_is_stable_and_does_not_expose_gateway(app_env, monke
     assert first.status_code == 200
     assert cookie == client.cookies.get("fn_chat_thread")
     assert "HttpOnly" in first.headers["set-cookie"]
-    assert "SameSite=strict" in first.headers["set-cookie"]
+    assert "SameSite=lax" in first.headers["set-cookie"]
     assert 'data-chat-enabled="true"' in page.text
     assert "synthetic-private-token" not in page.text
     assert "19119" not in page.text
+
+
+@pytest.mark.parametrize("scheme", ["http", "https"])
+def test_cross_site_chat_navigation_reuses_mapping_without_allowing_writes(app_env, monkeypatch, scheme):
+    from app.config import get_settings
+    from app.hermes_chat.threads import ThreadStore
+    from app.web.app import create_app
+
+    monkeypatch.setenv("HERMES_CHAT_URL", "ws://127.0.0.1:19119/api/ws")
+    get_settings.cache_clear()
+    client = TestClient(create_app(), base_url=f"{scheme}://testserver")
+    first = client.get("/chat")
+    cookie = client.cookies.get("fn_chat_thread")
+    store = ThreadStore(get_settings(), cookie)
+    state = store.load()
+    state["stored_session_id"] = "synthetic-stored-session"
+    store.save(state)
+    saved = store.path.read_bytes()
+
+    # TestClient does not enforce SameSite; check the browser policy separately
+    # from the route's treatment of a cookie carried by a top-level navigation.
+    assert "SameSite=lax" in first.headers["set-cookie"]
+    assert "HttpOnly" in first.headers["set-cookie"]
+    assert ("Secure" in first.headers["set-cookie"]) == (scheme == "https")
+    page = client.get("/chat", headers={"sec-fetch-site": "cross-site",
+                                        "sec-fetch-mode": "navigate", "sec-fetch-dest": "document"})
+    assert page.status_code == 200
+    assert "set-cookie" not in page.headers
+    assert client.cookies.get("fn_chat_thread") == cookie
+    assert store.path.read_bytes() == saved
+    assert len(list(store.path.parent.glob("*.json"))) == 1
+
+    for headers in ({"origin": "https://other.example", "sec-fetch-site": "cross-site"},
+                    {"sec-fetch-site": "cross-site"}):
+        rejected = client.post("/chat/new", headers=headers, follow_redirects=False)
+        assert rejected.status_code == 403
+        assert "set-cookie" not in rejected.headers
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with client.websocket_connect("/chat/socket", headers=headers):
+                pytest.fail("cross-site socket accepted a valid conversation cookie")
+        assert exc.value.code == 4403
+    assert client.cookies.get("fn_chat_thread") == cookie
+    assert store.path.read_bytes() == saved
+    assert len(list(store.path.parent.glob("*.json"))) == 1
 
 
 def test_hermes_frontend_contract():

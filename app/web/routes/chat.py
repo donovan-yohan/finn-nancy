@@ -27,7 +27,7 @@ def _thread_id(request: Request) -> tuple[str, bool]:
 
 def _cookie(response, request, thread_id):
     response.set_cookie(THREAD_COOKIE, thread_id, max_age=60 * 60 * 24 * 365,
-                        httponly=True, samesite="strict", secure=request.url.scheme == "https")
+                        httponly=True, samesite="lax", secure=request.url.scheme == "https")
     response.headers["Cache-Control"] = "no-store"
 
 

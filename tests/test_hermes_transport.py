@@ -171,6 +171,36 @@ def test_approval_requires_matching_request_and_cannot_persist_authority(tmp_pat
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("choices", [None, [], ["once"], ["always", "session"]],
+                         ids=["omitted", "empty", "once-only", "permanent-only"])
+def test_approval_always_allows_deny_without_broadening_grants(tmp_path, choices):
+    async def run():
+        bridge = make_bridge(tmp_path)
+        params = {"session_id": "owned-runtime", "command": "synthetic action"}
+        if choices is not None:
+            params["choices"] = choices
+        await bridge.server_request({"id": "srq-deny", "method": "approval", "params": params})
+        expected = ["once", "deny"] if choices == ["once"] else ["deny"]
+        assert bridge.browser.frames[-1]["params"]["choices"] == expected
+        for choice in {"once", "always", "session"} - set(expected):
+            with pytest.raises(GatewayError, match="invalid_request"):
+                await bridge.answer({"type": "answer", "id": "srq-deny", "answer": {"choice": choice}})
+        with pytest.raises(GatewayError, match="invalid_request"):
+            await bridge.answer({"type": "answer", "id": "srq-deny",
+                                 "answer": {"choice": "deny", "extra": True}})
+        assert bridge.gateway.answers == []
+        await bridge.answer({"type": "answer", "id": "srq-deny", "answer": {"choice": "deny"}})
+        assert bridge.gateway.answers == [("srq-deny", {"choice": "deny"})]
+        assert bridge.browser.frames[-1] == {"type": "request_cancel", "id": "srq-deny"}
+        with pytest.raises(GatewayError, match="request_expired"):
+            await bridge.answer({"type": "answer", "id": "srq-deny", "answer": {"choice": "deny"}})
+        if "once" in expected:
+            await bridge.server_request({"id": "srq-once", "method": "approval", "params": params})
+            await bridge.answer({"type": "answer", "id": "srq-once", "answer": {"choice": "once"}})
+            assert bridge.gateway.answers[-1] == ("srq-once", {"choice": "once"})
+    asyncio.run(run())
+
+
 def test_unsupported_secret_request_fails_fast_without_disclosure(tmp_path):
     async def run():
         bridge = make_bridge(tmp_path)

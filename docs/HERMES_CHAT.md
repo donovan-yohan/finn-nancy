@@ -20,7 +20,8 @@ Implemented interactions:
 - Canonical transcript and in-flight recovery after reconnect.
 - New conversation and explicit Stop.
 - Single and batched clarification questions.
-- Matching pending approval requests, restricted to Allow once or Deny.
+- Matching pending approval requests: Deny is always available; Allow once
+  requires upstream permission. Persistent grants are never offered or accepted.
 - Existing transaction “why?” links prefill a new composer without sending.
 
 Unsupported requests, including secret/password collection and desktop control,
@@ -84,9 +85,11 @@ endpoint, explicitly set `model.api_mode` to `chat_completions` as well as
 
 The application itself still has no user authentication. Serve it only on
 loopback or behind the existing authenticated private overlay. The opaque,
-HttpOnly, SameSite=Strict conversation cookie is a bearer capability, not a
-multi-user account/tenant system. TLS requests receive Secure cookies. Incoming
-WebSocket upgrades require an exact same-origin header.
+HttpOnly, SameSite=Lax conversation cookie is a bearer capability, not a
+multi-user account/tenant system. Lax preserves the conversation when following
+an external link in a top-level GET navigation. TLS requests receive Secure
+cookies. Incoming WebSocket upgrades require an exact same-origin header, and
+new-conversation POSTs still reject cross-origin requests.
 
 ## Read-only finance tools
 
@@ -142,7 +145,10 @@ A submission UUID is recorded before the RPC crosses the wire. Repeating an
 accepted UUID with the same message does not execute another turn; reusing it
 with different text is rejected. An uncertain send is never automatically
 retried. A reconnect restores authoritative history, and the browser retains
-an uncertain draft for human reconciliation. At most 500 submission receipts
+an uncertain draft for human reconciliation. An unconfirmed submission's gateway
+failure shows an explicit delivery-uncertain notice that survives reconnect and
+snapshot recovery; it is not treated as proof that the message was rejected.
+At most 500 submission receipts
 are retained per conversation; reaching the cap requires a new conversation
 rather than silently losing deduplication evidence.
 
