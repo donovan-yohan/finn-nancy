@@ -48,6 +48,15 @@ def test_mcp_registers_expected_tools():
     assert {"ingest_document", "add_transaction", "query_finances", "reconcile_status"} <= names
 
 
+def test_mcp_read_only_surface_has_no_mutation_tools(app_env):
+    from app.mcp.server import build_server
+
+    server = build_server(read_only=True)
+    assert _tool_names(server) == {"query_finances", "reconcile_status"}
+    with pytest.raises(Exception, match="[Uu]nknown tool"):
+        asyncio.run(server.call_tool("add_transaction", {}))
+
+
 def test_mcp_ingest_document_files_receipt_e2e(app_env, make_jpeg, fake_llm):
     from app.mcp.server import ingest_document
 

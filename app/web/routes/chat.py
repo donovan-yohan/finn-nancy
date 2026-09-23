@@ -1,18 +1,16 @@
-"""Chat page and SSE streaming endpoint."""
+"""Finance-scoped frontend for native Hermes chat sessions."""
 from __future__ import annotations
 
-import asyncio
-import json
-from collections.abc import AsyncIterator
+from urllib.parse import urlsplit
 from uuid import uuid4
 
-from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi import APIRouter, HTTPException, Request, WebSocket
+from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ...agents.chat import load_thread_messages, stream_chat
 from ...config import get_settings
 from ...db import engine
-from ...llm.warm import warm
+from ...hermes_chat.bridge import serve
+from ...hermes_chat.threads import ThreadStore, valid_thread
 from ..templating import templates
 
 router = APIRouter()
@@ -22,15 +20,29 @@ THREAD_COOKIE = "fn_chat_thread"
 
 def _thread_id(request: Request) -> tuple[str, bool]:
     existing = request.cookies.get(THREAD_COOKIE, "").strip()
-    if existing:
+    if valid_thread(existing) and ThreadStore(get_settings(), existing).path.is_file():
         return existing, False
     return uuid4().hex, True
 
 
-def _sse_frame(event: dict) -> str:
-    event_type = str(event.get("type") or "message")
-    data = json.dumps(event, separators=(",", ":"), default=str)
-    return f"event: {event_type}\ndata: {data}\n\n"
+def _cookie(response, request, thread_id):
+    response.set_cookie(THREAD_COOKIE, thread_id, max_age=60 * 60 * 24 * 365,
+                        httponly=True, samesite="lax", secure=request.url.scheme == "https")
+    response.headers["Cache-Control"] = "no-store"
+
+
+def _same_origin(request, *, required=False):
+    origin = request.headers.get("origin")
+    if not origin:
+        return not required and request.headers.get("sec-fetch-site") != "cross-site"
+    expected_scheme = {"ws": "http", "wss": "https"}.get(request.url.scheme, request.url.scheme)
+    try:
+        parsed = urlsplit(origin)
+        return (parsed.scheme == expected_scheme and parsed.netloc == request.url.netloc
+                and not parsed.path and not parsed.query and not parsed.fragment
+                and parsed.username is None)
+    except ValueError:
+        return False
 
 
 def _money(cents: int) -> str:
@@ -68,36 +80,6 @@ def _why_seed_message(db_path: str, txn_id: int) -> str | None:
     )
 
 
-async def _with_keepalives(events: AsyncIterator[dict]) -> AsyncIterator[str]:
-    queue: asyncio.Queue[dict | None] = asyncio.Queue()
-
-    async def consume() -> None:
-        try:
-            async for event in events:
-                await queue.put(event)
-        finally:
-            await queue.put(None)
-
-    task = asyncio.create_task(consume())
-    try:
-        while True:
-            try:
-                event = await asyncio.wait_for(queue.get(), timeout=15)
-            except asyncio.TimeoutError:
-                yield ": keepalive\n\n"
-                continue
-            if event is None:
-                break
-            yield _sse_frame(event)
-    finally:
-        if not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
-
 @router.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request, why: int | None = None):
     settings = get_settings()
@@ -107,11 +89,11 @@ async def chat_page(request: Request, why: int | None = None):
         if seed is None:
             raise HTTPException(status_code=404, detail="transaction not found")
         thread_id, is_new = uuid4().hex, True
-        messages = []
         seed_message = seed
     else:
         thread_id, is_new = _thread_id(request)
-        messages = await load_thread_messages(str(settings.db_path), thread_id)
+    if is_new and settings.hermes_chat_url:
+        ThreadStore(settings, thread_id).create()
     response = templates.TemplateResponse(
         request,
         "chat.html",
@@ -119,38 +101,41 @@ async def chat_page(request: Request, why: int | None = None):
             "active": "chat",
             "brand": "nancy",
             "thread_id": thread_id,
-            "messages": messages,
+            "messages": [],
+            "chat_enabled": bool(settings.hermes_chat_url),
             "seed_message": seed_message,
         },
     )
     if is_new:
-        response.set_cookie(THREAD_COOKIE, thread_id, max_age=60 * 60 * 24 * 365, httponly=True, samesite="lax")
+        _cookie(response, request, thread_id)
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 
 @router.post("/chat/new")
-def new_chat():
-    response = RedirectResponse("/chat", status_code=303)
-    response.set_cookie(THREAD_COOKIE, uuid4().hex, max_age=60 * 60 * 24 * 365, httponly=True, samesite="lax")
-    return response
-
-
-@router.post("/chat/stream")
-async def chat_stream(request: Request, message: str = Form(...)):
+def new_chat(request: Request):
+    if not _same_origin(request):
+        raise HTTPException(403, "cross-origin chat request")
+    thread_id = uuid4().hex
     settings = get_settings()
-    thread_id, is_new = _thread_id(request)
-    events = stream_chat(str(settings.db_path), thread_id, message)
-    response = StreamingResponse(
-        _with_keepalives(events),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-    if is_new:
-        response.set_cookie(THREAD_COOKIE, thread_id, max_age=60 * 60 * 24 * 365, httponly=True, samesite="lax")
+    if settings.hermes_chat_url:
+        ThreadStore(settings, thread_id).create()
+    response = RedirectResponse("/chat", status_code=303)
+    _cookie(response, request, thread_id)
     return response
 
 
-@router.post("/chat/ping")
-async def chat_ping():
-    ok = await warm()
-    return JSONResponse({"ok": ok})
+@router.websocket("/chat/socket")
+async def chat_socket(socket: WebSocket):
+    if not _same_origin(socket, required=True):
+        await socket.close(code=4403)
+        return
+    settings = get_settings()
+    thread_id = socket.cookies.get(THREAD_COOKIE, "")
+    if not valid_thread(thread_id) or not ThreadStore(settings, thread_id).path.is_file():
+        await socket.close(code=4403)
+        return
+    if not settings.hermes_chat_url:
+        await socket.close(code=4404)
+        return
+    await serve(socket, settings, thread_id)

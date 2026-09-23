@@ -66,14 +66,15 @@ def reconcile_status(doc_id: int | None = None) -> dict:
     return service.reconcile_status(doc_id=doc_id)
 
 
-def build_server() -> FastMCP:
+def build_server(*, read_only: bool = False) -> FastMCP:
     server = FastMCP("finn-nancy")
-    server.tool()(ingest_document)
-    server.tool()(add_transaction)
+    if not read_only:
+        server.tool()(ingest_document)
+        server.tool()(add_transaction)
     server.tool()(query_finances)
     server.tool()(reconcile_status)
     return server
 
 
-def main() -> None:
-    build_server().run()
+def main(*, read_only: bool = False) -> None:
+    build_server(read_only=read_only).run()
