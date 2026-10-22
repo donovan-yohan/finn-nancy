@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ...config import get_settings
+from ...api.authority import is_api_request
 from ...db import engine
 from ...hermes_chat.bridge import serve
 from ...hermes_chat.threads import ThreadStore, valid_thread
@@ -32,6 +33,8 @@ def _cookie(response, request, thread_id):
 
 
 def _same_origin(request, *, required=False):
+    if is_api_request(request):
+        return True
     origin = request.headers.get("origin")
     if not origin:
         return not required and request.headers.get("sec-fetch-site") != "cross-site"

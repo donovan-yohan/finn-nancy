@@ -12,33 +12,38 @@
     </p>
     {% endif %}
   </div>
+  <form class="inline-form home-month" action="/" method="get">
+    <label for="home-month">Period</label>
+    <select id="home-month" name="month">
+      {% for month in months %}<option value="{{ month }}"{% if month == selected_month %} selected{% endif %}>{{ month }}</option>{% endfor %}
+    </select>
+    <button class="ghost" type="submit">View</button>
+  </form>
 </header>
 
-<main class="grid">
-  <section class="stat-strip home-stats span-2" aria-label="Recorded totals and latest month">
+<div class="grid">
+  <p class="home-period span-2">{{ selected_month or 'No recorded period' }}{% if cashflow %} · <a class="home-period-link" href="/statements?month={{ cashflow[-1].month }}">Latest period · {{ cashflow[-1].month }}</a>{% endif %}</p>
+  <section class="stat-strip home-stats span-2" aria-label="Recorded totals for {{ selected_month }}">
     <article class="stat-card">
       <p class="eyebrow">money in</p>
-      <p class="stat-number positive">{{ stats.money_in_cents | money }}</p>
+      <a class="stat-number positive" href="/activity?date_from={{ period_date_from }}&amp;date_to={{ period_date_to }}&amp;report_bucket=income">{{ stats.money_in_cents | money }}</a>
     </article>
     <article class="stat-card">
       <p class="eyebrow">money out</p>
-      <p class="stat-number negative">{{ stats.money_out_cents | money }}</p>
+      <a class="stat-number negative" href="/activity?date_from={{ period_date_from }}&amp;date_to={{ period_date_to }}&amp;report_bucket=expense">{{ stats.money_out_cents | money }}</a>
     </article>
     <article class="stat-card emphasis">
       <p class="eyebrow">net</p>
-      <p class="stat-number {{ stats.net_class }}">{{ stats.net_cents | money }}</p>
+      <a class="stat-number {{ stats.net_class }}" href="/statements?month={{ selected_month }}">{{ stats.net_cents | money }}</a>
     </article>
-    <article class="stat-card">
-      <p class="eyebrow">latest month</p>
-      <p class="stat-number {{ 'negative' if latest_net_cents < 0 else 'positive' }}">{{ latest_net_cents | money }}</p>
-    </article>
+
   </section>
   {% if semantic_review_count %}
   <section class="card span-2 finn-card">
     <p class="banner warn" role="alert">
       {{ semantic_review_count }} transaction(s) are excluded from the totals above
       because flow meaning or required provenance is incomplete.
-      <a class="link" href="/activity?semantic_review=1">review them</a>
+      <a class="link" href="/activity?semantic_review=1&amp;date_from={{ period_date_from }}&amp;date_to={{ period_date_to }}">review them</a>
     </p>
   </section>
   {% endif %}
@@ -46,7 +51,7 @@
   <section class="card span-2 home-recent">
     <div class="card-head">
       <h2>Recent transactions</h2>
-      <a class="link" href="/activity">see all</a>
+      <a class="link" href="/activity?date_from={{ period_date_from }}&amp;date_to={{ period_date_to }}">see all</a>
     </div>
     <div id="transactions" class="table-wrap">
       {% include "transactions_partial.html" %}
@@ -73,17 +78,20 @@
 
   {% if categories %}
   <details class="card span-2 home-history">
-    <summary class="nancy">Top spending categories</summary>
+    <summary class="nancy">Top spending categories · {{ selected_month }}</summary>
     <div class="category-list">
       {% for c in categories %}
       <div class="category-row">
         <span class="dot" style="background: {{ c.color }}"></span>
-        <span>{{ c.category_name }}</span>
+        {% if c.category_id is defined %}<a class="nancy-link" href="/activity?category_id={{ c.category_id }}&amp;date_from={{ period_date_from }}&amp;date_to={{ period_date_to }}&amp;category_resolution=accepted">{{ c.category_name }}</a>{% else %}<span>{{ c.category_name }}</span>{% endif %}
         <b>{{ c.total_cents | money }}</b>
       </div>
       {% endfor %}
     </div>
   </details>
   {% endif %}
-</main>
+</div>
+{% if category_resolution is defined and category_resolution.unresolved_split_count %}
+<div class="grid single"><a class="link nancy-link" href="/backlog">Unresolved categories · {{ category_resolution.excluded_expense_cents | money }} · {{ category_resolution.unresolved_split_count }} split(s)</a></div>
+{% endif %}
 {% endblock %}

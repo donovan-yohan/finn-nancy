@@ -105,6 +105,15 @@ def _queue_items(conn) -> list[dict]:
                     receipt = ExtractedReceipt.model_validate_json(extraction["extracted_json"])
             except ValueError:
                 pass
+        bank_receipt_candidates = []
+        if receipt is not None and receipt.currency == get_settings().home_currency:
+            from ...reconcile.feed import receipt_candidates
+            try:
+                bank_receipt_candidates = receipt_candidates(conn,
+                    amount_cents=-abs(receipt.total_cents), posted_on=receipt.purchased_on,
+                    home_currency=get_settings().home_currency)
+            except ValueError:
+                pass
         similar_transactions = []
         if receipt is not None:
             query = " ".join(
@@ -132,6 +141,7 @@ def _queue_items(conn) -> list[dict]:
                 "reason": reason,
                 "triage": repo_documents.triage_note(doc),
                 "similar_transactions": similar_transactions,
+                "bank_receipt_candidates": bank_receipt_candidates,
                 "capture_provenance": repo_captures.provenance_for_document(
                     conn, int(doc["id"])
                 ),
@@ -238,6 +248,28 @@ def statement_review(
     )
 
 
+@router.post("/review/{extraction_id}/attach")
+def attach_receipt_review(
+    extraction_id: int,
+    transaction_id: int = Form(...),
+    reason: str = Form(...),
+):
+    from ...banking.client import BankingError
+    from ...db import repo_period_policy
+    from ...reconcile.feed import attach_receipt
+    settings = get_settings()
+    if settings.read_only:
+        raise HTTPException(403, 'read_only')
+    with engine.write_tx(settings.db_path) as conn:
+        try:
+            attach_receipt(conn, extraction_id=extraction_id, transaction_id=transaction_id,
+                operation_key=f'receipt:{extraction_id}:attach', reason=reason,
+                home_currency=settings.home_currency)
+        except (BankingError, repo_period_policy.PeriodPolicyError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse('/review', status_code=303)
+
+
 @router.post("/review/{extraction_id}/approve")
 def approve(
     extraction_id: int,
@@ -246,6 +278,8 @@ def approve(
     total: str = Form(...),
     category_name: str = Form(...),
     account_id: str = Form(""),
+    acknowledge_separate_purchase: bool = Form(False),
+    separate_purchase_reason: str = Form(""),
 ):
     settings = get_settings()
 
@@ -308,9 +342,16 @@ def approve(
                 extraction_id=extraction_id,
                 account_id=acct_id,
                 human_review=True,
+                acknowledge_separate_purchase=acknowledge_separate_purchase,
+                separate_purchase_reason=separate_purchase_reason,
             )
         except repo_close.MonthLockedError as exc:
             raise HTTPException(409, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if result['status'] == 'needs_review':
+            # Do not approve an unbooked late receipt or assert its guessed category.
+            raise HTTPException(409, 'Possible existing purchase. Attach the receipt, or explicitly review it as a separate purchase with an account and reason.')
         if result["status"] == "inserted":
             transaction_id = int(result["transaction_id"])
             split_id = int(result["split_id"])

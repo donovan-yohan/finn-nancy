@@ -7,6 +7,7 @@ const APP_SHELL = [
   "/processing",
   "/manifest.webmanifest",
   "/static/app.css",
+  "/static/theme.js",
   "/static/capture-store.js",
   "/static/capture-outbox.js",
   "/static/htmx.min.js",

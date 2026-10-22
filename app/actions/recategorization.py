@@ -1,6 +1,7 @@
 """Apply/revert recategorization proposals."""
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Mapping
 
@@ -10,6 +11,9 @@ from ..db import (
     repo_merchant_knowledge,
 )
 from ..db.repo_merchant_knowledge import Evidence
+from ..accounting.contract import currency_review_reason
+from ..config import get_settings
+from .category_state import category_state, state_digest
 
 
 def _truthy(value: object) -> bool:
@@ -51,6 +55,19 @@ def _single_split(conn: sqlite3.Connection, transaction_id: int) -> sqlite3.Row:
     if len(splits) != 1:
         raise ValueError("transaction must have exactly one split")
     return splits[0]
+
+
+def _selected_split(conn: sqlite3.Connection, payload: Mapping[str, object]) -> sqlite3.Row:
+    transaction_id = _int_field(payload, "transaction_id")
+    if payload.get("split_id") in (None, ""):
+        return _single_split(conn, transaction_id)
+    split = conn.execute(
+        "SELECT * FROM transaction_splits WHERE transaction_id=? AND id=?",
+        (transaction_id, _int_field(payload, "split_id")),
+    ).fetchone()
+    if split is None:
+        raise ValueError("split does not belong to transaction")
+    return split
 
 
 def _optional_int(payload: Mapping[str, object], key: str) -> int | None:
@@ -230,7 +247,7 @@ class RecategorizationHandler:
 
     def normalize(self, payload: Mapping[str, object]) -> dict:
         normalized = dict(payload)
-        for key in ("transaction_id", "to_category_id"):
+        for key in ("transaction_id", "to_category_id", "split_id"):
             if key not in normalized or normalized[key] in (None, ""):
                 continue
             try:
@@ -256,7 +273,58 @@ class RecategorizationHandler:
             raise ValueError(
                 "purchase and fee transactions require an expense category"
             )
-        _single_split(conn, transaction_id)
+        _selected_split(conn, payload)
+        expected = payload.get("expected_state_digest")
+        if expected is not None:
+            state = category_state(conn, transaction_id)
+            if state_digest(state) != expected:
+                raise ValueError("transaction state is stale; inspect again")
+        if payload.get("machine_category_proposal"):
+            if expected is None:
+                raise ValueError("expected_state_digest is required")
+            state = category_state(conn, transaction_id)
+            status = conn.execute(
+                "SELECT semantic_status FROM v_transaction_flow_status WHERE transaction_id=?",
+                (transaction_id,),
+            ).fetchone()
+            if any(
+                row["accepted_observation_id"] != row["current_observation_id"]
+                or row["accepted_binding_id"] != row["current_binding_id"]
+                or row["pending"] or row["kind"] == "removed"
+                for row in state["bank_source_state"]
+            ):
+                raise ValueError("bank source evidence requires review")
+            if txn["flow_kind"] not in {"purchase", "fee", "refund", "reimbursement", "reversal"} or status[0] != "complete":
+                raise ValueError("expense flow must be resolved before proposing a category")
+            if target_category["kind"] != "expense":
+                raise ValueError("target must be an existing expense category")
+            home_currency = get_settings().home_currency
+            if currency_review_reason(state["account"]["currency"], home_currency):
+                raise ValueError("expense currency requires review")
+            for extraction in state["extractions"]:
+                # Statement extractions have their own reviewed field evidence;
+                # only receipt JSON is the receipt-currency authority here.
+                if extraction["doc_kind"] != "receipt":
+                    continue
+                try:
+                    receipt = json.loads(extraction["extracted_json"])
+                except (ValueError, TypeError):
+                    raise ValueError("receipt currency requires review") from None
+                currency = receipt.get("currency") if isinstance(receipt, dict) else None
+                if not isinstance(currency, str) or currency_review_reason(currency, home_currency):
+                    raise ValueError("receipt currency requires review")
+            if sum(s["amount_cents"] for s in state["splits"]) != txn["amount_cents"]:
+                raise ValueError("split amounts must sum to transaction amount")
+            if any(r["is_pending"] or r["review_disposition"] != "active" for r in state["statement_lines"]):
+                raise ValueError("pending or inactive source evidence requires review")
+            if any(currency_review_reason(r["currency"], home_currency) for r in state["statement_lines"]):
+                raise ValueError("source currency requires review")
+            if any(r["review_state"] not in {"approved", "approved_with_override"} for r in state["statement_reviews"]):
+                raise ValueError("source statement requires review")
+            if any(r["review_status"] in {"pending", "rejected"} for r in state["extractions"]):
+                raise ValueError("pending source extraction requires review")
+            if any(r["status"] not in {"processed", "matched"} for r in state["documents"]):
+                raise ValueError("source document requires review")
 
     def apply(self, conn: sqlite3.Connection, payload: Mapping[str, object]) -> dict:
         self.validate(conn, payload)
@@ -270,7 +338,7 @@ class RecategorizationHandler:
             conn, transaction_id, override=override
         )
         txn = conn.execute("SELECT * FROM transactions WHERE id=?", (transaction_id,)).fetchone()
-        split = _single_split(conn, transaction_id)
+        split = _selected_split(conn, payload)
         target_category = _target_category(conn, payload)
         target_transaction_amount_cents = int(txn["amount_cents"])
         target_split_amount_cents = int(split["amount_cents"])
@@ -318,6 +386,8 @@ class RecategorizationHandler:
         if knowledge_claim_id is not None:
             revert["knowledge_claim_id"] = knowledge_claim_id
             detail["knowledge_claim_id"] = knowledge_claim_id
+        if payload.get("split_id") not in (None, ""):
+            revert["expected_state_digest"] = state_digest(category_state(conn, transaction_id))
         for month in locked_months:  # non-empty only on an override apply
             repo_close.record_audit(
                 conn, month=month, entity="transaction", entity_id=transaction_id,
@@ -359,11 +429,18 @@ class RecategorizationHandler:
             "SELECT * FROM transaction_splits WHERE transaction_id=? ORDER BY id",
             (transaction_id,),
         ).fetchall()
-        if len(splits) != 1 or int(splits[0]["id"]) != split_id:
+        exact_digest = revert_payload.get("expected_state_digest")
+        if exact_digest is not None:
+            if state_digest(category_state(conn, transaction_id)) != exact_digest:
+                raise ValueError("transaction state has changed; revert refused")
+            matching = [s for s in splits if int(s["id"]) == split_id]
+        else:
+            matching = splits if len(splits) == 1 and int(splits[0]["id"]) == split_id else []
+        if len(matching) != 1:
             raise ValueError(
                 "transaction split shape has changed since this action was applied; revert refused"
             )
-        split = splits[0]
+        split = matching[0]
         if (
             int(txn["amount_cents"]) != expected_transaction_amount_cents
             or int(split["category_id"]) != expected_category_id
@@ -371,14 +448,17 @@ class RecategorizationHandler:
         ):
             raise ValueError("transaction has changed since this action was applied; revert refused")
 
-        conn.execute(
-            "UPDATE transactions SET amount_cents=? WHERE id=?",
-            (transaction_amount_cents, transaction_id),
-        )
-        conn.execute(
-            "UPDATE transaction_splits SET category_id=?, amount_cents=? WHERE id=?",
-            (category_id, split_amount_cents, split_id),
-        )
+        if exact_digest is not None:
+            conn.execute("UPDATE transaction_splits SET category_id=? WHERE id=?", (category_id, split_id))
+        else:
+            conn.execute(
+                "UPDATE transactions SET amount_cents=? WHERE id=?",
+                (transaction_amount_cents, transaction_id),
+            )
+            conn.execute(
+                "UPDATE transaction_splits SET category_id=?, amount_cents=? WHERE id=?",
+                (category_id, split_amount_cents, split_id),
+            )
         knowledge_claim_id = _optional_int(
             revert_payload,
             "knowledge_claim_id",

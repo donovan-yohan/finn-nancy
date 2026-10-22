@@ -13,7 +13,7 @@
   </div>
 </header>
 
-<main class="grid single">
+<div class="grid single">
   <section class="card span-2">
     {% if lock_error %}
     <p class="banner warn" role="alert">{{ lock_error }}</p>
@@ -27,7 +27,7 @@
       {% endfor %}
     </div>
     {% endif %}
-    <form method="post" action="{{ ('/txn/' ~ txn.id ~ '/edit') if txn else '/txn/new' }}">
+    <form class="transaction-form" method="post" action="{{ ('/txn/' ~ txn.id ~ '/edit') if txn else '/txn/new' }}">
       <label>date
         <input type="date" name="posted_on" value="{{ txn.posted_on if txn else today }}" required>
       </label>
@@ -73,7 +73,7 @@
       </label>
       {% endif %}
 
-      <label>notes
+      <label class="transaction-wide">notes
         <textarea name="notes">{{ txn.notes if txn else '' }}</textarea>
       </label>
 
@@ -84,7 +84,7 @@
       </label>
       {% endif %}
 
-      <div class="card-head">
+      <div class="card-head transaction-wide">
         <button class="ghost" type="submit">save</button>
         <a class="link" href="/activity">cancel</a>
       </div>
@@ -103,5 +103,5 @@
     </form>
     {% endif %}
   </section>
-</main>
+</div>
 {% endblock %}

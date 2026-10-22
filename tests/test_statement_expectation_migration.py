@@ -19,6 +19,8 @@ PERIOD_POLICY_MIGRATION = "036_period_policy.sql"
 IMPORT_RUNS_MIGRATION = "037_import_runs.sql"
 CARD_HOLDERS_MIGRATION = "038_card_holders.sql"
 MONTH_SPINE_MIGRATION = "039_month_spine_budgets.sql"
+CATEGORY_OPERATIONS_MIGRATION = "040_category_operations.sql"
+BANK_FEED_MIGRATION = "041_bank_feed.sql"
 
 
 def _apply_pre_030(path: Path) -> None:
@@ -465,6 +467,8 @@ def test_legacy_backfill_is_conservative_exact_and_audited(tmp_path):
         IMPORT_RUNS_MIGRATION,
         CARD_HOLDERS_MIGRATION,
         MONTH_SPINE_MIGRATION,
+        CATEGORY_OPERATIONS_MIGRATION,
+        BANK_FEED_MIGRATION,
     ]
     assert migrate.init_db(path) == []
 
@@ -596,6 +600,8 @@ def test_pre_migration_copy_upgrades_to_same_truth_and_preserves_identity(tmp_pa
         IMPORT_RUNS_MIGRATION,
         CARD_HOLDERS_MIGRATION,
         MONTH_SPINE_MIGRATION,
+        CATEGORY_OPERATIONS_MIGRATION,
+        BANK_FEED_MIGRATION,
     ]
     assert migrate.init_db(copied) == [
         MIGRATION,
@@ -608,6 +614,8 @@ def test_pre_migration_copy_upgrades_to_same_truth_and_preserves_identity(tmp_pa
         IMPORT_RUNS_MIGRATION,
         CARD_HOLDERS_MIGRATION,
         MONTH_SPINE_MIGRATION,
+        CATEGORY_OPERATIONS_MIGRATION,
+        BANK_FEED_MIGRATION,
     ]
 
     def semantic_snapshot(path: Path) -> tuple[list[tuple], list[tuple], list[tuple]]:

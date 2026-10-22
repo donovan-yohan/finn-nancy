@@ -9,7 +9,11 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from ..api.middleware import ApiGuardMiddleware
+from ..api.authority import RequestAuthorityMiddleware, unhandled_error_response
 from ..api.routes import router as api_router
+from ..api.finance_routes import router as finance_router
+from ..banking.service import BankingService
+from ..banking.web import build_router as build_banking_router
 from ..channels import inbox, telegram
 from ..config import get_settings
 from ..db import engine, repo_embeddings
@@ -92,11 +96,28 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="finn-nancy", docs_url=None, redoc_url=None, lifespan=lifespan)
+    settings = get_settings()
+    banking = BankingService(
+        db_path=settings.db_path,
+        private_dir=settings.plaid_private_dir,
+        credentials_file=settings.plaid_credentials_file,
+        origin=settings.plaid_origin,
+        completion_uri=settings.plaid_completion_uri,
+        enabled=lambda: get_settings().plaid_enabled,
+        strict_local=lambda: get_settings().strict_local_mode,
+        read_only=lambda: get_settings().read_only,
+        home_currency=settings.home_currency,
+    )
+    app.state.banking_service = banking
     app.add_middleware(ApiGuardMiddleware)
+    app.add_middleware(RequestAuthorityMiddleware)
+    app.add_exception_handler(Exception, unhandled_error_response)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     app.include_router(actions_router)
     app.include_router(backlog_router)
     app.include_router(api_router)
+    app.include_router(finance_router)
+    app.include_router(build_banking_router(banking))
     app.include_router(chat_router)
     app.include_router(close_router)
     app.include_router(dashboard_router)

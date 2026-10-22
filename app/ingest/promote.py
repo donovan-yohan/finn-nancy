@@ -6,6 +6,7 @@ we always write a correctly-signed split. Idempotent via UNIQUE(source, external
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sqlite3
 
 from ..accounting.contract import FlowKind, currency_review_reason
@@ -33,13 +34,47 @@ def _valid_date(value: str) -> str:
 def promote_receipt(conn: sqlite3.Connection, *, source_document_id: int, sha256: str,
                     receipt: ExtractedReceipt, extraction_id: int,
                     account_id: int | None = None,
-                    human_review: bool = False) -> dict:
+                    human_review: bool = False,
+                    acknowledge_separate_purchase: bool = False,
+                    separate_purchase_reason: str = '') -> dict:
     settings = get_settings()
     currency_reason = currency_review_reason(receipt.currency, settings.home_currency)
     if currency_reason is not None:
         raise ValueError(f"{currency_reason}: receipt promotion blocked")
     external_id = "rcpt:" + sha256[:16]
     amount = -abs(int(receipt.total_cents or 0))  # expense -> negative
+    # Receipt account hints are not bank-account identity. Across-account equal
+    # amounts stay in review even when the default account would hide a match.
+    from ..reconcile.feed import receipt_candidates
+    candidates = receipt_candidates(conn, amount_cents=amount,
+                                    posted_on=_valid_date(receipt.purchased_on),
+                                    home_currency=settings.home_currency)
+    original_extraction = None
+    if acknowledge_separate_purchase is not False:
+        if (acknowledge_separate_purchase is not True or human_review is not True
+                or account_id is None or not isinstance(separate_purchase_reason, str)
+                or not 1 <= len(separate_purchase_reason.strip()) <= 500):
+            raise ValueError('separate_purchase_review_required')
+        original_extraction = conn.execute('''SELECT e.* FROM ingest_extractions e
+            JOIN source_documents d ON d.id=e.source_document_id
+            WHERE e.id=? AND e.source_document_id=? AND e.doc_kind='receipt'
+            AND d.kind='receipt' AND d.sha256=? AND e.review_status='pending'
+            AND e.transaction_id IS NULL''', (extraction_id, source_document_id, sha256)).fetchone()
+        if original_extraction is None:
+            raise ValueError('separate_purchase_review_required')
+        original_receipt = ExtractedReceipt.model_validate_json(original_extraction['extracted_json'])
+        from ..db import repo_period_policy
+        repo_period_policy.guard_months(conn, [
+            repo_period_policy.month_for_date(original_receipt.purchased_on),
+            repo_period_policy.month_for_date(receipt.purchased_on),
+        ])
+    if candidates and acknowledge_separate_purchase is not True:
+        conn.execute("UPDATE ingest_extractions SET review_status='pending' WHERE id=?",
+                     (extraction_id,))
+        repo_documents.set_status(conn, source_document_id, 'needs_review')
+        return {'status': 'needs_review', 'reason': 'bank_feed_receipt_candidate',
+                'extraction_id': extraction_id,
+                'candidate_transaction_ids': [r['id'] for r in candidates]}
     account_id = (
         int(account_id)
         if account_id is not None
@@ -77,6 +112,15 @@ def promote_receipt(conn: sqlite3.Connection, *, source_document_id: int, sha256
         amount_cents=amount,
         memo=(receipt.merchant or ""),
     )
+    if original_extraction is not None:
+        conn.execute('''INSERT INTO bank_receipt_decisions(extraction_id,source_document_id,
+            transaction_id,decision,operation_key,actor,reason,original_json,reviewed_json,
+            candidate_transaction_ids_json)
+            VALUES (?,?,?,'separate_purchase',?,'operator:receipt-review',?,?,?,?)''',
+            (extraction_id, source_document_id, txn_id,
+             f'receipt:{extraction_id}:separate-purchase', separate_purchase_reason.strip(),
+             original_extraction['extracted_json'], receipt.model_dump_json(),
+             json.dumps([r['id'] for r in candidates])))
     repo_documents.link_extraction_txn(conn, extraction_id, txn_id, review_status="auto")
 
     proposal_id = None

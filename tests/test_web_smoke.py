@@ -79,7 +79,7 @@ def test_dashboard_discloses_transactions_excluded_from_totals(sample_db, monkey
     response = _client(sample_db, monkeypatch).get("/")
     assert response.status_code == 200
     assert "1 transaction(s) are excluded from the totals above" in response.text
-    assert 'href="/activity?semantic_review=1"' in response.text
+    assert 'href="/activity?semantic_review=1&amp;date_from=2026-06-01&amp;date_to=2026-06-30"' in response.text
 
 
 def test_partials_and_health(sample_db, monkeypatch):
@@ -107,7 +107,7 @@ def test_version_reports_loaded_revision_and_schema_head(sample_db, monkeypatch)
     assert str(uuid.UUID(body["database_identity"])) == body["database_identity"]
     assert re.fullmatch(r"[0-9a-f]{64}", body["schema_digest"])
     expected_head = max(path.name for path in migrate.MIGRATIONS_DIR.glob("*.sql"))
-    assert expected_head == "039_month_spine_budgets.sql"
+    assert expected_head == "041_bank_feed.sql"
     assert body["expected_migration_head"] == expected_head
     assert body["applied_migration_head"] == body["expected_migration_head"]
     assert body["expected_migration_digest"] == body["applied_migration_digest"]

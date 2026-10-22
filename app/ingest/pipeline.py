@@ -267,5 +267,6 @@ def process_document(db_path, source_document_id: int, llm) -> dict:
             conn, source_document_id=source_document_id, sha256=doc["sha256"],
             receipt=receipt, extraction_id=extraction_id,
         )
-        repo_documents.set_status(conn, source_document_id, "processed")
+        if result['status'] != 'needs_review':
+            repo_documents.set_status(conn, source_document_id, "processed")
         return result

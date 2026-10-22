@@ -44,9 +44,26 @@ def _inbox_root(path: Path) -> Path:
     return parent
 
 
+def _resolve_allow_missing(path: Path) -> Path:
+    try:
+        return path.resolve(strict=True)
+    except FileNotFoundError:
+        # Resolve existing ancestors strictly, but keep paths that a watcher may
+        # observe before creation. Non-strict resolve also tolerates symlink loops
+        # on Python 3.13+, so it cannot establish containment.
+        parent = _resolve_allow_missing(path.parent)
+        candidate = parent / path.name
+        if candidate.is_symlink():
+            target = candidate.readlink()
+            return _resolve_allow_missing(parent / target)
+        if path.name == "..":
+            return parent.parent
+        return candidate
+
+
 def _is_under(path: Path, directory: Path) -> bool:
     try:
-        path.resolve().relative_to(directory.resolve())
+        _resolve_allow_missing(path).relative_to(_resolve_allow_missing(directory))
         return True
     except (ValueError, OSError, RuntimeError):
         return False

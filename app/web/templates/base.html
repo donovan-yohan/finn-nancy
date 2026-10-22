@@ -3,17 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1f2933">
+  <meta name="theme-color" content="#ffffff">
+  <script src="/static/theme.js"></script>
   <title>{% block title %}finn-nancy{% endblock %}</title>
-  <link rel="manifest" href="/manifest.webmanifest">
+  {% if not sandbox_candidate %}<link rel="manifest" href="/manifest.webmanifest">{% endif %}
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>
+  {% if not sandbox_candidate %}
   <script defer src="/static/capture-store.js"></script>
   <script defer src="/static/capture-outbox.js"></script>
+  {% endif %}
 </head>
-<body class="app brand-{{ brand | default('shared') }}">
-  <main class="app-main">
+<body class="app brand-{{ brand | default('shared') }}{% if sandbox_candidate %} sandbox-candidate{% else %} workspace-ui{% endif %}">
+  <a class="skip-link" href="#workspace-content">Skip to content</a>
+  <span class="theme-control" hidden>
+    <label class="theme-label" for="appearance">Appearance</label>
+    <select id="appearance" data-theme-select>
+      <option value="system">System</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+  </span>
+  <main class="app-main" id="workspace-content" tabindex="-1">
     {% block content %}{% endblock %}
   </main>
 
@@ -41,10 +53,10 @@
       });
     });
   </script>
-  <script>
+  {% if not sandbox_candidate %}<script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function () {});
     }
-  </script>
+  </script>{% endif %}
 </body>
 </html>

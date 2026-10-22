@@ -30,7 +30,7 @@
 <p class="banner warn" role="alert">{{ notice }}</p>
 {% endif %}
 
-<main class="grid single">
+<div class="grid single">
   {% if not review_items and not unresolved_docs and not doc_summaries and not positive_flow_reviews and not positive_flow_intake %}
   <section class="card span-2">
     <p class="subtle">nothing to reconcile.</p>
@@ -676,5 +676,5 @@
     </div>
   </section>
   {% endif %}
-</main>
+</div>
 {% endblock %}

@@ -6,6 +6,8 @@ same width/stat math, so the Python dashboard renders at parity.
 from __future__ import annotations
 
 import sqlite3
+import calendar
+from datetime import date
 
 _CASHFLOW_SQL = """
     SELECT month, income_cents, expense_cents, net_cents
@@ -14,18 +16,11 @@ _CASHFLOW_SQL = """
 """
 
 _CATEGORY_TOTALS_SQL = """
-    SELECT category_name, category_kind, brand_owner, color,
-           total_cents, magnitude_cents, pct_of_total
-    FROM v_report_category_totals
+    SELECT category_id, category_name, category_kind, brand_owner, color,
+           amount_cents AS total_cents, magnitude_cents
+    FROM v_report_category_monthly
+    WHERE month=? AND category_kind='expense'
     ORDER BY magnitude_cents DESC, category_name
-"""
-
-_RECENT_TX_SQL = """
-    SELECT id, posted_on, account_name, description, counterparty,
-           amount_cents, flow_kind, semantic_status, semantic_reason,
-           COALESCE(categories, '') AS categories
-    FROM v_transactions_recent
-    LIMIT ?
 """
 
 ACTIVITY_PAGE_SIZE = 50
@@ -73,6 +68,8 @@ def activity_results(
     date_to: str = "",
     flow_kind: str = "",
     semantic_review: bool = False,
+    report_bucket: str = "",
+    category_resolution: str = "",
     cursor: str = "",
     limit: int = ACTIVITY_PAGE_SIZE,
 ) -> dict:
@@ -99,11 +96,30 @@ def activity_results(
         params.append(acct)
 
     cat = _int_or_none(category_id)
+    if category_resolution not in {"", "accepted"}:
+        raise ValueError("category_resolution must be accepted")
+    if category_resolution and cat is None:
+        raise ValueError("accepted category contributions require category_id")
     if cat is not None:
         where.append(
             "EXISTS (SELECT 1 FROM transaction_splits sc "
             "WHERE sc.transaction_id = t.id AND sc.category_id = ?)"
         )
+        params.append(cat)
+
+    # Match the accepted split contributors used by v_report_category_monthly,
+    # without narrowing ordinary category searches used for review.
+    contribution = "NULL"
+    projection_params: list[object] = []
+    if category_resolution:
+        contribution = """(SELECT SUM(accepted.split_amount_cents)
+            FROM v_expense_resolution_status accepted
+            WHERE accepted.transaction_id=t.id AND accepted.category_id=?
+              AND accepted.resolution_status='resolved')"""
+        projection_params.append(cat)
+        where.append("EXISTS (SELECT 1 FROM v_expense_resolution_status accepted "
+                     "WHERE accepted.transaction_id=t.id AND accepted.category_id=? "
+                     "AND accepted.resolution_status='resolved')")
         params.append(cat)
 
     date_from = (date_from or "").strip()
@@ -121,6 +137,15 @@ def activity_results(
         where.append("t.flow_kind = ?")
         params.append(flow_kind)
 
+    if report_bucket not in {"", "income", "expense"}:
+        raise ValueError("report_bucket must be income or expense")
+    if report_bucket:
+        where.append(
+            "EXISTS (SELECT 1 FROM v_split_detail detail "
+            "WHERE detail.transaction_id=t.id AND detail.category_kind=?)"
+        )
+        params.append(report_bucket)
+
     if semantic_review:
         where.append("flow_status.semantic_status <> 'complete'")
 
@@ -132,9 +157,10 @@ def activity_results(
 
     clause = ("WHERE " + " AND ".join(where)) if where else ""
     sql = f"""
-        SELECT t.id, t.posted_on, a.name AS account_name, t.description, t.counterparty,
+        SELECT t.id, t.posted_on, a.name AS account_name, a.currency, t.description, t.counterparty,
                t.amount_cents, t.flow_kind, flow_status.semantic_status,
                flow_status.semantic_reason,
+               {contribution} AS accepted_category_amount_cents,
                COALESCE(GROUP_CONCAT(c.name, ', '), '') AS categories
         FROM transactions t
         JOIN v_transaction_flow_status flow_status
@@ -147,7 +173,7 @@ def activity_results(
         ORDER BY t.posted_on DESC, t.id DESC
         LIMIT ?
     """
-    rows = [dict(r) for r in conn.execute(sql, (*params, limit + 1)).fetchall()]
+    rows = [dict(r) for r in conn.execute(sql, (*projection_params, *params, limit + 1)).fetchall()]
 
     next_cursor = ""
     if len(rows) > limit:
@@ -178,8 +204,20 @@ def _pct_width(value: int, mx: int) -> str:
     return f"{pct}%"
 
 
-def dashboard_context(conn: sqlite3.Connection, tx_limit: int, db_path: str) -> dict:
+def dashboard_context(
+    conn: sqlite3.Connection, tx_limit: int, db_path: str, *, month: str | None = None
+) -> dict:
+    if month is not None:
+        try:
+            parsed_month = date.fromisoformat(f"{month}-01")
+        except (TypeError, ValueError):
+            raise ValueError("month must be YYYY-MM") from None
+        if parsed_month.strftime("%Y-%m") != month:
+            raise ValueError("month must be YYYY-MM")
     cashflow_rows = conn.execute(_CASHFLOW_SQL).fetchall()
+    months = [row["month"] for row in reversed(cashflow_rows)]
+    selected_month = month if month is not None else (months[0] if months else "")
+    selected = [row for row in cashflow_rows if row["month"] == selected_month]
 
     mx = 1
     for r in cashflow_rows:
@@ -199,9 +237,9 @@ def dashboard_context(conn: sqlite3.Connection, tx_limit: int, db_path: str) -> 
     ]
 
     stats = {
-        "money_in_cents": sum(c["income_cents"] for c in cashflow),
-        "money_out_cents": sum(c["expense_cents"] for c in cashflow),
-        "net_cents": sum(c["net_cents"] for c in cashflow),
+        "money_in_cents": sum(c["income_cents"] for c in selected),
+        "money_out_cents": sum(c["expense_cents"] for c in selected),
+        "net_cents": sum(c["net_cents"] for c in selected),
         "months_tracked": len(cashflow),
     }
     stats["net_class"] = "negative" if stats["net_cents"] < 0 else "positive"
@@ -210,17 +248,44 @@ def dashboard_context(conn: sqlite3.Connection, tx_limit: int, db_path: str) -> 
     semantic_review_count = int(
         conn.execute(
             """SELECT COUNT(*)
-               FROM v_transaction_flow_status
-               WHERE semantic_status <> 'complete'"""
+               FROM v_transaction_flow_status status
+               JOIN transactions t ON t.id=status.transaction_id
+               WHERE status.semantic_status <> 'complete'
+                 AND strftime('%Y-%m', t.posted_on)=?""",
+            (selected_month,),
         ).fetchone()[0]
     )
+
+    start = f"{selected_month}-01" if selected_month else ""
+    end = ""
+    if selected_month:
+        year, number = map(int, selected_month.split("-"))
+        end = f"{selected_month}-{calendar.monthrange(year, number)[1]:02d}"
+    categories = [dict(row) for row in conn.execute(_CATEGORY_TOTALS_SQL, (selected_month,))]
+    magnitude = sum(row["magnitude_cents"] for row in categories)
+    for category in categories:
+        category["pct_of_total"] = (
+            round(100 * category["magnitude_cents"] / magnitude, 1) if magnitude else 0
+        )
+    recent = activity_results(conn, date_from=start, date_to=end, limit=tx_limit)
+    category_resolution = conn.execute(
+        "SELECT * FROM v_expense_resolution_monthly_control WHERE month=?",
+        (selected_month,),
+    ).fetchone()
 
     return {
         "db_path": db_path,
         "cashflow": cashflow,
+        "months": months,
+        "selected_month": selected_month,
+        "period_date_from": start,
+        "period_date_to": end,
         "stats": stats,
         "latest_net_cents": latest_net,
         "semantic_review_count": semantic_review_count,
-        "categories": [dict(r) for r in conn.execute(_CATEGORY_TOTALS_SQL).fetchall()],
-        "transactions": [dict(r) for r in conn.execute(_RECENT_TX_SQL, (tx_limit,)).fetchall()],
+        "categories": categories,
+        "category_resolution": dict(category_resolution) if category_resolution else {
+            "excluded_expense_cents": 0, "unresolved_split_count": 0,
+        },
+        "transactions": recent["transactions"],
     }

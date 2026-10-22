@@ -15,6 +15,116 @@ from .config import get_settings
 from .db import migrate
 
 app = typer.Typer(add_completion=False, help="finn-nancy — local AI finance app")
+finance_app = typer.Typer(help="Bounded finance JSON reads and approval-only category proposals")
+app.add_typer(finance_app, name="finance")
+
+
+@app.command("api")
+def remote_api(
+    method: str = typer.Argument(..., help="HTTP method"),
+    endpoint: str = typer.Argument(..., help="Origin-relative endpoint, including query if needed"),
+    url: str | None = typer.Option(None, help="Application origin (or FN_API_URL)"),
+    data: str | None = typer.Option(None, help="JSON object file, or - for stdin"),
+    form: bool = typer.Option(False, help="Send scalar fields as a frontend form"),
+):
+    """Call the remote app with FN_API_KEY; no local ledger or settings access."""
+    from .api.remote import request
+    try:
+        payload = None
+        if data is not None:
+            import sys
+            if data == '-':
+                raw = sys.stdin.buffer.read(1_000_001)
+            else:
+                with Path(data).open('rb') as handle:
+                    raw = handle.read(1_000_001)
+            if len(raw) > 1_000_000:
+                raise ValueError('request data exceeds 1000000 bytes')
+            try:
+                payload = json.loads(raw, parse_constant=lambda value: (_ for _ in ()).throw(ValueError()))
+            except (ValueError, UnicodeError):
+                raise ValueError('request data must be valid JSON') from None
+            if not isinstance(payload, dict):
+                raise ValueError('request data must be a JSON object')
+        result = request(method, endpoint, base_url=url, data=payload, form=form)
+        typer.echo(json.dumps(result, sort_keys=True, allow_nan=False))
+    except (ValueError, OSError) as exc:
+        # Do not stringify filesystem/transport errors carrying paths or secrets.
+        message = str(exc) if isinstance(exc, ValueError) else 'unable to read request data'
+        typer.echo(json.dumps({'error': message}))
+        raise typer.Exit(1) from None
+    if result['status_code'] >= 400:
+        raise typer.Exit(1)
+
+
+def _finance_json(fn, db: str | None = None, **kwargs):
+    if db:
+        os.environ["DB_PATH"] = db
+        get_settings.cache_clear()
+    try:
+        typer.echo(json.dumps(fn(**kwargs), sort_keys=True, allow_nan=False))
+    except (ValueError, LookupError) as exc:
+        typer.echo(json.dumps({"error": str(exc)}))
+        raise typer.Exit(1) from exc
+
+
+@finance_app.command("transactions")
+def finance_transactions(
+    db: str = typer.Option(None), q: str = typer.Option(None),
+    account_id: int = typer.Option(None), category_id: int = typer.Option(None),
+    date_from: str = typer.Option(None), date_to: str = typer.Option(None),
+    flow_kind: str = typer.Option(None), review: str = typer.Option(None),
+    cursor: str = typer.Option(None), limit: int = typer.Option(50),
+):
+    """Search canonical ledger rows; pagination is bound to the same filters."""
+    from .api import finance
+    _finance_json(finance.search_transactions, db, q=q, account_id=account_id,
+                  category_id=category_id, date_from=date_from, date_to=date_to,
+                  flow_kind=flow_kind, review=review, cursor=cursor, limit=limit)
+
+
+@finance_app.command("transaction")
+def finance_transaction(transaction_id: int, db: str = typer.Option(None)):
+    """Inspect splits, canonical evidence, flow resolution and state digest."""
+    from .api import finance
+    _finance_json(finance.transaction_detail, db, transaction_id=transaction_id)
+
+
+@finance_app.command("categories")
+def finance_categories(db: str = typer.Option(None)):
+    """List existing categories; never create categories."""
+    from .api import finance
+    _finance_json(finance.categories, db)
+
+
+@finance_app.command("proposal")
+def finance_proposal(proposal_id: int, db: str = typer.Option(None)):
+    """Read proposal and append-only human decision history."""
+    from .api import finance
+    _finance_json(finance.proposal_detail, db, proposal_id=proposal_id)
+
+
+@finance_app.command("period-statement")
+def finance_period_statement(month: str, db: str = typer.Option(None)):
+    """Read the shared evidence-backed period statement."""
+    from .api import service
+    _finance_json(service.get_period_statement, db, month=month)
+
+
+@finance_app.command("propose-category")
+def finance_propose_category(
+    operation_key: str = typer.Option(...), transaction_id: int = typer.Option(...),
+    split_id: int = typer.Option(...), to_category_id: int = typer.Option(...),
+    expected_state_digest: str = typer.Option(...), rationale: str = typer.Option(...),
+    confidence: float = typer.Option(None), evidence_ref: list[str] = typer.Option(None),
+    db: str = typer.Option(None),
+):
+    """Queue one split category change for a human at /actions. No ledger write."""
+    from .api import finance
+    _finance_json(finance.propose_category, db, operation_key=operation_key,
+                  transaction_id=transaction_id, split_id=split_id, to_category_id=to_category_id,
+                  expected_state_digest=expected_state_digest, rationale=rationale,
+                  confidence=confidence, evidence_refs=evidence_ref)
 
 
 def _resolve_db(db: str | None) -> str:
@@ -96,6 +206,7 @@ def worker(db: str = typer.Option(None, help="SQLite path")):
 def mcp_serve(
     db: str = typer.Option(None, help="SQLite path"),
     read_only: bool = typer.Option(False, "--read-only", help="Expose report tools only"),
+    proposals: bool = typer.Option(False, "--proposals", help="Only safe reads and approval-first category proposals"),
 ):
     """Run the MCP server over stdio (use --read-only for chat profiles)."""
     if db:
@@ -108,7 +219,9 @@ def mcp_serve(
             typer.echo("install the mcp group: uv sync --group mcp")
             raise typer.Exit(1) from exc
         raise
-    _m(read_only=read_only)
+    if read_only and proposals:
+        raise typer.BadParameter("--read-only and --proposals are incompatible")
+    _m(read_only=read_only, proposals=proposals)
 
 
 @app.command()

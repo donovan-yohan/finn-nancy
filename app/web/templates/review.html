@@ -13,7 +13,7 @@
   </div>
 </header>
 
-<main class="grid single">
+<div class="grid single">
   {% if not items %}
   <section class="card span-2">
     <p class="subtle">queue clear — nothing needs review.</p>
@@ -179,6 +179,24 @@
         </div>
         {% endif %}
 
+        {% if item.bank_receipt_candidates %}
+        <form method="post" action="/review/{{ item.extraction.id }}/attach">
+          <fieldset class="resolution-decision-panel">
+            <legend>Existing purchase evidence</legend>
+            <p class="subtle">Equal amounts are candidates, not proof of a duplicate. Review every candidate and its account before attaching. Attaching does not change the purchase category.</p>
+            <label>Attach receipt to an existing transaction
+              <select name="transaction_id" required>
+                <option value="">Choose reviewed transaction</option>
+                {% for t in item.bank_receipt_candidates %}
+                <option value="{{ t.id }}">#{{ t.id }} · {{ t.posted_on }} · {{ t.counterparty or t.description }} · {{ t.amount_cents|money }} · Account {{ t.account_id }} · {{ t.recon_status }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>Attachment reason<textarea name="reason" required maxlength="500"></textarea></label>
+            <button class="ghost" type="submit">Attach receipt evidence</button>
+          </fieldset>
+        </form>
+        {% endif %}
         <form class="resolution-review-form" method="post" action="/review/{{ item.extraction.id }}/approve">
           <fieldset class="resolution-decision-panel" data-resolution-kind="canonical_merchant">
             <legend>Merchant identity</legend>
@@ -219,6 +237,14 @@
               {% endfor %}
             </select>
           </label>
+          {% if item.bank_receipt_candidates %}
+          <fieldset class="resolution-decision-panel">
+            <legend>Record a separate purchase instead</legend>
+            <label><input type="checkbox" name="acknowledge_separate_purchase" value="true">I reviewed the equal-amount candidates. This receipt is a separate purchase.</label>
+            <p class="subtle">Select an explicit account above and explain the separate purchase. This decision and the original extraction are retained in the audit history.</p>
+            <label>Separate-purchase reason<textarea name="separate_purchase_reason" maxlength="500"></textarea></label>
+          </fieldset>
+          {% endif %}
           <button class="ghost" type="submit">approve</button>
         </form>
 
@@ -238,5 +264,5 @@
     </div>
   </section>
   {% endfor %}
-</main>
+</div>
 {% endblock %}

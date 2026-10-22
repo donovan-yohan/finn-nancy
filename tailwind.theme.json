@@ -1,0 +1,67 @@
+{
+  "theme": {
+    "extend": {
+      "colors": {
+        "primary": "#52a8ff",
+        "secondary": "#ff8a3d",
+        "neutral": "#000000",
+        "text": "#f5f5f5",
+        "muted": "#a3a3a3",
+        "panel": "#0a0a0a",
+        "inset": "#141414",
+        "border": "#333333",
+        "light-canvas": "#ffffff",
+        "light-text": "#171717",
+        "light-muted": "#595959",
+        "light-panel": "#fafafa",
+        "light-inset": "#f5f5f5",
+        "light-border": "#d4d4d4",
+        "light-facts": "#0064d9",
+        "light-interpretation": "#bc4700"
+      },
+      "fontFamily": {
+        "heading": [
+          "system-ui"
+        ],
+        "body-md": [
+          "system-ui"
+        ],
+        "label": [
+          "system-ui"
+        ]
+      },
+      "fontSize": {
+        "heading": [
+          "1.5rem",
+          {
+            "letterSpacing": "-0.025em",
+            "fontWeight": "600"
+          }
+        ],
+        "body-md": [
+          "0.875rem",
+          {
+            "fontWeight": "400"
+          }
+        ],
+        "label": [
+          "0.75rem",
+          {
+            "fontWeight": "500"
+          }
+        ]
+      },
+      "borderRadius": {
+        "sm": "6px",
+        "md": "8px"
+      },
+      "spacing": {
+        "xs": "4px",
+        "sm": "8px",
+        "md": "12px",
+        "lg": "16px",
+        "xl": "24px"
+      }
+    }
+  }
+}

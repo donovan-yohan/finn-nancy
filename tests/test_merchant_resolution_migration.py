@@ -26,9 +26,11 @@ def test_035_adds_immutable_scoped_merchant_knowledge_schema(tmp_path):
 
     applied = migrate.init_db(path)
 
-    assert applied[-2:] == [
+    assert applied[-4:] == [
         "038_card_holders.sql",
         "039_month_spine_budgets.sql",
+        "040_category_operations.sql",
+        "041_bank_feed.sql",
     ]
     assert migrate.init_db(path) == []
     with engine.read_conn(path) as conn:
@@ -98,6 +100,8 @@ def test_035_backfills_legacy_aliases_as_unverified_and_freezes_bypass(
         "037_import_runs.sql",
         "038_card_holders.sql",
         "039_month_spine_budgets.sql",
+        "040_category_operations.sql",
+        "041_bank_feed.sql",
     ]
 
     with engine.write_tx(path) as conn:

@@ -234,8 +234,16 @@ def unreconcile_document(conn: sqlite3.Connection, source_document_id: int) -> d
                     SELECT 1 FROM merchant_resolution_events
                     WHERE transaction_id=?
                   )
+                  OR EXISTS (
+                    SELECT 1 FROM bank_associations WHERE transaction_id=?
+                  )
+                  OR EXISTS (
+                    SELECT 1 FROM bank_receipt_evidence WHERE transaction_id=?
+                  )
                 """,
                 (
+                    transaction_id,
+                    transaction_id,
                     transaction_id,
                     transaction_id,
                     transaction_id,

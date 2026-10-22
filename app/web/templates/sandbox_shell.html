@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title }} · Finn Nancy{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/plaid-sandbox.css">
+<div class="sandbox-page" data-page="{{ active }}">
+  <header class="hero compact">
+    <div class="sandbox-heading"><h1>{{ page_title }}</h1><p class="subtle sandbox-caption">Not booked</p></div>
+    <span class="db-pill sandbox-badge">Sandbox · test data</span>
+    <span class="sandbox-appearance" data-theme-host></span>
+  </header>
+  <div class="grid single">
+    <div class="sandbox-feedback">
+      <p id="sandbox-status" class="subtle" role="status">Loading…</p>
+      <p id="sandbox-message" role="status" aria-live="polite" aria-atomic="true"></p>
+      <button id="sandbox-retry" class="ghost" type="button" hidden>Try loading again</button>
+    </div>
+    {% block sandbox_content %}{% endblock %}
+  </div>
+</div>
+<noscript><p class="card">Enable JavaScript to view imports and manage bank connections.</p></noscript>
+<script defer src="/static/plaid-sandbox.js"></script>
+{% endblock %}

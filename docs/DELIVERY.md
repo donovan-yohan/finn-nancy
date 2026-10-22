@@ -25,6 +25,8 @@ A change is ready only when its focused tests and risk-appropriate acceptance ev
 
 The application UI has no app-level authentication. Supported deployments bind to loopback. Remote access requires an authenticated, access-controlled private overlay that does not provide public sharing. Do not expose the app directly to a LAN, public reverse proxy, tunnel, or the Internet.
 
+For the trusted-household MVP, direct clients use one shared bearer `API_TOKEN` and may invoke frontend endpoints without an additional permission system. Request provenance distinguishes unkeyed `web_ui` from validated `api`; it is telemetry, not personal authentication. Invalid supplied keys fail closed. Browser Origin/CSRF/session defenses remain on unkeyed workflows, while keyed requests use bearer authority. All callers remain subject to accounting, consent, read-only and closed-period rules. See `docs/NAMAKO_FINANCE.md` for request IDs and content-free diagnostic logging.
+
 Before changing a real deployment, create and verify a WAL-safe backup manifest, prove migrations and smoke behavior on a copy, and verify `/version` against the intended revision. `scripts/release-audit` is read-only and validates listener ownership and release evidence; it does not authorize a rollout.
 
 ## Public-source release
