@@ -1,0 +1,25 @@
+# Deny by default; scripts/build-image sends only committed allowlisted inputs.
+**
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!uv.lock
+!LICENSE
+!NOTICE
+!THIRD_PARTY_NOTICES.md
+!app/
+!app/**
+!migrations/
+!migrations/*.sql
+!deploy/
+!deploy/container_entrypoint.py
+**/.env*
+**/.git
+**/__pycache__
+**/*.pyc
+**/*.sqlite*
+**/*.db
+**/*.pem
+**/*.key
+**/data
+**/private

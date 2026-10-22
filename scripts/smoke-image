@@ -1,0 +1,318 @@
+#!/usr/bin/env python3
+"""Exercise an image using only newly generated state, without host port publishing."""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import secrets
+import subprocess
+import tempfile
+import time
+import uuid
+from pathlib import Path
+
+PREPARE = r'''
+import hashlib, io, json, os, sqlite3, sys
+from pathlib import Path
+from PIL import Image
+from app.db import migrate, engine, repo_documents, repo_jobs
+from app.diagnostics import version_payload
+root = Path('/var/lib/finn-nancy')
+db = root / 'ledger.sqlite'
+kind = sys.argv[1]
+if kind not in ('absent', 'blank', 'corrupt'):
+    migrate.init_db(db)
+    if kind == 'valid':
+        from app.config import get_settings
+        from app.ingest.storage import capture
+        buffer = io.BytesIO()
+        Image.new('RGB', (8, 8), (20, 40, 60)).save(buffer, format='PNG')
+        captured = capture(raw=buffer.getvalue(), original_name='generated.png', channel='web', declared_mime='image/png')
+        with engine.write_tx(db) as conn:
+            conn.execute("UPDATE jobs SET available_at='2099-01-01 00:00:00' WHERE id=?", (captured['job_id'],))
+    else:
+        with sqlite3.connect(db) as conn:
+            if kind == 'missing':
+                conn.execute("DELETE FROM schema_migrations WHERE filename='002_views.sql'")
+            elif kind == 'unknown':
+                conn.execute("INSERT INTO schema_migrations(filename) VALUES ('999_unknown.sql')")
+            elif kind == 'reordered':
+                conn.execute("DELETE FROM schema_migrations WHERE filename='001_tables.sql'")
+                conn.execute("INSERT INTO schema_migrations(filename) VALUES ('001_tables.sql')")
+            elif kind == 'identity':
+                conn.execute("UPDATE app_settings SET value='invalid' WHERE key=?", (migrate.DATABASE_IDENTITY_SETTING_KEY,))
+            elif kind == 'no_identity':
+                conn.execute("DELETE FROM app_settings WHERE key=?", (migrate.DATABASE_IDENTITY_SETTING_KEY,))
+elif kind != 'absent':
+    db.write_bytes(b'' if kind == 'blank' else b'generated corrupt database')
+for base, dirs, files in os.walk(root):
+    os.chown(base, 10001, 10001)
+    for name in files:
+        os.chown(Path(base) / name, 10001, 10001)
+print(json.dumps({'prepared': kind}))
+'''
+
+SNAPSHOT = r'''
+import hashlib, json, sqlite3
+from pathlib import Path
+from app.diagnostics import version_payload
+root = Path('/var/lib/finn-nancy')
+db = root / 'ledger.sqlite'
+result = {'database_sha256': hashlib.sha256(db.read_bytes()).hexdigest() if db.exists() else None}
+if __import__('sys').argv[1] == 'valid':
+    conn = sqlite3.connect(db.as_uri() + '?mode=ro', uri=True)
+    try:
+        result['version'] = version_payload(conn)
+        result['documents'] = conn.execute('SELECT id,storage_ref,sha256 FROM source_documents ORDER BY id').fetchall()
+        result['jobs'] = conn.execute('SELECT * FROM jobs ORDER BY id').fetchall()
+        result['blobs'] = {r[1]: hashlib.sha256((root / r[1]).read_bytes()).hexdigest() for r in result['documents']}
+        result['evidence'] = {table: conn.execute('SELECT * FROM ' + table + ' ORDER BY rowid').fetchall()
+                              for table in ('capture_submissions', 'capture_provenance', 'capture_events')}
+    finally:
+        conn.close()
+print(json.dumps(result))
+'''
+
+HTTP = r'''
+import json, os, urllib.request, urllib.error
+paths = [('/healthz', 'none', None, 200), ('/version', 'none', None, 200), ('/', 'none', None, 200),
+         ('/static/app.css', 'none', None, 200), ('/api/finance/categories', 'missing', None, 401),
+         ('/api/finance/categories', 'wrong', 'Bearer generated-wrong-key', 401),
+         ('/api/finance/categories', 'valid', 'Bearer ' + os.environ['API_TOKEN'], 200)]
+result = {}
+for path, authority, key, expected in paths:
+    req = urllib.request.Request('http://127.0.0.1:8080' + path)
+    if key:
+        req.add_header('Authorization', key)
+    try:
+        response = urllib.request.urlopen(req, timeout=5)
+    except urllib.error.HTTPError as error:
+        response = error
+    body = response.read()
+    assert response.code == expected, (path, response.code)
+    if path == '/healthz':
+        assert body == b'ok\n'
+    if path == '/':
+        assert b'<html' in body.lower()
+    if path == '/static/app.css':
+        assert len(body) > 100
+    if path == '/version':
+        result['version'] = json.loads(body)
+    result[path + ':' + authority] = response.code
+print(json.dumps(result))
+'''
+
+WRITE_PROOF = r'''
+import json, os
+from pathlib import Path
+assert os.getuid() == 10001 and os.getgid() == 10001
+for target in ('/opt/finn-nancy/app/config.py', '/opt/finn-nancy/.venv/forbidden', '/etc/forbidden'):
+    try:
+        with open(target, 'ab'):
+            pass
+    except OSError:
+        continue
+    raise AssertionError('immutable path was writable')
+p = Path('/var/lib/finn-nancy/generated-write-proof')
+p.write_bytes(b'generated state is writable')
+assert p.read_bytes() == b'generated state is writable'
+p.unlink()
+print(json.dumps({'uid': os.getuid(), 'gid': os.getgid(), 'immutable_code': True, 'writable_state': True}))
+'''
+
+
+def known_absent(result, kind: str, name: str) -> bool:
+    # A nonzero inspect can also mean daemon/permission/transport failure.
+    messages = {f'Error response from daemon: No such {kind}: {name}'}
+    if kind == 'volume':
+        messages.add(f'Error response from daemon: get {name}: no such volume')
+    return result.returncode == 1 and (result.stderr or '').strip() in messages
+
+
+def remove_resource(docker, kind: str, name: str, errors: list) -> bool:
+    first_error = len(errors)
+    try:
+        result = docker(*(('rm', '-f', name) if kind == 'container' else ('volume', 'rm', name)), check=False)
+        if result.returncode and not known_absent(result, kind, name):
+            errors.append({'resource': name, 'operation': 'remove', 'error': 'Docker removal failed'})
+    except (Exception, KeyboardInterrupt) as exc:
+        errors.append({'resource': name, 'operation': 'remove', 'error': type(exc).__name__})
+    absent = False
+    try:
+        # Typed inspection cannot resolve a different same-named resource.
+        result = docker(kind, 'inspect', name, check=False)
+        absent = known_absent(result, kind, name)
+        if not absent:
+            errors.append({'resource': name, 'operation': 'inspect', 'error': 'absence not verified'})
+    except (Exception, KeyboardInterrupt) as exc:
+        errors.append({'resource': name, 'operation': 'inspect', 'error': type(exc).__name__})
+    return absent and len(errors) == first_error
+
+
+def remove_container(docker, name: str, errors=None) -> bool:
+    return remove_resource(docker, 'container', name, errors if errors is not None else [])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--image', required=True, help='local image tag or digest; never pulls')
+    parser.add_argument('--artifacts', type=Path, help='new empty output directory (default: temporary directory)')
+    parser.add_argument('--platform', choices=('linux/arm64', 'linux/amd64'), help='explicit Docker execution platform (amd64 may be emulated)')
+    args = parser.parse_args()
+    output = args.artifacts or Path(tempfile.mkdtemp(prefix='finn-nancy-image-smoke-'))
+    if args.artifacts:
+        output.mkdir(parents=True, exist_ok=False)
+    output = output.resolve()
+    prefix = 'fn-generated-' + uuid.uuid4().hex[:12]
+    containers: list[str] = []
+    volumes: list[str] = []
+    commands = []
+    env = dict(os.environ, API_TOKEN=secrets.token_urlsafe(32))
+    receipt: dict = {'success': False, 'artifacts': str(output), 'checks': [], 'network': 'none', 'published_ports': []}
+
+    def docker(*argv, code=None, check=True, timeout=120):
+        if argv[0] == 'run':
+            argv = ('run', '--label', 'io.finn-nancy.generated-smoke=true', *argv[1:])
+            if args.platform:
+                argv = ('run', '--platform', args.platform, *argv[1:])
+        commands.append(['docker', *argv])  # API_TOKEN is passed by name, never value.
+        result = subprocess.run(['docker', *argv], input=code, capture_output=True,
+                                text=True, env=env, timeout=timeout)
+        if check and result.returncode:
+            diagnostic = (result.stdout + result.stderr).replace(env['API_TOKEN'], '[redacted]')
+            (output / f'failed-operation-{len(commands)}.log').write_text(diagnostic)
+            raise RuntimeError('Docker operation failed: ' + argv[0])
+        return result
+
+    def helper(volume, code, *argv, root=False):
+        name = prefix + '-helper-' + str(len(containers))
+        containers.append(name)
+        return docker('run', '--rm', '--name', name, '--pull=never', '--network=none', '--read-only',
+                      '--cap-drop=ALL', *(['--cap-add=CHOWN'] if root else []),
+                      '--security-opt=no-new-privileges', '--tmpfs', '/tmp:rw,noexec,nosuid,size=64m',
+                      '--mount', f'type=volume,src={volume},dst=/var/lib/finn-nancy',
+                      '--user', '0:0' if root else '10001:10001', '--entrypoint', '/opt/finn-nancy/.venv/bin/python',
+                      args.image, '-c', code, *argv).stdout
+
+    def prepare(kind):
+        volume = prefix + '-' + kind
+        # Register before dispatch: creation can succeed while its reply times out.
+        volumes.append(volume)
+        docker('volume', 'create', '--label', 'io.finn-nancy.generated-smoke=true', volume)
+        helper(volume, PREPARE, kind, root=True)
+        return volume
+
+    def snapshot(volume, kind):
+        return json.loads(helper(volume, SNAPSHOT, kind))
+
+    def start(volume, suffix, extra=()):
+        name = prefix + '-' + suffix
+        containers.append(name)
+        docker('run', '-d', '--name', name, '--pull=never', '--network=none', '--read-only',
+               '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=128',
+               '--tmpfs', '/tmp:rw,noexec,nosuid,size=64m', '--mount', f'type=volume,src={volume},dst=/var/lib/finn-nancy',
+               '--env', 'API_TOKEN', '--env', 'LOCAL_LLM_BASE=http://127.0.0.1:9/v1',
+               '--env', 'LLM_TIMEOUT_S=1', '--env', 'LLM_MAX_RETRIES=0', args.image, *extra)
+        return name
+
+    def log(name):
+        result = docker('logs', name, check=False)
+        text = (result.stdout + result.stderr).replace(env['API_TOKEN'], '[redacted]')
+        (output / (name + '.log')).write_text(text)
+        return text
+
+    try:
+        inspect = json.loads(docker('image', 'inspect', args.image).stdout)[0]
+        config = inspect['Config']
+        assert config['User'] == '10001:10001'
+        labels = config['Labels']
+        receipt.update(image_id=inspect['Id'], architecture=inspect['Architecture'], os=inspect['Os'], labels=labels)
+        volume = prepare('valid')
+        before = snapshot(volume, 'valid')
+        (output / 'generated-before.json').write_text(json.dumps(before, indent=2, sort_keys=True) + '\n')
+        for index in range(2):
+            name = start(volume, f'valid-{index}')
+            deadline = time.monotonic() + 60
+            while True:
+                result = docker('exec', name, '/opt/finn-nancy/.venv/bin/python', '-c', HTTP, check=False)
+                if result.returncode == 0:
+                    response = json.loads(result.stdout)
+                    break
+                if time.monotonic() > deadline:
+                    log(name)
+                    raise RuntimeError('HTTP readiness failed')
+                time.sleep(0.5)
+            version = response['version']
+            assert version == before['version']
+            assert version['build_sha'] == labels['org.opencontainers.image.revision']
+            assert version['build_tree_sha'] == labels['io.finn-nancy.source-tree']
+            assert version['migration_sequence_matches'] is True
+            assert version['migration_status'] == 'ok'
+            assert version['expected_migration_digest'] == version['applied_migration_digest']
+            mounted = json.loads(docker('inspect', name).stdout)[0]
+            assert mounted['HostConfig']['NetworkMode'] == 'none'
+            assert not mounted['HostConfig']['PortBindings']
+            assert mounted['HostConfig']['ReadonlyRootfs'] is True
+            assert mounted['HostConfig']['Privileged'] is False
+            writes = json.loads(docker('exec', name, '/opt/finn-nancy/.venv/bin/python', '-c', WRITE_PROOF).stdout)
+            docker('stop', '--time', '15', name)
+            state = json.loads(docker('inspect', name).stdout)[0]['State']
+            assert state['ExitCode'] == 0 and not state['OOMKilled']
+            logs = log(name)
+            assert 'Application shutdown complete' in logs
+            after = snapshot(volume, 'valid')
+            (output / f'generated-after-{index}.json').write_text(json.dumps(after, indent=2, sort_keys=True) + '\n')
+            for field in ('version', 'documents', 'jobs', 'blobs', 'evidence'):
+                assert after[field] == before[field], field
+            assert all(after['evidence'].values())
+            assert len(after['documents']) == 1 and len(after['jobs']) == 1
+            assert all(row[2] == after['blobs'][row[1]] for row in after['documents'])
+            receipt['checks'].append({'case': f'serve-recreate-{index}', 'http': response, 'writes': writes,
+                                      'graceful_sigterm': True, 'state_preserved': True})
+        for kind in ('absent', 'blank', 'corrupt', 'missing', 'unknown', 'reordered', 'identity', 'no_identity'):
+            volume = prepare(kind)
+            before_bad = snapshot(volume, kind)
+            name = start(volume, kind)
+            status = docker('wait', name, timeout=30).stdout.strip()
+            assert status == '1', kind
+            logs = log(name)
+            assert logs.strip() == 'container startup refused: invalid persistent state', kind
+            after_bad = snapshot(volume, kind)
+            assert after_bad == before_bad, kind
+            receipt['checks'].append({'case': kind, 'refused_before_listener': True, 'main_database_unchanged': True,
+                                      'before': before_bad, 'after': after_bad})
+        name = start(volume, 'arguments', ('init-db',))
+        assert docker('wait', name, timeout=30).stdout.strip() == '1'
+        assert log(name).strip() == 'container startup refused: arguments are not supported'
+        receipt['checks'].append({'case': 'arguments', 'refused': True})
+        receipt['success'] = True
+    except (Exception, KeyboardInterrupt) as exc:
+        # Keep exception payloads (which may contain subprocess output) out of receipts.
+        receipt['error'] = type(exc).__name__
+    finally:
+        cleanup = []
+        errors = []
+        receipt['cleanup_verified'] = False
+        try:
+            for name in containers:
+                try:
+                    log(name)
+                except (Exception, KeyboardInterrupt) as exc:
+                    errors.append({'resource': name, 'operation': 'logs', 'error': type(exc).__name__})
+                cleanup.append(remove_container(docker, name, errors))
+            for volume in volumes:
+                cleanup.append(remove_resource(docker, 'volume', volume, errors))
+            receipt['cleanup_verified'] = all(cleanup) and not errors
+        finally:
+            # Diagnostic or cleanup failures must never bypass the terminal receipt.
+            receipt['cleanup_errors'] = errors
+            receipt['success'] = receipt['success'] and receipt['cleanup_verified']
+            receipt['commands'] = commands
+            (output / 'receipt.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+    print(json.dumps({'success': receipt['success'], 'checks': len(receipt['checks']), 'artifacts': str(output)}))
+    return 0 if receipt['success'] else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
