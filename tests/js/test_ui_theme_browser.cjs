@@ -206,27 +206,54 @@ async function main() {
   await once(socket, 'listening');
   const debugPort = socket.address().port;
   await new Promise(resolve => socket.close(resolve));
-  const chrome = spawn(process.env.CHROMIUM_BIN, [
-    '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
-    '--disable-background-networking', '--disable-component-update',
-    `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, 'about:blank',
-  ], {stdio: 'ignore'});
+  // Keep diagnostics in the generated test directory, not a shared/user profile.
+  const stderrPath = profile + '.stderr.log';
+  const stderrFd = fs.openSync(stderrPath, 'w', 0o600);
+  let chrome;
+  try {
+    chrome = spawn(process.env.CHROMIUM_BIN, [
+      '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+      '--disable-background-networking', '--disable-component-update',
+      `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, 'about:blank',
+    ], {stdio: ['ignore', 'ignore', stderrFd]});
+  } finally {
+    fs.closeSync(stderrFd);
+  }
+  let spawnError;
+  let closed = false;
+  // Install observers immediately: exit/error may precede the first CDP poll.
+  const stopped = new Promise(resolve => {
+    chrome.once('error', error => {spawnError = error;});
+    chrome.once('close', () => {closed = true; resolve();});
+  });
+  const terminated = () => closed || spawnError || chrome.exitCode !== null || chrome.signalCode !== null;
+  function startupError(reason) {
+    const tail = fs.readFileSync(stderrPath).subarray(-16384).toString('utf8');
+    return Error(`Chromium ${reason}: ${process.env.CHROMIUM_BIN}; ` +
+      `code=${chrome.exitCode}; signal=${chrome.signalCode}; ` +
+      `${spawnError ? spawnError.message : ''}\nstderr (${stderrPath}):\n${tail}`);
+  }
   let cdp;
   async function stopServer() {
     if (!server.listening) return;
     await new Promise(resolve => {server.close(resolve); server.closeAllConnections();});
   }
   try {
-    let targets;
-    for (let attempt = 0; attempt < 100; attempt++) {
+    let target;
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      if (terminated()) throw startupError('exited before CDP became ready');
       try {
-        targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
-        if (targets.some(target => target.type === 'page')) break;
+        const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`, {
+          signal: AbortSignal.timeout(Math.max(1, Math.min(50, deadline - Date.now()))),
+        })).json();
+        target = targets.find(candidate => candidate.type === 'page');
+        if (target) break;
       } catch (_) { /* Chromium has not bound its isolated CDP socket yet. */ }
-      await pause(50);
+      await pause(Math.max(0, Math.min(50, deadline - Date.now())));
     }
-    assert.ok(targets, 'isolated Chromium must start');
-    cdp = new Cdp(targets.find(target => target.type === 'page').webSocketDebuggerUrl);
+    if (!target) throw startupError(terminated() ? 'exited before CDP became ready' : 'startup deadline exceeded');
+    cdp = new Cdp(target.webSocketDebuggerUrl);
     await cdp.call('Page.enable');
     await cdp.call('Runtime.enable');
     await cdp.call('Network.enable');
@@ -234,11 +261,23 @@ async function main() {
     else if (scenario === 'focus-light' || scenario === 'focus-dark') await workspaceFocus(cdp, base, scenario.slice(6));
     else throw Error(`Unknown scenario: ${scenario}`);
   } finally {
-    if (cdp) cdp.ws.close();
-    const exited = once(chrome, 'exit');
-    chrome.kill('SIGTERM');
-    await exited;
-    await stopServer();
+    try {
+      if (cdp) cdp.ws.close();
+      if (!terminated()) chrome.kill('SIGTERM');
+      // Never subscribe to an exit that may already have been emitted.
+      let timer;
+      try {
+        await Promise.race([stopped, new Promise(resolve => {timer = setTimeout(resolve, 1000);})]);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!closed) {
+        chrome.kill('SIGKILL');
+        await stopped;
+      }
+    } finally {
+      await stopServer();
+    }
   }
 }
 main().catch(error => {console.error(error); process.exitCode = 1;});

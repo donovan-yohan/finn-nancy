@@ -48,7 +48,18 @@ jobs:
         run: ./scripts/lint
 
       - name: Test
-        run: ./scripts/test
+        run: |
+          uv run --frozen python - <<'PY'
+          import os
+          import pathlib
+          import shutil
+          binary = os.environ.get("CHROMIUM_BIN") or shutil.which("chromium")
+          print("Theme browser:", binary, "resolved:", os.path.realpath(binary) if binary else None, flush=True)
+          print("Kernel:", os.uname().release, flush=True)
+          policy = pathlib.Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")
+          print("AppArmor unprivileged-userns restriction:", policy.read_text().strip() if policy.exists() else "unavailable", flush=True)
+          PY
+          ./scripts/test
 
       - name: FN-149 deterministic precision contract
         run: ./scripts/reconciliation-eval
