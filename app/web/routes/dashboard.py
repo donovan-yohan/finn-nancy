@@ -12,15 +12,16 @@ from ...accounting.contract import FlowKind
 from ...db import engine, repo_budgets, repo_insight_prose, repo_jobs, views
 from ...diagnostics import version_payload
 from ..forms import dollars_to_cents
+from ..filters import money
 from ..templating import templates
 
 router = APIRouter()
 
 
-def _context(tx_limit: int) -> dict:
+def _context(tx_limit: int, month: str | None = None) -> dict:
     settings = get_settings()
     with engine.read_conn(settings.db_path, read_only=settings.read_only) as conn:
-        ctx = views.dashboard_context(conn, tx_limit, str(settings.db_path))
+        ctx = views.dashboard_context(conn, tx_limit, str(settings.db_path), month=month)
         ctx["review_count"] = conn.execute(
             "SELECT COUNT(*) FROM source_documents WHERE status='needs_review'"
         ).fetchone()[0]
@@ -28,9 +29,13 @@ def _context(tx_limit: int) -> dict:
 
 
 @router.get("/", response_class=HTMLResponse)
-def dashboard(request: Request):
+def dashboard(request: Request, month: str | None = None):
+    try:
+        context = _context(6, month)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
     return templates.TemplateResponse(
-        request, "dashboard.html", {**_context(6), "active": "home", "brand": "shared"}
+        request, "dashboard.html", {**context, "active": "home", "brand": "shared"}
     )
 
 
@@ -45,6 +50,8 @@ def _activity_context(
     semantic_review: bool,
     cursor: str,
     append: bool,
+    report_bucket: str = "",
+    category_resolution: str = "",
 ) -> dict:
     """Assemble the filtered/paginated activity context shared by /activity and /transactions.
 
@@ -54,6 +61,12 @@ def _activity_context(
     the why-hold script.
     """
     settings = get_settings()
+    if report_bucket not in {"", "income", "expense"}:
+        raise HTTPException(400, "report_bucket must be income or expense")
+    if category_resolution not in {"", "accepted"}:
+        raise HTTPException(400, "category_resolution must be accepted")
+    if category_resolution and views._int_or_none(category_id) is None:
+        raise HTTPException(400, "accepted category contributions require category_id")
     with engine.read_conn(settings.db_path, read_only=settings.read_only) as conn:
         result = views.activity_results(
             conn,
@@ -64,6 +77,8 @@ def _activity_context(
             date_to=date_to,
             flow_kind=flow_kind,
             semantic_review=semantic_review,
+            report_bucket=report_bucket,
+            category_resolution=category_resolution,
             cursor=cursor,
         )
         options = views.filter_options(conn)
@@ -74,6 +89,13 @@ def _activity_context(
             ).fetchone()[0]
         )
 
+    if category_resolution:
+        for transaction in result["transactions"]:
+            # Keep the original ledger amount in the shared transaction renderer.
+            contribution = money(transaction["accepted_category_amount_cents"])
+            currency = transaction["currency"] or "Currency unknown"
+            transaction["categories"] += f" · Category contribution {contribution} {currency}"
+
     filters = {
         "q": q.strip(),
         "category_id": category_id.strip(),
@@ -81,6 +103,8 @@ def _activity_context(
         "date_from": date_from.strip(),
         "date_to": date_to.strip(),
         "flow_kind": flow_kind.strip(),
+        "report_bucket": report_bucket,
+        "category_resolution": category_resolution,
         "semantic_review": "1" if semantic_review else "",
     }
     # Active filters, minus the cursor, so the load-more control carries them forward.
@@ -106,6 +130,8 @@ def activity(
     date_to: str = "",
     flow_kind: str = "",
     semantic_review: str = "",
+    report_bucket: str = "",
+    category_resolution: str = "",
     cursor: str = "",
 ):
     ctx = _activity_context(
@@ -116,6 +142,8 @@ def activity(
         date_to=date_to,
         flow_kind=flow_kind,
         semantic_review=semantic_review == "1",
+        report_bucket=report_bucket,
+        category_resolution=category_resolution,
         cursor=cursor,
         append=False,
     )
@@ -275,6 +303,8 @@ def transactions(
     date_to: str = "",
     flow_kind: str = "",
     semantic_review: str = "",
+    report_bucket: str = "",
+    category_resolution: str = "",
     cursor: str = "",
 ):
     ctx = _activity_context(
@@ -285,6 +315,8 @@ def transactions(
         date_to=date_to,
         flow_kind=flow_kind,
         semantic_review=semantic_review == "1",
+        report_bucket=report_bucket,
+        category_resolution=category_resolution,
         cursor=cursor,
         # Only a cursored /transactions request is a rows-only load-more append.
         append=bool(views._parse_cursor(cursor)),

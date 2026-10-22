@@ -1,15 +1,30 @@
+{% if sandbox_candidate %}
+<nav class="tabbar" aria-label="primary">
+  {% for key, label, href, icon in [('home', 'Home', '/', 'M3 10.5 12 3l9 7.5 M5 9.5V21h14V9.5'), ('activity', 'Activity', '/activity', 'M3 12h4l3 8 4-16 3 8h4'), ('accounts', 'Accounts', '/accounts', 'M3 7l9-4 9 4 M4 10h16 M6 10v8 M12 10v8 M18 10v8 M3 21h18'), ('connections', 'Connections', '/connections', 'M8 12h8 M9 7H6a5 5 0 0 0 0 10h3 M15 7h3a5 5 0 0 1 0 10h-3')] %}
+  <a class="tab {% if active == key %}is-active{% endif %}" href="{{ href }}"{% if active == key %} aria-current="page"{% endif %}>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="{{ icon }}"/></svg><span>{{ label }}</span>
+  </a>
+  {% endfor %}
+</nav>
+{% else %}
 {% set pending = pending_action_count() %}
 <nav class="tabbar" aria-label="primary">
-  <a class="tab {% if active == 'home' %}is-active{% endif %}" href="/">
+  <a class="tab {% if active == 'home' %}is-active{% endif %}" href="/"{% if active == 'home' %} aria-current="page"{% endif %}>
     <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
     <span>Home</span>
   </a>
-  <a class="tab {% if active == 'activity' %}is-active{% endif %}" href="/activity">
+  <a class="tab {% if active == 'activity' %}is-active{% endif %}" href="/activity"{% if active == 'activity' %} aria-current="page"{% endif %}>
     <svg viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
     <span>Activity</span>
   </a>
 
+  {% if sandbox_candidate %}
+  <a class="tab" href="/upload"><svg viewBox="0 0 24 24"><path d="M12 15V4M7 9l5-5 5 5M4 15v6h16v-6"/></svg><span>Upload</span></a>
+  {% else %}
   <div class="fab-slot">
+    <a class="tab upload-tab {% if request.url.path == '/upload' %}is-active{% endif %}" href="/upload"{% if request.url.path == '/upload' %} aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5M4 15v6h16v-6"/></svg><span>Upload</span>
+    </a>
     <details class="fab" name="nav-sheet">
       <summary class="fab-btn" aria-label="Add a transaction">
         <svg viewBox="0 0 24 24"><path d="M12 15V4"/><path d="m7 9 5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
@@ -53,14 +68,15 @@
       </div>
     </details>
   </div>
+  {% endif %}
 
-  <a class="tab nancy-tab {% if active == 'insights' %}is-active{% endif %}" href="/insights">
+  <a class="tab nancy-tab {% if request.url.path == '/insights' %}is-active{% endif %}" href="/insights"{% if request.url.path == '/insights' %} aria-current="page"{% endif %}>
     <svg viewBox="0 0 24 24"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/></svg>
     <span>Insights</span>
   </a>
 
   <details class="more" name="nav-sheet">
-    <summary class="tab {% if active in ['more', 'chat', 'goals', 'statements'] %}is-active{% endif %}" aria-label="More navigation">
+    <summary class="tab {% if active != 'activity' and request.url.path not in ['/', '/activity', '/upload', '/insights'] %}is-active{% endif %}" aria-label="More navigation"{% if active != 'activity' and request.url.path not in ['/', '/activity', '/upload', '/insights'] %} aria-current="page"{% endif %}>
       <span class="tab-icon">
         <svg viewBox="0 0 24 24"><path d="M5 12h.01"/><path d="M12 12h.01"/><path d="M19 12h.01"/></svg>
         {% if pending > 0 %}<span class="tab-badge">{{ pending }}</span>{% endif %}
@@ -68,6 +84,8 @@
       <span>More</span>
     </summary>
     <div class="more-menu">
+      <a class="fab-item more-item" href="/connections"><span>Connections</span></a>
+      <a class="fab-item more-item" href="/bank-feed"><span>Bank feed</span></a>
       <a class="fab-item more-item nancy-link" href="/goals"><span>Goals</span></a>
       <a class="fab-item more-item nancy-link" href="/chat"><span>Ask Nancy</span></a>
       <a class="fab-item more-item" href="/processing"><span>Processing</span><span id="processing-nav-count" class="menu-count" hidden></span></a>
@@ -85,3 +103,4 @@
     </div>
   </details>
 </nav>
+{% endif %}

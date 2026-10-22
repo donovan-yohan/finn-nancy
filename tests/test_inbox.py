@@ -161,6 +161,34 @@ def test_is_under_returns_false_for_symlink_loop(tmp_path):
     assert _is_under(first, tmp_path) is False
 
 
+def test_is_under_rejects_looping_ancestors_and_directories(tmp_path):
+    from app.channels.inbox import _is_under
+
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop)
+    assert _is_under(loop / "missing.pdf", tmp_path) is False
+    assert _is_under(loop / ".." / "receipt.pdf", tmp_path) is False
+    assert _is_under(loop / "receipt.pdf", loop) is False
+
+
+def test_is_under_preserves_missing_paths_and_resolves_directory_aliases(tmp_path):
+    from app.channels.inbox import _is_under, is_candidate
+
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(inbox, target_is_directory=True)
+    dangling = tmp_path / "dangling"
+    dangling.symlink_to(inbox / "processed", target_is_directory=True)
+    assert _is_under(alias / "processed" / "missing.pdf", inbox / "processed") is True
+    assert _is_under(inbox / "processed" / "missing.pdf", alias / "processed") is True
+    assert _is_under(dangling / "missing.pdf", inbox / "processed") is True
+    assert _is_under(tmp_path / "outside.pdf", inbox) is False
+    assert is_candidate(inbox / "new.pdf", inbox) is True
+    assert is_candidate(inbox / "processed" / "missing.pdf", inbox) is False
+    assert is_candidate(inbox / "failed" / "missing.pdf", inbox) is False
+
+
 def test_on_modified_resubmits_stable_file(app_env, tmp_path, make_jpeg):
     from app.channels.inbox import InboxEventHandler
 

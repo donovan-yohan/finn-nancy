@@ -102,7 +102,7 @@ EXPECTED_SENSITIVE_WRITERS: dict[str, dict[str, int]] = {
         "update:transaction_splits": 1,
     },
     "app/actions/recategorization.py::RecategorizationHandler.revert": {
-        "update:transaction_splits": 1,
+        "update:transaction_splits": 2,
         "update:transactions": 1,
     },
     "app/db/repo_actions.py::_insert_audit": {
@@ -295,11 +295,21 @@ EXPECTED_SENSITIVE_WRITERS: dict[str, dict[str, int]] = {
 EXPECTED_DYNAMIC_SQL_SITES = {
     "app/accounting/contract.py::assert_golden_month": 4,
     "app/accounting/contract.py::ledger_invariant_violations": 2,
+    # Fixed evidence table registry; no caller-selectable identifiers.
+    "app/actions/category_state.py::category_state": 1,
     "app/agents/chat/tools.py::query_finances": 4,
     "app/agents/recon_analyst/evidence.py::resolve_statement_run": 1,
     "app/agents/recon_analyst/tools.py::receipt_matcher_tool": 1,
     "app/agents/recon_analyst/tools.py::statement_auditor_tool": 2,
+    # Two fixed TEMP projection definitions with server-minted identifiers,
+    # then one caller SELECT under mode=ro/query_only and a default-deny
+    # authorizer. No main-schema or ledger mutation capability is granted.
+    "app/api/analysis.py::query": 3,
     "app/api/service.py::_latest_month": 1,
+    # Fixed search columns/operators, bound filter values and page limit.
+    "app/api/finance.py::search_transactions": 1,
+    # Fixed observation field tuple; provider values are bound parameters.
+    "app/banking/service.py::BankingService.sync": 1,
     "app/backlog/suggest.py::list_uncategorized_expense_backlog": 1,
     "app/db/migrate.py::apply_migrations": 1,
     "app/db/migrate.py::seed_sample": 1,
@@ -318,12 +328,15 @@ EXPECTED_DYNAMIC_SQL_SITES = {
     "app/db/repo_statement_reviews.py::update_metadata": 1,
     "app/db/repo_statements.py::lines_for_document": 1,
     "app/db/views.py::activity_results": 1,
-    "app/db/views.py::dashboard_context": 3,
+    "app/db/views.py::dashboard_context": 2,
     "app/db/views.py::filter_options": 2,
     "app/evals/recon_insight.py::_existing_ids": 1,
     "app/evals/recon_insight.py::_rows_for_query": 1,
     "app/evals/recon_insight.py::coverage_ground_truth": 1,
     "app/evals/recon_insight.py::db_snapshot": 2,
+    # Reviewed bounded SELECT count/page queries on the isolated Sandbox store.
+    # Filter clauses are fixed SQL; caller data is exclusively bound values.
+    "app/plaid_sandbox/store.py::Store._activity": 2,
     "app/web/routes/actions.py::_statement_line_months": 1,
 }
 

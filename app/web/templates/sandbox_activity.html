@@ -1,0 +1,29 @@
+{% extends "sandbox_shell.html" %}
+{% set page_title = 'Activity' %}
+{% block sandbox_content %}
+<section class="card sandbox-activity" aria-label="Activity">
+  <form id="sandbox-filters" class="tx-filters" role="search">
+    <div class="sandbox-activity-toolbar">
+    <label class="tx-search"><span class="sandbox-sr-only">Search activity</span><input name="q" type="search" placeholder="Search activity" maxlength="120"></label>
+    <details id="sandbox-advanced-filters" class="sandbox-filter-details"><summary>Filters</summary><div class="sandbox-filter-grid">
+    <label>Connection owner<select id="owner-filter" name="owner_id"><option value="">Everyone</option></select></label>
+    <label>Connection<select name="connection_id"><option value="">All connections</option></select></label>
+    <label>Account<select name="account_id"><option value="">All accounts</option></select></label>
+    <label>From<input name="date_from" type="date"></label>
+    <label>To<input name="date_to" type="date"></label>
+    <label>Status<select name="state"><option value="current">Current</option><option value="posted">Posted</option><option value="pending">Pending</option><option value="removed">Removed</option><option value="superseded">Superseded</option><option value="all">All statuses</option></select></label>
+    <label>Inclusion<select name="inclusion"><option value="all">All accounts</option><option value="selected">Included</option><option value="excluded">Excluded</option></select></label>
+    </div></details>
+    <button class="primary" type="submit">Apply</button><a class="link" href="/activity">Reset</a>
+    </div>
+  </form>
+  <p id="sandbox-result-count" class="subtle" role="status">Loading activity…</p>
+  <div class="sandbox-column-head" aria-hidden="true"><span class="sandbox-merchant">Merchant</span><span class="sandbox-account-label">Account</span><span class="sandbox-date">Date</span><span class="sandbox-state">Status</span><span class="sandbox-money">Signed amount</span><span class="sandbox-chevron"></span></div>
+  <div id="sandbox-staged" class="tx-list" aria-live="polite"></div>
+  <nav class="sandbox-actions sandbox-pagination" aria-label="Activity pages">
+    <button id="sandbox-previous" class="ghost" type="button" disabled>Previous</button>
+    <span id="sandbox-page-status" class="subtle"></span>
+    <button id="sandbox-next" class="ghost" type="button" disabled>Next</button>
+  </nav>
+</section>
+{% endblock %}

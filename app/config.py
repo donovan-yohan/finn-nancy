@@ -86,6 +86,16 @@ class Settings(BaseSettings):
     # additionally requires a current, versioned consent record in SQLite.
     strict_local_mode: bool = True
 
+    # Production bank access is separately opt-in. Private credential/token
+    # paths are explicit operator configuration, never inferred from DB_PATH.
+    plaid_enabled: bool = False
+    plaid_private_dir: Path | None = Field(default=None, repr=False)
+    plaid_credentials_file: Path | None = Field(
+        default=None, repr=False,
+    )
+    plaid_origin: str = ""
+    plaid_completion_uri: str = ""
+
     # Merchant research (FN-150 search adapter). Enabled by default so the
     # ingestion flow can look up descriptors it cannot otherwise explain, but
     # strict_local_mode still overrides it: the egress kill switch has to

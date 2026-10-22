@@ -5,7 +5,8 @@
 - Finn is bookkeeping: uploads, processing, transactions, reconciliation, account statements and closing a period. Use blue.
 - Nancy is planning and analysis: insights, budgets, goals and financial questions. Use orange.
 - Income/expense signs and warnings retain their own semantic colors. Orange does not mean money out.
-- Keep dark mode. Use flat surfaces, restrained borders and compact headings. No gradients, glow, glass blur or floating card shadows.
+- Use a true black dark-mode canvas and a white light-mode canvas, with neutral gray surfaces. Follow the system by default and support an explicit appearance preference. No navy, gradients, glow, glass blur or floating card shadows.
+- Blue identifies recorded facts and bookkeeping. Orange identifies categories, planning, insights and interpretation. Use theme-specific accessible shades rather than bright low-contrast text on white. The core palette and density contract live in [DESIGN.md](../DESIGN.md).
 - Ordinary controls are small-radius rectangles, not pills. Keep visible keyboard focus and touch targets of at least 44 pixels.
 
 ## Navigation and capture
@@ -32,6 +33,10 @@ The page includes device-owned pending files and uploaded server documents. Supp
 | Device and server status can duplicate the same uploaded file | Show a visible server record once while preserving unacknowledged device recovery |
 
 ## Boundaries
+
+Every visible label must identify a control or field, distinguish ambiguous data, communicate an actionable state, or prevent a consequential misunderstanding. Remove labels that only narrate the screen. One page heading is enough; do not repeat it with an eyebrow, equivalent card heading and descriptive caption. Routine successful status belongs near its action, not in a permanent explanatory paragraph above the data.
+
+Keep accessible control names, unknown values, exact counts, signed amounts/currencies, Sandbox and not-booked context, consent and uncertain-operation recovery. Density comes from aligned rows, fewer wrappers and progressive disclosure, not clipped money, tiny touch targets or concealed warnings. Mobile transaction views use one continuous list, not a vertical stack of repeated field labels and cards.
 
 This is presentation and navigation cleanup, not removal of accounting capabilities. Do not delete reconciliation, evidence, review, retry, approvals or close checks to make a screen look empty. Do not conceal incomplete totals or change their arithmetic. Suggestions remain suggestions.
 

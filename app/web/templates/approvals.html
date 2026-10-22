@@ -11,7 +11,7 @@
   <a class="link" href="/actions">approval queue</a>
 </header>
 
-<main class="grid single">
+<div class="grid single">
   <section class="card span-2">
     <div class="card-head">
       <div><p class="eyebrow finn">proposal</p><h2>{{ proposal.kind }}</h2></div>
@@ -78,7 +78,7 @@
       </table>
     </div>
   </section>
-</main>
+</div>
 {% else %}
 <header class="hero compact">
   <div>
@@ -92,7 +92,7 @@
   </div>
 </header>
 
-<main class="grid single">
+<div class="grid single">
   {% if not proposals %}
   <section class="card span-2">
     <p class="subtle">No proposals awaiting review.</p>
@@ -199,6 +199,6 @@
     </div>
   </article>
   {% endfor %}
-</main>
+</div>
 {% endif %}
 {% endblock %}

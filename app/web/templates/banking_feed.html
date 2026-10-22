@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}Bank feed · Finn Nancy{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/banking.css">
+<section class="banking" data-banking="feed"><header class="banking-header"><h1>Bank feed</h1><a href="/connections">Connections</a></header>
+<p class="muted">Review before recording. Bank feeds do not replace statements.</p>
+<div class="banking-feed">{% for row in rows %}
+<details class="banking-row"><summary><span class="banking-date">{{ row.posted_on }}</span><span class="banking-merchant">{{ row.merchant or row.description }}<small>{{ row.account_name }} · {{ row.member_name }} · Ledger {{ row.account_id or 'unmapped' }}</small></span><span class="banking-amount">{{ row.amount_cents|money }} {{ row.currency or 'Unknown currency' }}</span><span>{% if row.pending %}Pending{% elif row.kind=='removed' %}Removed{% elif row.needs_review %}Needs review{% elif row.transaction_id %}Associated{% else %}Not included{% endif %}</span></summary>
+<div class="banking-evidence"><p>{{ row.description }}</p><a href="/bank-feed/{{ row.id }}">Review transaction</a>{% if row.transaction_id %}<a href="/txn/{{ row.transaction_id }}/edit">Ledger transaction {{ row.transaction_id }}</a>{% endif %}</div>
+</details>{% else %}<p>No bank transactions yet. <a href="/connections">Connect and sync an account</a>.</p>{% endfor %}</div>
+{% if receipts %}<h2>Late receipts</h2><div id="banking-error" role="alert" hidden></div>
+{% for r in receipts %}<form class="banking-receipt" data-extraction="{{ r.extraction_id }}"><h3>{{ r.merchant }} · {{ r.amount_cents|money }}</h3><p>{{ r.posted_on }} · <a href="/review/doc/{{ r.document_id }}/file">View receipt</a></p>
+<label>Attach to existing purchase<select name="transaction_id" required><option value="">Choose reviewed transaction</option>{% for t in r.candidates %}<option value="{{ t.id }}">{{ t.posted_on }} · {{ t.counterparty or t.description }} · Ledger {{ t.account_id }} · {{ t.id }}</option>{% endfor %}</select></label>
+<label>Reason<textarea name="reason" required maxlength="500"></textarea></label><button type="submit">Attach receipt evidence</button></form>{% endfor %}{% endif %}
+</section><script defer src="/static/banking.js"></script>{% endblock %}

@@ -52,7 +52,10 @@ def test_mcp_read_only_surface_has_no_mutation_tools(app_env):
     from app.mcp.server import build_server
 
     server = build_server(read_only=True)
-    assert _tool_names(server) == {"query_finances", "reconcile_status"}
+    assert _tool_names(server) == {
+        "query_finances", "reconcile_status", "search_transactions", "inspect_transaction",
+        "list_categories", "inspect_proposal", "period_statement",
+    }
     with pytest.raises(Exception, match="[Uu]nknown tool"):
         asyncio.run(server.call_tool("add_transaction", {}))
 

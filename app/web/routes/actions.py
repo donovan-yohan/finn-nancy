@@ -113,13 +113,24 @@ def _record_recategorization_label(
     proposal: dict,
     result: dict,
 ) -> None:
-    if proposal["kind"] != "recategorization" or result.get("noop"):
+    if proposal["kind"] != "recategorization":
         return
     detail = result.get("detail") or {}
     try:
         transaction_id = int(detail["transaction_id"])
         category_id = int(detail["to_category_id"])
     except (KeyError, TypeError, ValueError):
+        return
+    split_count = int(conn.execute(
+        "SELECT COUNT(*) FROM transaction_splits WHERE transaction_id=?",
+        (transaction_id,),
+    ).fetchone()[0])
+    if split_count != 1:
+        # Evaluation labels describe whole transactions, unlike split-scoped
+        # accepted category claims. A partial approval cannot train that label.
+        repo_labels.clear_label(conn, transaction_id)
+        return
+    if result.get("noop"):
         return
     category = conn.execute("SELECT * FROM categories WHERE id=?", (category_id,)).fetchone()
     if category is None or category["name"] == "Uncategorized":

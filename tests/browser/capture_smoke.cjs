@@ -165,6 +165,24 @@ async function waitForValue(cdp, body, predicate, timeoutMs) {
   throw new Error("browser condition timed out; latest=" + JSON.stringify(latest));
 }
 
+async function captureTouchTargets(cdp, selector) {
+  const controls = await evaluate(cdp, [
+    "return Array.from(document.querySelectorAll(" + JSON.stringify(selector) + ")).map(function (control) {",
+    "  const rect = control.getBoundingClientRect();",
+    "  return {name: control.labels?.[0]?.innerText.trim() || control.innerText.trim(),",
+    "    tag: control.tagName, width: rect.width, height: rect.height,",
+    "    visible: control.checkVisibility({checkOpacity: true, checkVisibilityCSS: true})};",
+    "});",
+  ].join("\n"));
+  const visible = controls.filter(control => control.visible);
+  assert.ok(visible.length > 0, selector + " must expose capture controls");
+  for (const control of visible) {
+    assert.ok(control.height >= 44, control.name + " touch target is too short: " + control.height);
+    assert.ok(control.width >= 44, control.name + " touch target is too narrow: " + control.width);
+  }
+  return visible;
+}
+
 async function main() {
   assert.equal(fs.existsSync(uploadFile), true, "upload fixture does not exist");
   const port = await freePort();
@@ -230,6 +248,9 @@ async function main() {
 
     const url = baseUrl + "/upload?mode=camera&intent=receipt";
     await navigate(cdp, url, false);
+    const uploadTargets = await captureTouchTargets(cdp, '[data-capture-form] input[type="file"], [data-capture-form] button');
+    assert.deepEqual(uploadTargets.map(control => control.tag), ["INPUT", "BUTTON"]);
+    assert.deepEqual(uploadTargets.map(control => control.name), ["Receipt, invoice, or statement", "Upload"]);
     await evaluate(
       cdp,
       "await navigator.serviceWorker.ready; return true;"
@@ -521,6 +542,19 @@ async function main() {
     assert.equal(afterReload.fileSize, pending.fileSize);
     assert.equal(afterReload.controlled, true);
     assert.equal(afterReload.heading, "Processing");
+    // IndexedDB recovery precedes the asynchronous queue render after reload.
+    await waitForValue(cdp,
+      "return Array.from(document.querySelectorAll('.capture-status-actions button')).filter(button => button.checkVisibility()).length;",
+      count => count === 2, 5_000);
+    const pendingTargets = await captureTouchTargets(cdp, '.capture-status-actions button');
+    assert.equal(pendingTargets.length, 2);
+    assert.ok(pendingTargets.some(control => control.name.startsWith("Retry ")));
+    assert.ok(pendingTargets.some(control => control.name === "Remove"));
+    const pendingAx = await cdp.call("Accessibility.getFullAXTree");
+    const pendingButtonNames = pendingAx.nodes
+      .filter(node => !node.ignored && node.role?.value === "button")
+      .map(node => node.name?.value);
+    for (const control of pendingTargets) assert.ok(pendingButtonNames.includes(control.name));
 
     await evaluate(
       cdp,
@@ -625,15 +659,20 @@ async function main() {
     const mobileUx = await evaluate(
       cdp,
       [
+        // The accepted workspace uses the Upload route, not the retired FAB.
+        // Opening a display:none disclosure does not make its buttons visible.
         "document.querySelector('details.fab').open = true;",
-        "const pickerRects = Array.from(document.querySelectorAll('[data-capture-picker]')).map(function (button) {",
+        "const hiddenPickers = Array.from(document.querySelectorAll('[data-capture-picker]')).map(function (button) {",
         "  const rect = button.getBoundingClientRect();",
-        "  return { name: button.innerText.trim(), left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, tag: button.tagName };",
+        "  return {name: button.textContent.trim(), width: rect.width, height: rect.height,",
+        "    visible: button.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}),",
+        "    disclosureDisplay: getComputedStyle(button.closest('details.fab')).display};",
         "});",
         "const panel = document.querySelector('#capture-center').getBoundingClientRect();",
 
         "return {",
-        "  pickerRects: pickerRects,",
+        "  hiddenPickers: hiddenPickers,",
+        "  uploadHref: document.querySelector('.upload-tab').getAttribute('href'),",
         "  panel: { left: panel.left, right: panel.right, top: panel.top, bottom: panel.bottom },",
         "  position: getComputedStyle(document.querySelector('#capture-center')).position,",
         "  overflow: document.documentElement.scrollWidth - window.innerWidth,",
@@ -646,23 +685,26 @@ async function main() {
     assert.equal(mobileUx.liveRole, "status");
     assert.equal(mobileUx.liveMode, "polite");
     assert.ok(!["fixed", "sticky", "absolute"].includes(mobileUx.position));
-    for (const control of mobileUx.pickerRects) {
-      assert.equal(control.tag, "BUTTON");
-      assert.ok(control.height >= 44, control.name + " touch target is too short");
-      assert.ok(control.width >= 44, control.name + " touch target is too narrow");
+    assert.equal(mobileUx.uploadHref, "/upload");
+    assert.equal(mobileUx.hiddenPickers.length, 2);
+    for (const control of mobileUx.hiddenPickers) {
+      assert.equal(control.disclosureDisplay, "none");
+      assert.equal(control.visible, false);
+      assert.equal(control.height, 0);
+      assert.equal(control.width, 0);
     }
     assert.equal(await evaluate(cdp, "return document.querySelector('#capture-toggle') === null;"), true);
 
     const ax = await cdp.call("Accessibility.getFullAXTree");
     const accessibleButtons = ax.nodes
       .filter(function (node) {
-        return node.role && node.role.value === "button";
+        return !node.ignored && node.role && node.role.value === "button";
       })
       .map(function (node) {
         return node.name && node.name.value;
       });
-    assert.ok(accessibleButtons.includes("Take photo"));
-    assert.ok(accessibleButtons.includes("Upload files"));
+    assert.ok(!accessibleButtons.includes("Take photo"));
+    assert.ok(!accessibleButtons.includes("Upload files"));
     await navigate(cdp, baseUrl + "/", false);
     assert.equal(await evaluate(cdp, "return document.querySelector('#capture-center') === null;"), true);
     assert.equal(await evaluate(cdp, "return document.querySelector('#toast').childElementCount;"), 0);
@@ -683,7 +725,10 @@ async function main() {
           storage_persistence: pending.persistence,
           background_sync_fallback: "manual retry visible",
           mobile_viewport: "390x844x3 touch",
-          accessible_capture_buttons: accessibleButtons.filter(Boolean),
+          upload_touch_targets: uploadTargets,
+          pending_touch_targets: pendingTargets,
+          hidden_legacy_pickers: mobileUx.hiddenPickers,
+          accessible_pending_buttons: pendingButtonNames.filter(Boolean),
         },
         null,
         2

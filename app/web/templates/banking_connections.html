@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Connections · Finn Nancy{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/banking.css">
+<section class="banking" data-banking="connections">
+<header class="banking-header"><h1>Connections</h1><a href="/bank-feed">Review bank feed</a></header>
+<div id="banking-error" role="alert" hidden></div>
+{% if not overview.network_allowed %}<p class="banking-notice">Bank connections are disabled. Enable approved Production access outside strict-local mode to connect.</p>{% endif %}
+<p class="muted">Shared household operator · Select the member giving consent, not an authenticated identity.</p>
+<form id="banking-member" class="banking-inline"><label>Household member<input name="name" maxlength="100" required autocomplete="off"></label><button type="submit">Add member</button></form>
+<div id="banking-members">
+{% for m in overview.members %}
+<section class="banking-member" data-member="{{ m.id }}"><strong>{{ m.name }}</strong>
+{% if m.consented %}<button type="button" data-withdraw="{{ m.id }}">Withdraw consent</button>{% else %}
+<details><summary>Consent for {{ m.name }}</summary><p>{{ overview.consent_text }}</p><button type="button" data-consent="{{ m.id }}">Give consent for {{ m.name }}</button></details>{% endif %}
+<button type="button" data-link="{{ m.id }}" {% if not m.consented or not overview.network_allowed %}disabled{% endif %}>Add bank for {{ m.name }}</button>
+</section>{% endfor %}
+</div>
+<section id="banking-link" hidden><h2>Finish connecting</h2><a id="banking-hosted" target="_blank" rel="noopener noreferrer">Open Plaid</a><button type="button" id="banking-finish">Check connection</button><p id="banking-link-status" role="status"></p></section>
+{% for pending in pending_links %}<p>{{ pending.member_name }} · {% if pending.state=='pending' %}<button type="button" data-finish-session="{{ pending.session_id }}">Check pending connection</button>{% else %}Connection outcome uncertain. Do not connect again; verify provider access before recovery.{% endif %}</p>{% endfor %}
+{% for c in overview.connections %}
+<section class="banking-connection" data-connection="{{ c.id }}"><header class="banking-inline"><h2>{{ c.member_name }} · Connection {{ c.id }}</h2><span>{{ c.state|replace('_',' ') }}</span></header>
+<div class="banking-inline"><button data-accounts="{{ c.id }}">Load accounts</button><button data-sync="{{ c.id }}" {% if c.state!='active' %}disabled{% endif %}>Sync</button>{% if c.state=='needs_repair' %}<button data-repair="{{ c.id }}" data-member-id="{{ c.member_id }}">Repair connection</button>{% endif %}<button data-disconnect="{{ c.id }}" {% if c.state not in ['active','needs_repair'] %}disabled{% endif %}>Disconnect</button></div>
+{% for a in c.accounts %}
+<details class="banking-account"><summary>{{ a.name }} · {{ a.currency }} · Account {{ a.id }}{% if a.account_id %} → Ledger {{ a.account_id }}{% else %} · Not mapped{% endif %}</summary>
+<form class="banking-binding" data-connection="{{ c.id }}" data-provider-account="{{ a.provider_account_id }}" data-revision="{{ a.revision }}">
+<label>Canonical account<select name="account_id"><option value="">Create an account</option>{% for account in overview.accounts %}<option value="{{ account.id }}" {% if a.account_id==account.id %}selected{% endif %}>{{ account.name }} · {{ account.currency }} · {{ account.id }}</option>{% endfor %}</select></label>
+<label>New account name<input name="new_name" maxlength="100" value="{{ a.name if not a.account_id else '' }}"></label>
+<label>New account kind<select name="new_kind">{% for kind in ['chequing','savings','credit','cash','investment'] %}<option {% if kind==a.kind %}selected{% endif %}>{{ kind }}</option>{% endfor %}</select></label>
+<label class="banking-check"><input type="checkbox" name="included" {% if a.included %}checked{% endif %}>Include in review</label>
+<label>Economic owner<select name="owner"><option value="shared">Shared</option>{% for m in overview.members %}<option value="{{ m.id }}" {% if a.owner_member_id==m.id %}selected{% endif %}>{{ m.name }}</option>{% endfor %}</select></label>
+<label>Feed role<select name="role"><option value="primary" {% if a.role=='primary' %}selected{% endif %}>Primary · may record new</option><option value="secondary" {% if a.role=='secondary' %}selected{% endif %}>Secondary · match only</option></select></label>
+<p class="muted">Map joint accounts to the same canonical account explicitly. Only one included primary feed is allowed.</p>
+<button type="submit" disabled>Save changes</button><button type="reset">Cancel</button>
+</form></details>{% endfor %}
+</section>{% else %}<p>No banks connected.</p>{% endfor %}
+</section><script defer src="/static/banking.js"></script>
+{% endblock %}

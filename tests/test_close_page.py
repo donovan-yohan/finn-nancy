@@ -202,7 +202,14 @@ def test_build_checklist_flags_backlog_and_coverage(app_env):
         check = checklist.build_checklist(conn, FIXTURE_MONTH)
 
     rows = {r["key"]: r for r in check["rows"]}
-    assert set(rows) == {"coverage", "flow_review", "backlog", "variance", "goals"}
+    assert set(rows) == {
+        "coverage", "flow_review", "backlog", "variance", "goals", "bank_feed",
+    }
+    assert rows["bank_feed"]["complete"] is True
+    assert rows["bank_feed"]["count"] == 0
+    assert rows["bank_feed"]["blocking"] is False
+    assert check["bank_feed_review_count"] == 0
+    assert check["has_blocking_bank_feed"] is False
     assert rows["backlog"]["complete"] is False
     assert rows["backlog"]["count"] == 1
     assert rows["backlog"]["blocking"] is True
@@ -220,6 +227,7 @@ def test_build_checklist_flags_backlog_and_coverage(app_env):
     )
     assert rows["variance"]["href"] == "/insights"
     assert rows["goals"]["href"].startswith("/goals/close")
+    assert rows["bank_feed"]["href"] == "/bank-feed"
 
 
 def test_build_checklist_without_statement_evidence_is_incomplete(app_env):
@@ -244,10 +252,12 @@ def test_close_page_renders_rows_and_percent(app_env):
     assert "Expense categories confirmed" in r.text
     assert "Budget variance" in r.text
     assert "Goal funding" in r.text
+    assert "Bank feed review" in r.text
     assert "% ready" in r.text
     # Deep links present.
     assert f'href="/recon?month={FIXTURE_MONTH}"' in r.text
     assert 'href="/backlog"' in r.text
+    assert 'href="/bank-feed"' in r.text
     # Category-evidence items prevent a clean label but remain truthfully
     # closable as typed exceptions.
     assert 'action="/close/signoff"' in r.text

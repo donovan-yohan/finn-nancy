@@ -6,6 +6,7 @@ import hashlib
 import json
 from uuid import UUID
 
+import anyio
 from starlette.websockets import WebSocketDisconnect
 
 from .threads import ThreadStore
@@ -298,9 +299,12 @@ class Bridge:
             for task in done:
                 task.result()
         finally:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            # AnyIO cancellation is level-triggered. Do not let it cancel gather
+            # again and replace a normal disconnect with a bare CancelledError.
+            with anyio.CancelScope(shield=True):
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def serve(browser, settings, thread_id):
@@ -308,8 +312,14 @@ async def serve(browser, settings, thread_id):
     try:
         store = ThreadStore(settings, thread_id)
         with store.locked() as state:
-            async with Gateway(settings) as gateway:
-                await Bridge(browser, settings, store, state, gateway).run()
+            with anyio.CancelScope() as cleanup_scope:
+                async with Gateway(settings) as gateway:
+                    try:
+                        await Bridge(browser, settings, store, state, gateway).run()
+                    finally:
+                        # Keep the thread locked until gateway teardown finishes,
+                        # even when the enclosing ASGI request has been cancelled.
+                        cleanup_scope.shield = True
     except WebSocketDisconnect:
         pass  # Disconnect detaches; the Hermes turn continues and can be resumed.
     except Exception as exc:

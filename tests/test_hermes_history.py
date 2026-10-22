@@ -382,46 +382,209 @@ def test_empty_persisted_session_is_a_recent_empty_window_not_a_full_history_cla
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("drip", [False, True])
-def test_chunked_history_is_bounded_without_content_length(tmp_path, monkeypatch, drip):
+def _history_settings(url):
+    return SimpleNamespace(
+        hermes_chat_profile="synthetic-finance", hermes_chat_url=url,
+        hermes_chat_token=SecretStr("synthetic-token"), hermes_chat_token_file=None,
+    )
+
+
+@asynccontextmanager
+async def _chunked_history_peer(body):
+    peer = SimpleNamespace(requests=[], tasks=[], writers=[], release=asyncio.Event())
+    peer.release.set()
+
+    async def raw_peer(reader, writer):
+        try:
+            peer.requests.append(await reader.readuntil(b"\r\n\r\n"))
+            writer.write(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+            await writer.drain()
+            await peer.release.wait()
+            for offset in range(0, len(body), 65536):
+                chunk = body[offset:offset + 65536]
+                writer.write(f"{len(chunk):x}\r\n".encode() + chunk + b"\r\n")
+                await writer.drain()
+            writer.write(b"0\r\n\r\n")
+            await writer.drain()
+            await reader.read()  # Keep ownership until the client closes.
+        except (ConnectionError, asyncio.IncompleteReadError):
+            pass
+        finally:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except ConnectionError:
+                pass
+
+    def accept(reader, writer):
+        peer.writers.append(writer)
+        peer.tasks.append(asyncio.create_task(raw_peer(reader, writer)))
+
+    peer.server = await asyncio.start_server(accept, "127.0.0.1", 0)
+    peer.url = f"ws://127.0.0.1:{peer.server.sockets[0].getsockname()[1]}/api/ws"
+    try:
+        yield peer
+    finally:
+        # Server.__aexit__ alone doesn't retire accepted handler tasks. Cleanup
+        # must run even when a body-boundary assertion fails.
+        peer.server.close()
+        for writer in peer.writers:
+            writer.close()
+        for task in peer.tasks:
+            task.cancel()
+        await asyncio.gather(*peer.tasks, return_exceptions=True)
+        await asyncio.gather(*(writer.wait_closed() for writer in peer.writers), return_exceptions=True)
+        await peer.server.wait_closed()
+
+
+@pytest.mark.parametrize("oversized", [False, True])
+def test_chunked_history_is_bounded_without_content_length(monkeypatch, oversized):
     from app.hermes_chat import transport
 
     async def run():
-        completed = asyncio.Event()
-        requests = []
-        # Slow chunks arrive within each read timeout, but exceed the total
-        # deadline. Large chunks exceed the byte cap without Content-Length.
-        async def raw_peer(reader, writer):
-            try:
-                requests.append(await reader.readuntil(b"\r\n\r\n"))
-                writer.write(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
-                chunk = b" " if drip else b"x" * 65536
-                for _ in range(32):
-                    writer.write(f"{len(chunk):x}\r\n".encode() + chunk + b"\r\n")
-                    await writer.drain()
-                    await asyncio.sleep(0.015 if drip else 0)
-                writer.write(b"0\r\n\r\n")
-            except (ConnectionError, asyncio.IncompleteReadError):
-                pass
-            finally:
-                writer.close()
-                try:
-                    await writer.wait_closed()
-                except ConnectionError:
-                    pass
-                completed.set()
+        # Valid JSON would succeed if the streaming byte cap were removed;
+        # malformed filler could fail at parsing and mask that regression.
+        page = {
+            "session_id": "stored", "profile": "synthetic-finance",
+            "messages": [{"role": "assistant", "content": ""}],
+            "pagination": {"limit": 20, "offset": 0, "order": "latest", "returned": 1},
+        }
+        content_size = (2 * transport.HISTORY_MAX_BYTES if oversized else
+                        transport.HISTORY_MAX_BYTES - len(json.dumps(page).encode()))
+        page["messages"][0]["content"] = "x" * content_size
+        body = json.dumps(page).encode()
+        assert (len(body) > transport.HISTORY_MAX_BYTES if oversized else
+                len(body) == transport.HISTORY_MAX_BYTES)
+        received, responses = [], []
+        original_raw = transport.httpx.Response.aiter_raw
 
-        if drip:
-            monkeypatch.setattr(transport, "HISTORY_TIMEOUT", 0.06)
-        async with connected(tmp_path, NativePeer([])) as bridge:
-            server = await asyncio.start_server(raw_peer, "127.0.0.1", 0)
-            async with server:
-                bridge.settings.hermes_chat_url = f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}/api/ws"
-                start = asyncio.get_running_loop().time()
+        async def observed_raw(response, *args, **kwargs):
+            responses.append(response)
+            async for chunk in original_raw(response, *args, **kwargs):
+                received.append(len(chunk))
+                yield chunk
+
+        monkeypatch.setattr(transport.httpx.Response, "aiter_raw", observed_raw)
+        async with _chunked_history_peer(body) as peer:
+            gateway = Gateway(_history_settings(peer.url))
+            if oversized:
                 with pytest.raises(GatewayError, match="^history_unavailable$"):
-                    await bridge.gateway.recent_history("stored")
-                if drip:
-                    assert asyncio.get_running_loop().time() - start < 0.25
-                assert len(requests) == 1
-                await asyncio.wait_for(completed.wait(), 1)
+                    await gateway.recent_history("stored")
+                assert sum(received[:-1]) <= transport.HISTORY_MAX_BYTES < sum(received)
+            else:
+                result = await gateway.recent_history("stored")
+                assert result["messages"][0]["content"] == page["messages"][0]["content"]
+                assert result["history_window"] == {"status": "recent", "limit": 20, "returned": 1}
+                assert sum(received) == transport.HISTORY_MAX_BYTES
+            assert len(peer.requests) == len(responses) == 1
+            assert responses[0].headers["transfer-encoding"] == "chunked"
+            assert "content-length" not in responses[0].headers
+            assert responses[0].is_closed
+        assert all(task.done() for task in peer.tasks)
+        assert all(writer.is_closing() for writer in peer.writers)
+    asyncio.run(run())
+
+
+def test_chunked_history_peer_closes_on_assertion_failure():
+    async def run():
+        with pytest.raises(AssertionError, match="synthetic assertion failure"):
+            async with _chunked_history_peer(b"synthetic") as peer:
+                peer.release.clear()  # Hold the handler at a known await.
+                reader, writer = await asyncio.open_connection("127.0.0.1", urlsplit(peer.url).port)
+                try:
+                    writer.write(b"GET /synthetic HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                    await writer.drain()
+                    await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 1)
+                    assert len(peer.tasks) == 1 and not peer.tasks[0].done()
+                    raise AssertionError("synthetic assertion failure")
+                finally:
+                    writer.close()
+                    await writer.wait_closed()
+        assert peer.tasks[0].cancelled()
+        assert all(writer.is_closing() for writer in peer.writers)
+        assert not peer.server.is_serving()
+        assert not peer.server.sockets
+    asyncio.run(run())
+
+
+def test_history_total_deadline_cancels_progressing_body(monkeypatch):
+    import httpx
+    from app.hermes_chat import transport
+
+    async def run():
+        progressed, release = asyncio.Event(), asyncio.Event()
+        deadlines, requests, responses, clients = [], [], [], []
+        original_client = httpx.AsyncClient
+
+        @asynccontextmanager
+        async def controlled_deadline(delay):
+            assert delay == 0.06
+            # Use the real cancellation/TimeoutError context, but arm it only
+            # at the body barrier. Host scheduling and synchronous TLS setup
+            # are not an upper wall-clock contract of asyncio.timeout.
+            async with asyncio.timeout(None) as deadline:
+                deadlines.append(deadline)
+                yield deadline
+
+        class Trickle(httpx.AsyncByteStream):
+            chunks = 0
+            cancelled = closed = False
+
+            async def __aiter__(self):
+                try:
+                    while not release.is_set():
+                        self.chunks += 1
+                        yield b" "
+                        if self.chunks == 8:
+                            progressed.set()
+                        await asyncio.sleep(0)  # Progress never waits for a read timeout.
+                    # A valid response makes a missing total deadline fail by
+                    # success, rather than by an unrelated parse/read timeout.
+                    yield json.dumps({
+                        "session_id": "stored", "profile": "synthetic-finance", "messages": [],
+                        "pagination": {"limit": 20, "offset": 0, "order": "latest", "returned": 0},
+                    }).encode()
+                except asyncio.CancelledError:
+                    self.cancelled = True
+                    raise
+
+            async def aclose(self):
+                self.closed = True
+
+        body = Trickle()
+
+        async def respond(request):
+            requests.append(request)
+            response = httpx.Response(200, headers={"Transfer-Encoding": "chunked"}, stream=body)
+            responses.append(response)
+            return response
+
+        def client(**kwargs):
+            instance = original_client(**kwargs, transport=httpx.MockTransport(respond))
+            clients.append(instance)
+            return instance
+
+        monkeypatch.setattr(transport, "HISTORY_TIMEOUT", 0.06)
+        monkeypatch.setattr(transport, "asyncio", SimpleNamespace(**{**vars(asyncio), "timeout": controlled_deadline}))
+        monkeypatch.setattr(httpx, "AsyncClient", client)
+        gateway = Gateway(_history_settings("ws://127.0.0.1:1/api/ws"))
+        task = asyncio.create_task(gateway.recent_history("stored"))
+        try:
+            await asyncio.wait_for(progressed.wait(), 1)
+            if deadlines:
+                deadlines[0].reschedule(asyncio.get_running_loop().time())
+            else:
+                release.set()  # Missing-context mutation must finish, not hang.
+            with pytest.raises(GatewayError, match="^history_unavailable$"):
+                await asyncio.wait_for(task, 1)
+            assert len(deadlines) == 1 and deadlines[0].expired()
+            assert body.chunks >= 8 and body.cancelled and body.closed
+            assert len(requests) == len(responses) == len(clients) == 1
+            assert clients[0].is_closed and responses[0].is_closed
+            assert requests[0].extensions["timeout"]["read"] == 0.06
+            assert "content-length" not in responses[0].headers
+        finally:
+            release.set()
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
     asyncio.run(run())

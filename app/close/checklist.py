@@ -296,12 +296,22 @@ def build_checklist(conn: sqlite3.Connection, month: str) -> dict:
     backlog = _expense_resolution_row(conn, month)
     variance = _variance_row(conn, month)
     goals = _goal_row(conn, month)
-    rows = [coverage, flow_review, backlog, variance, goals]
+    feed_count = int(conn.execute(
+        'SELECT COUNT(DISTINCT subject_id) FROM v_bank_feed_blockers WHERE month=?',
+        (month,),
+    ).fetchone()[0])
+    bank_feed = {'key': 'bank_feed', 'label': 'Bank feed review', 'href': '/bank-feed',
+                 'count': feed_count, 'complete': feed_count == 0,
+                 'blocking': feed_count > 0,
+                 'detail': f'{feed_count} bank transaction(s) need review'}
+    rows = [coverage, flow_review, backlog, variance, goals, bank_feed]
 
     complete_count = sum(1 for r in rows if r["complete"])
     total = len(rows)
     return {
         "rows": rows,
+        "bank_feed_review_count": feed_count,
+        "has_blocking_bank_feed": feed_count > 0,
         "complete_count": complete_count,
         "total": total,
         "percent_complete": round(100 * complete_count / total),

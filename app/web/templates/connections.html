@@ -1,0 +1,38 @@
+{% extends "sandbox_shell.html" %}
+{% set page_title = 'Connections' %}
+{% block sandbox_content %}
+<section class="card">
+  <details class="sandbox-connect-panel"><summary id="link-heading">Add bank</summary>
+  <details id="setup-details"><summary id="setup-heading">Private Sandbox setup</summary>
+    {% if private_handoff %}
+    <p class="subtle">Use the server's private handoff. Credentials never appear in this browser.</p>
+    <form id="sandbox-file-setup"><label class="sandbox-check"><input id="sandbox-file-consent" type="checkbox" required>Enable Plaid Sandbox network access using the private handoff for synthetic testing (plaid-sandbox.v1).</label><button class="primary" type="submit">Enable Sandbox</button></form>
+    {% else %}
+    <p class="subtle">Sandbox keys only. Saved privately on the server, never in browser storage or chat.</p>
+    <form id="sandbox-setup" autocomplete="off">
+      <label>Sandbox client ID<input id="sandbox-client" type="password" required maxlength="128" autocomplete="off" spellcheck="false"></label>
+      <label>Sandbox secret<input id="sandbox-secret" type="password" required maxlength="128" autocomplete="new-password" spellcheck="false"></label>
+      <label class="sandbox-check"><input id="sandbox-enable-consent" type="checkbox" required>Enable Plaid Sandbox network access and official Link for synthetic testing only (plaid-sandbox.v1).</label>
+      <button class="primary" type="submit">Save &amp; enable Sandbox</button>
+    </form>
+    {% endif %}
+    <button id="sandbox-disable" type="button" class="ghost" disabled>Disable network access</button>
+  </details>
+  <details id="members-details"><summary>Household members</summary>
+    <p class="subtle">Connection owners grant consent; account ownership is set separately. This is a shared workspace, not private member logins.</p>
+    <ul id="sandbox-members"></ul>
+    <form id="sandbox-member"><label>Member name<input id="member-name" required maxlength="60" autocomplete="off"></label><button class="primary" type="submit">Add member</button></form>
+  </details>
+  <form id="sandbox-link-form" hidden>
+    <label>Connection owner<select id="link-owner" required></select></label>
+    <label class="sandbox-check"><input id="link-consent" type="checkbox" required>I am this member and authorize synthetic account and transaction import through official Plaid Link (plaid-sandbox.v1).</label>
+    <button id="sandbox-link" class="primary" type="submit" disabled>Connect test bank</button>
+    <p id="sandbox-link-help" class="subtle">Use a Plaid test login, never real bank credentials.</p>
+  </form>
+  </details>
+</section>
+<section class="card" aria-label="Connections">
+  <details class="sandbox-details" hidden><summary>Link recovery</summary><div id="sandbox-attempts" class="subtle"></div></details>
+  <div id="sandbox-connections" aria-live="polite"><p class="subtle">Loading connections…</p></div>
+</section>
+{% endblock %}
