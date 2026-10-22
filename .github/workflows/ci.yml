@@ -49,6 +49,12 @@ jobs:
 
       - name: Test
         run: |
+          ./scripts/test --ignore=tests/test_ui_theme_browser.py
+          # Scope packaged Chrome to the three theme scenarios; retain other browser opt-ins.
+          # Its installed path has Ubuntu's sandbox policy, unlike the unpacked Chromium snapshot.
+          export CHROMIUM_BIN=/usr/bin/google-chrome
+          test -x "$CHROMIUM_BIN"
+          "$CHROMIUM_BIN" --version
           uv run --frozen python - <<'PY'
           import os
           import pathlib
@@ -59,7 +65,7 @@ jobs:
           policy = pathlib.Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")
           print("AppArmor unprivileged-userns restriction:", policy.read_text().strip() if policy.exists() else "unavailable", flush=True)
           PY
-          ./scripts/test
+          ./scripts/test tests/test_ui_theme_browser.py
 
       - name: FN-149 deterministic precision contract
         run: ./scripts/reconciliation-eval
