@@ -245,7 +245,10 @@ async function main() {
       if (terminated()) throw startupError('exited before CDP became ready');
       try {
         const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`, {
-          signal: AbortSignal.timeout(Math.max(1, Math.min(50, deadline - Date.now()))),
+          // Poll cadence is not a response deadline: cold Chrome may need more
+          // than 50ms to enumerate its first page. Bound headers AND body by the
+          // remaining aggregate startup budget, without abandoning valid replies.
+          signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
         })).json();
         target = targets.find(candidate => candidate.type === 'page');
         if (target) break;

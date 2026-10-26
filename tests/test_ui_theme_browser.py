@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -78,11 +79,23 @@ def run_browser(site, tmp_path, scenario):
         mac_chrome = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
         chrome = str(mac_chrome) if mac_chrome.is_file() else None
     assert chrome, "Chromium is required; set CHROMIUM_BIN to its executable"
+    # --user-data-dir does not cover Linux's launcher or fontconfig caches.
+    # Supply generated XDG homes, never the caller's profile. On macOS an
+    # artificial HOME breaks Chrome's native services; leave it absent there.
+    environment = {"PATH": os.environ.get("PATH", ""), "TMPDIR": str(tmp_path),
+                   "CHROMIUM_BIN": chrome}
+    homes = [("XDG_CONFIG_HOME", "config"), ("XDG_CACHE_HOME", "cache"),
+             ("XDG_DATA_HOME", "data")]
+    if sys.platform != "darwin":
+        homes.append(("HOME", "home"))
+    for variable, name in homes:
+        directory = tmp_path / "browser-environment" / name
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        environment[variable] = str(directory)
     result = subprocess.run(
         [node, str(ROOT / "tests/js/test_ui_theme_browser.cjs"),
          str(site), str(tmp_path / "chrome"), scenario],
-        cwd=tmp_path, env={"PATH": os.environ.get("PATH", ""), "TMPDIR": str(tmp_path),
-                          "CHROMIUM_BIN": chrome},
+        cwd=tmp_path, env=environment,
         capture_output=True, text=True, timeout=60, check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
