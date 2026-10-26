@@ -16,6 +16,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from types import SimpleNamespace
 
@@ -114,9 +115,15 @@ def main():
     os.chdir(root)
     import pytest
     plugin = Observe(root, output, args.mode, observer, session)
+    # Chrome puts its Linux singleton Unix socket beneath each test's TMPDIR.
+    # Keep generated profiles out of the longer retained-evidence directory.
+    generated = Path(tempfile.mkdtemp(prefix='c', dir=os.environ.get('TMPDIR')))
+    if sys.platform == 'linux':
+        longest = generated / 'test_first_install_keeps_expli0' / 'com.google.Chrome.XXXXXX' / 'SingletonSocket'
+        assert len(os.fsencode(longest)) < 108, 'generated Linux socket path exceeds sockaddr_un capacity'
     try:
         status = int(pytest.main(['-q', '-rA', '-s', 'tests/test_ui_theme_browser.py',
-                                 '--basetemp=' + str(output / 'generated'),
+                                 '--basetemp=' + str(generated),
                                  '--junitxml=' + str(output / 'junit.xml')], plugins=[plugin]))
     finally:
         plugin.restore()
