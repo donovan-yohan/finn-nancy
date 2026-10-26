@@ -1,0 +1,350 @@
+#!/usr/bin/env python3
+"""Manual Actions-only GHCR publication; qualification never receives package credentials."""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+PLATFORM = "linux/amd64"
+OMIT_FROM_CHILD_ENV = {"GH_TOKEN", "GHCR_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN"}
+
+
+STATE = {}
+DEADLINE = 0.0
+
+
+class Refusal(Exception):
+    def __init__(self, code, command=None, exit_status=None):
+        self.code, self.command, self.exit_status = code, command, exit_status
+
+
+def require(condition, code):
+    if not condition:
+        raise Refusal(code)
+
+
+def stage(name):
+    STATE["stage"] = name
+
+
+def sanitized(text):
+    # Only build diagnostics are retained. Never retain login/push payloads or arbitrary
+    # exception text. Strip known workflow credentials plus common credential syntax.
+    for key in OMIT_FROM_CHILD_ENV:
+        value = os.environ.get(key)
+        if value:
+            text = text.replace(value, "[REDACTED]")
+    # Redact the scheme's credential before key-value redaction removes the scheme.
+    text = re.sub(r"(?i)\b(bearer|basic)\s+\S+", r"\1 [REDACTED]", text)
+    text = re.sub(r"(?i)(password|token|secret|authorization|auth)([\"']?\s*[:=]\s*)([^\s,;]+)",
+                  r"\1\2[REDACTED]", text)
+    text = re.sub(r"\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+", "[REDACTED]", text)
+    text = re.sub(r"(https?://)[^\s/@]+:[^\s/@]+@", r"\1[REDACTED]@", text)
+    return re.sub(r"[^\x20-\x7e\n\t]", "?", text)[-16384:]
+
+
+def run(*argv, env=None, data=None, timeout=90, diagnostic=None, streams=False, cleanup=False):
+    if env is None:
+        env = {k: v for k, v in os.environ.items() if k not in OMIT_FROM_CHILD_ENV}
+    command = Path(argv[1]).name if len(argv) > 1 and Path(argv[1]).name in {"build-image", "smoke-image"} else Path(argv[0]).name
+    remaining = timeout if cleanup else min(timeout, DEADLINE - time.monotonic())
+    require(remaining > 0, "phase_deadline")
+    try:
+        process = subprocess.Popen(argv, stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+                                   text=True, start_new_session=True)
+    except OSError:
+        raise Refusal("command_unavailable", command) from None
+    timed_out = False
+    try:
+        stdout, stderr = process.communicate(data, timeout=remaining)
+    except (subprocess.TimeoutExpired, KeyboardInterrupt):
+        # Kill the owned process group, including build/smoke grandchildren; never
+        # replay a timed-out registry mutation. Keep enough job budget for logout/upload.
+        os.killpg(process.pid, signal.SIGKILL)
+        stdout, stderr = process.communicate()
+        timed_out = True
+    if diagnostic is not None:
+        diagnostic.write_text(sanitized("stdout:\n" + stdout + "\nstderr:\n" + stderr))
+    if timed_out:
+        raise Refusal("command_timeout", command, process.returncode)
+    if process.returncode:
+        raise Refusal("command_failed", command, process.returncode)
+    return (stdout, stderr) if streams else stdout
+
+
+def write(path, value):
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+
+
+def digest(path):
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+def api(repository, endpoint):
+    api_env = {k: v for k, v in os.environ.items() if k not in OMIT_FROM_CHILD_ENV or k == "GH_TOKEN"}
+    return json.loads(run("gh", "api", "--hostname", "github.com", "-H", "Accept: application/vnd.github+json",
+                          f"repos/{repository}/{endpoint}", env=api_env))
+
+
+def pages(repository, endpoint):
+    rows = []
+    for page in range(1, 101):
+        batch = api(repository, f"{endpoint}?per_page=100&page={page}")
+        require(isinstance(batch, list), "invalid_api_list")
+        rows.extend(batch)
+        if len(batch) < 100:
+            return rows
+    raise Refusal("api_pagination_limit")
+
+
+def gates(repo, revision):
+    repository = os.environ["GITHUB_REPOSITORY"]
+    require(re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository), "invalid_repository")
+    require(re.fullmatch(r"[0-9a-f]{40}", revision), "invalid_revision")
+    require(os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+            and os.environ.get("GITHUB_REF") == "refs/heads/main"
+            and os.environ.get("GITHUB_SHA") == revision
+            and os.environ.get("RELEASE_WORKFLOW_SHA") == revision
+            and os.environ.get("RELEASE_WORKFLOW_REF") == repository + "/.github/workflows/release-image.yml@refs/heads/main",
+            "untrusted_dispatch")
+    receipt_sha = os.environ.get("REVIEW_RECEIPT_SHA256", "")
+    reviewed_head = os.environ.get("REVIEWED_PR_HEAD", "")
+    reviewed_tree = os.environ.get("REVIEWED_PR_TREE", "")
+    require(re.fullmatch(r"[0-9a-f]{64}", receipt_sha)
+            and re.fullmatch(r"[0-9a-f]{40}", reviewed_head)
+            and re.fullmatch(r"[0-9a-f]{40}", reviewed_tree), "invalid_review_attestation")
+    actor = os.environ.get("GITHUB_ACTOR", "")
+    run_id, attempt = os.environ.get("GITHUB_RUN_ID", ""), os.environ.get("GITHUB_RUN_ATTEMPT", "")
+    require(re.fullmatch(r"[A-Za-z0-9_-]{1,100}", actor)
+            and re.fullmatch(r"[0-9]+", run_id) and re.fullmatch(r"[0-9]+", attempt), "invalid_dispatch_identity")
+    require(not run("git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all").strip(), "source_dirty")
+    for ref in ("HEAD", "origin/main"):
+        require(run("git", "-C", str(repo), "rev-parse", ref).strip() == revision, "source_not_current_main")
+    tree = run("git", "-C", str(repo), "rev-parse", revision + "^{tree}").strip()
+    require(api(repository, "git/ref/heads/main")["object"]["sha"] == revision, "remote_main_advanced")
+
+    require(reviewed_tree == tree, "reviewed_tree_mismatch")
+    reviewed_pr = None
+    for candidate in pages(repository, f"commits/{revision}/pulls"):
+        pr = api(repository, f"pulls/{candidate['number']}")
+        if (pr["merged"] and pr["merge_commit_sha"] == revision and pr["base"]["ref"] == "main"
+                and pr["base"]["repo"]["full_name"] == repository and pr["head"]["sha"] == reviewed_head):
+            reviewed_pr = pr["number"]
+            break
+    require(reviewed_pr is not None, "reviewed_merged_pr_missing")
+    head = api(repository, f"git/commits/{reviewed_head}")
+    require(head["sha"] == reviewed_head and head["tree"]["sha"] == tree, "reviewed_head_tree_mismatch")
+    # This references an operator-verified independent PASS receipt; a digest does not
+    # authenticate a reviewer. Source review/merge policy owns outstanding review findings.
+    attestation = {"receipt_sha256": receipt_sha, "pr": reviewed_pr, "head": reviewed_head,
+                   "tree": tree, "actor": actor, "run_id": run_id, "run_attempt": attempt,
+                   "trust": "authorized_dispatcher_verification"}
+
+    workflow = api(repository, "actions/workflows/ci.yml")
+    require(workflow["path"] == ".github/workflows/ci.yml" and workflow["state"] == "active", "unexpected_ci_workflow")
+    runs = api(repository, f"actions/workflows/ci.yml/runs?head_sha={revision}&branch=main&event=push&per_page=100")["workflow_runs"]
+    require(runs, "ci_missing")
+    selected = max(runs, key=lambda r: (r["run_number"], r["run_attempt"]))
+    ci = api(repository, f"actions/runs/{selected['id']}")
+    require(ci["head_sha"] == revision and ci["head_branch"] == "main" and ci["event"] == "push"
+            and ci["workflow_id"] == workflow["id"] and ci["path"] == workflow["path"]
+            and ci["head_repository"]["full_name"] == repository
+            and ci["status"] == "completed" and ci["conclusion"] == "success"
+            and ci["run_attempt"] == selected["run_attempt"], "ci_not_latest_success")
+    return {"revision": revision, "tree": tree, "repository": repository, "reviewed_pr": reviewed_pr,
+            "review_attestation": attestation, "ci_run": ci}
+
+
+def inspect(docker, image, qualified):
+    record = json.loads(docker("image", "inspect", image))[0]
+    labels = record["Config"]["Labels"]
+    require(record["Id"] == qualified["image_id"] and record["Os"] == "linux" and record["Architecture"] == "amd64"
+            and labels["org.opencontainers.image.revision"] == qualified["revision"]
+            and labels["io.finn-nancy.source-tree"] == qualified["tree"], "image_identity_mismatch")
+    return record
+
+
+def qualify(repo, revision, output, docker, child_env):
+    stage("source_gates")
+    qualification = gates(repo, revision)
+    STATE.update(source=qualification)
+    stage("build")
+    # build-image remains the sole authority for the exact allowlisted Git context.
+    built = run(sys.executable, str(repo / "scripts/build-image"), "--repository", str(repo),
+                "--revision", revision, "--platform", PLATFORM, "--tag", "finn-nancy:qualified-" + revision,
+                env=child_env, timeout=900, diagnostic=output / "build.log")
+    build = json.loads(built.strip().splitlines()[-1])
+    require(build["revision"] == revision and build["tree"] == qualification["tree"] and build["platform"] == PLATFORM,
+            "build_source_mismatch")
+    require(re.fullmatch(r"sha256:[0-9a-f]{64}", build["image_id"]), "invalid_image_id")
+    qualification.update(image_id=build["image_id"], platform=PLATFORM, build=build)
+    stage("image_identity")
+    inspect(docker, qualification["image_id"], qualification)
+    stage("smoke")
+    run(sys.executable, str(repo / "scripts/smoke-image"), "--image", qualification["image_id"],
+        "--platform", PLATFORM, "--artifacts", str(output / "smoke"), env=child_env, timeout=720)
+    smoke = json.loads((output / "smoke/receipt.json").read_text())
+    require(smoke["success"] is True and smoke["cleanup_verified"] is True
+            and smoke["image_id"] == qualification["image_id"], "smoke_or_cleanup_failed")
+    stage("archive")
+    docker("save", "--output", str(output / "image.tar"), qualification["image_id"], timeout=180)
+    qualification.update(image_archive_sha256=digest(output / "image.tar"),
+                         smoke_receipt_sha256=digest(output / "smoke/receipt.json"))
+    write(output / "qualified.json", qualification)
+
+
+def publish(repo, revision, output, docker, auth):
+    stage("source_gates")
+    current = gates(repo, revision)  # No package login/push until every gate is rechecked.
+    STATE.update(source=current)
+    stage("artifacts")
+    qualified = json.loads((output / "qualified.json").read_text())
+    require(all(qualified[k] == current[k] for k in ("revision", "tree", "repository", "review_attestation")), "qualification_source_mismatch")
+    require(qualified["platform"] == PLATFORM and re.fullmatch(r"sha256:[0-9a-f]{64}", qualified["image_id"]), "invalid_qualified_image")
+    require(digest(output / "image.tar") == qualified["image_archive_sha256"]
+            and digest(output / "smoke/receipt.json") == qualified["smoke_receipt_sha256"], "qualified_artifacts_changed")
+    smoke = json.loads((output / "smoke/receipt.json").read_text())
+    require(smoke["success"] is True and smoke["cleanup_verified"] is True and smoke["image_id"] == qualified["image_id"],
+            "no_successful_smoke")
+    stage("load")
+    docker("load", "--input", str(output / "image.tar"), timeout=180)
+    stage("image_identity")
+    inspect(docker, qualified["image_id"], qualified)
+    attestation = current["review_attestation"]
+    image = "ghcr.io/" + current["repository"].lower()
+    tag = f"{image}:sha-{revision}-amd64-{attestation['run_id']}-{attestation['run_attempt']}"
+    STATE.update(**current, image_id=qualified["image_id"], platform=PLATFORM, tag=tag)
+    stage("login")
+    # Mark before login: even a failed login can write credentials and requires cleanup.
+    STATE["login_attempted"] = True
+    docker("login", "ghcr.io", "--username", os.environ["GITHUB_ACTOR"], "--password-stdin",
+           data=os.environ["GHCR_TOKEN"] + "\n", timeout=60)
+    stage("tag")
+    docker("tag", qualified["image_id"], tag)
+    stage("push")
+    STATE["push_state"] = "attempted_uncertain"
+    stdout, stderr = docker("push", tag, streams=True, timeout=300)
+    STATE.update(push_completed=True, push_state="completed")
+    # Dedicated bounded push result only; neither stream is logged or retained.
+    matches = re.findall(r"\bdigest: (sha256:[0-9a-f]{64})\b", stdout[-16384:] + "\n" + stderr[-16384:])
+    require(len(set(matches)) == 1, "push_digest_missing_or_ambiguous")
+    published_digest = matches[0]
+    STATE.update(digest=published_digest, immutable_reference=image + "@" + published_digest)
+    stage("registry_tag")
+    remote = docker("buildx", "imagetools", "inspect", tag)
+    require(re.findall(r"^Digest:\s+(sha256:[0-9a-f]{64})\s*$", remote, re.MULTILINE) == [published_digest], "registry_tag_mismatch")
+    immutable = STATE["immutable_reference"]
+    stage("registry_manifest")
+    manifest = json.loads(docker("buildx", "imagetools", "inspect", "--raw", immutable))
+    require(manifest["config"]["digest"] == qualified["image_id"], "registry_manifest_mismatch")
+    stage("digest_pull")
+    docker("pull", "--platform", PLATFORM, immutable, timeout=180)
+    stage("registry_identity")
+    readback = inspect(docker, immutable, qualified)
+    write(output / "registry-readback.json", {"immutable_reference": immutable, "manifest": manifest, "image": readback})
+    STATE.update(readback_sha256=digest(output / "registry-readback.json"),
+                 qualified_receipt_sha256=digest(output / "qualified.json"),
+                 readback_verified=True, push_state="completed_readback_verified")
+
+
+def failure(exc):
+    # Codes originate only in our source, never from a boundary's arbitrary text.
+    if isinstance(exc, Refusal):
+        return {"error_code": exc.code, "command": exc.command, "exit_status": exc.exit_status}
+    return {"error_code": "interrupted" if isinstance(exc, KeyboardInterrupt) else "invalid_boundary_data",
+            "command": None, "exit_status": None}
+
+
+def main():
+    global DEADLINE
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("phase", choices=("qualify", "publish"))
+    parser.add_argument("--revision", required=True)
+    parser.add_argument("--repository", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--artifacts", type=Path, required=True)
+    args = parser.parse_args()
+    # Internal phase budgets leave 5/6 minutes in 35/20-minute jobs for checkout,
+    # transfer, logout and receipt upload. Each child also has a smaller ceiling.
+    DEADLINE = time.monotonic() + (1800 if args.phase == "qualify" else 840)
+    STATE.clear()
+    STATE.update(phase=args.phase, stage="setup", success=False, error_code=None,
+                 command=None, exit_status=None, push_state="push_not_attempted",
+                 push_completed=False, readback_verified=False, login_attempted=False,
+                 logout_verified=False, auth_directory_removed=False)
+    child_env = {k: v for k, v in os.environ.items() if k not in OMIT_FROM_CHILD_ENV}
+    output = args.artifacts.resolve()
+    ready = False
+    auth = None
+    docker = None
+    try:
+        if args.phase == "qualify":
+            output.mkdir(parents=True, exist_ok=False)
+        else:
+            output.mkdir(parents=True, exist_ok=True)
+        ready = True
+        with tempfile.TemporaryDirectory(prefix="fn-registry-auth-") as auth:
+            child_env["DOCKER_CONFIG"] = auth
+
+            def docker(*argv, data=None, **options):
+                return run("docker", *argv, data=data, env=child_env, **options)
+
+            try:
+                if args.phase == "qualify":
+                    qualify(args.repository.resolve(), args.revision, output, docker, child_env)
+                else:
+                    publish(args.repository.resolve(), args.revision, output, docker, auth)
+                STATE["success"] = True
+            except (Exception, KeyboardInterrupt) as exc:
+                STATE.update(failure(exc))
+            finally:
+                if STATE["login_attempted"]:
+                    previous_stage = STATE["stage"]
+                    primary_failed = STATE["error_code"] is not None
+                    try:
+                        stage("logout")
+                        docker("logout", "ghcr.io", timeout=30, cleanup=True)
+                        config = Path(auth) / "config.json"
+                        remaining = json.loads(config.read_text()) if config.exists() else {}
+                        require(not remaining.get("auths") and not remaining.get("credsStore")
+                                and not remaining.get("credHelpers"), "registry_logout_not_verified")
+                        STATE["logout_verified"] = True
+                    except (Exception, KeyboardInterrupt) as exc:
+                        STATE["cleanup_error"] = {"stage": "logout", **failure(exc)}
+                        if STATE["error_code"] is None:
+                            STATE.update(failure(exc))
+                        STATE["success"] = False
+                    if primary_failed or STATE["logout_verified"]:
+                        STATE["stage"] = previous_stage
+        STATE["auth_directory_removed"] = not Path(auth).exists()
+        require(STATE["auth_directory_removed"], "auth_directory_retained")
+    except (Exception, KeyboardInterrupt) as exc:
+        STATE.update(failure(exc), success=False)
+    finally:
+        if auth is not None:
+            STATE["auth_directory_removed"] = not Path(auth).exists()
+        if STATE["success"]:
+            stage("completed")
+        if ready:
+            write(output / (args.phase + "-phase.json"), STATE)
+            if args.phase == "publish":
+                write(output / "publication.json", STATE)
+    if not STATE["success"]:
+        print("image publication refused: " + STATE["stage"] + "/" + STATE["error_code"], file=sys.stderr)
+        return 1
+    print(json.dumps({"phase": args.phase, "success": True}))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
