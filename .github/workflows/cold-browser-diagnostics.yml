@@ -1,0 +1,67 @@
+name: cold browser diagnostics
+
+# Branch-push diagnostic lane only. This is not release CI or a publishing workflow.
+on:
+  push:
+    branches:
+      - ci/cold-browser-diagnostics
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    name: cold ${{ matrix.mode }} ${{ matrix.sample }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        mode: [baseline, private-session]
+        sample: [1, 2]
+    steps:
+      - name: Check out exact diagnostic source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install locked test tools
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.16"
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Sync locked dependencies
+        run: uv sync --frozen --group dev --group mcp
+      - name: Preserve the original general selection before first Chrome launch
+        env:
+          PYTHON_DOTENV_DISABLED: "1"
+        run: ./scripts/test --ignore=tests/test_ui_theme_browser.py
+      - name: Observe one cold mode without retry or warmup
+        env:
+          CHROMIUM_BIN: /usr/bin/google-chrome
+          PYTHON_DOTENV_DISABLED: "1"
+          OBSERVATION_MODE: ${{ matrix.mode }}
+        run: |
+          test -x "$CHROMIUM_BIN"
+          "$CHROMIUM_BIN" --version
+          command -v dbus-run-session
+          command -v dbus-daemon
+          dpkg-query -W dbus-daemon libglib2.0-0t64
+          export TMPDIR="$RUNNER_TEMP"
+          .venv/bin/python tests/diagnostics/hosted-probe.py --root "$PWD" --mode "$OBSERVATION_MODE" --output "$RUNNER_TEMP/cold-browser-observation"
+      - name: Retain generated-only diagnostics on every outcome
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cold-browser-${{ matrix.mode }}-${{ matrix.sample }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/cold-browser-observation/*.json
+            ${{ runner.temp }}/cold-browser-observation/*.xml
+            ${{ runner.temp }}/cold-browser-observation/*/*.json
+            ${{ runner.temp }}/cold-browser-observation/*/*.log
+          if-no-files-found: warn
+          retention-days: 3
