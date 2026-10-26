@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -92,12 +93,45 @@ def run_browser(site, tmp_path, scenario):
         directory = tmp_path / "browser-environment" / name
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         environment[variable] = str(directory)
-    result = subprocess.run(
-        [node, str(ROOT / "tests/js/test_ui_theme_browser.cjs"),
-         str(site), str(tmp_path / "chrome"), scenario],
-        cwd=tmp_path, env=environment,
-        capture_output=True, text=True, timeout=60, check=False,
-    )
+    command = [node, str(ROOT / "tests/js/test_ui_theme_browser.cjs"),
+               str(site), str(tmp_path / "chrome"), scenario]
+    if sys.platform == "linux":
+        # Each Linux journey owns a private session, just as it owns its profile.
+        # dbus-run-session(1) documents this regression-test isolation contract
+        # and terminates the bus when Node exits. Never import the caller's bus.
+        session = shutil.which("dbus-run-session")
+        assert session is not None, "dbus-run-session is required for Linux browser regressions"
+        assert shutil.which("dbus-daemon") is not None, "dbus-daemon is required for Linux browser regressions"
+        command = [session, "--", *command]
+        # run(timeout=...) kills only the wrapper. Own its whole process group
+        # so an outer timeout cannot leave Node, Chrome or the private bus alive.
+        process = subprocess.Popen(
+            command, cwd=tmp_path, env=environment, start_new_session=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        try:
+            try:
+                stdout, stderr = process.communicate(timeout=60)
+            except BaseException as failure:
+                try:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait(timeout=1)
+                except (OSError, subprocess.TimeoutExpired) as cleanup_error:
+                    failure.add_note(f"Linux browser-session cleanup failed: {cleanup_error}")
+                raise
+            result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+        finally:
+            process.stdout.close()
+            process.stderr.close()
+    else:
+        result = subprocess.run(
+            command,
+            cwd=tmp_path, env=environment,
+            capture_output=True, text=True, timeout=60, check=False,
+        )
     assert result.returncode == 0, result.stdout + result.stderr
     return result.stdout
 
