@@ -1,0 +1,120 @@
+name: browser runtime storage differential
+
+# Four fresh VMs only. Matrix creation order is interleaved, not a start-time guarantee.
+on:
+  push:
+    branches:
+      - ci/browser-runtime-storage
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    name: runtime storage ${{ matrix.sample }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - sample: disk1
+            storage: disk
+          - sample: tmpfs1
+            storage: tmpfs
+          - sample: tmpfs2
+            storage: tmpfs
+          - sample: disk2
+            storage: disk
+    steps:
+      - name: Check out exact diagnostic source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install locked test tools
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.16"
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Sync locked dependencies
+        run: uv sync --frozen --group dev --group mcp
+      - name: Preserve original general prelude before first Chrome
+        env:
+          PYTHON_DOTENV_DISABLED: "1"
+        run: ./scripts/test --ignore=tests/test_ui_theme_browser.py
+      - name: Observe original journeys once on selected runtime storage
+        shell: bash
+        env:
+          CHROMIUM_BIN: /usr/bin/google-chrome
+          PYTHON_DOTENV_DISABLED: "1"
+          STORAGE_MODE: ${{ matrix.storage }}
+          STORAGE_SAMPLE: ${{ matrix.sample }}
+        run: |
+          test -x "$CHROMIUM_BIN"
+          "$CHROMIUM_BIN" --version
+          command -v dbus-run-session
+          command -v dbus-daemon
+          .venv/bin/python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import time
+
+          mode, sample = os.environ["STORAGE_MODE"], os.environ["STORAGE_SAMPLE"]
+          runner_temp = Path(os.environ["RUNNER_TEMP"])
+          selected = Path("/dev/shm") if mode == "tmpfs" else runner_temp
+          receipt = {"sample": sample, "mode": mode, "runtimeParent": str(selected),
+                     "wallTimeNs": time.time_ns(), "imageVersion": os.environ.get("ImageVersion"),
+                     "kernel": os.uname().release, "status": "checking"}
+          try:
+              assert {"disk1": "disk", "tmpfs1": "tmpfs", "tmpfs2": "tmpfs", "disk2": "disk"}.get(sample) == mode, "invalid sample/mode"
+              assert selected.is_dir() and not selected.is_symlink(), "runtime parent must be an existing directory, not a symlink"
+              for label, directory in [("runtimeMount", selected), ("evidenceMount", runner_temp)]:
+                  mount = json.loads(subprocess.check_output(
+                      ["findmnt", "--json", "--target", str(directory), "--output", "TARGET,FSTYPE,OPTIONS"],
+                      text=True, timeout=5))["filesystems"][0]
+                  receipt[label] = mount
+                  assert "rw" in mount["options"].split(","), "writable mount required"
+              assert receipt["evidenceMount"]["fstype"] not in {"tmpfs", "ramfs"}, "disk evidence/control root required"
+              if mode == "tmpfs":
+                  assert receipt["runtimeMount"]["target"] == "/dev/shm" and receipt["runtimeMount"]["fstype"] == "tmpfs", "existing /dev/shm tmpfs required"
+                  assert selected.stat().st_dev != runner_temp.stat().st_dev, "storage roots must differ"
+              else:
+                  assert receipt["runtimeMount"]["fstype"] not in {"tmpfs", "ramfs"}, "disk control required"
+              space = os.statvfs(selected)
+              receipt["availableBytes"] = space.f_bavail * space.f_frsize
+              receipt["availableInodes"] = space.f_favail
+              assert receipt["availableBytes"] >= 256 * 1024 * 1024, "at least 256 MiB free required"
+              assert receipt["availableInodes"] >= 1024, "at least 1024 free inodes required"
+              receipt["status"] = "admitted"
+          except BaseException as error:
+              receipt.update(status="preflight-refused", error=str(error))
+              raise
+          finally:
+              (runner_temp / "readiness-storage.json").write_text(json.dumps(receipt, indent=2) + "\n")
+          PY
+          case "$STORAGE_MODE" in
+            disk) export TMPDIR="$RUNNER_TEMP" ;;
+            tmpfs) export TMPDIR=/dev/shm ;;
+            *) exit 2 ;;
+          esac
+          .venv/bin/python tests/diagnostics/readiness-probe.py --root "$PWD" --output "$RUNNER_TEMP/readiness-observation"
+      - name: Retain generated observations on every outcome
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-runtime-${{ github.run_id }}-${{ matrix.sample }}
+          path: |
+            ${{ runner.temp }}/readiness-observation/*.json
+            ${{ runner.temp }}/readiness-observation/*.xml
+            ${{ runner.temp }}/readiness-observation/*/startup.json
+            ${{ runner.temp }}/readiness-observation/*/chrome.stderr.log
+            ${{ runner.temp }}/readiness-storage.json
+          if-no-files-found: warn
+          retention-days: 3
