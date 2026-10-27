@@ -268,10 +268,14 @@ def test_source_and_exact_ci_refusals_happen_before_build_or_login(publication, 
     ("GITHUB_SHA", "0" * 40), ("GITHUB_EVENT_NAME", "push"),
 ])
 def test_untrusted_dispatch_refuses_before_external_commands(publication, key, value):
-    run, events, _, env, _ = publication
+    run, events, root, env, _ = publication
     env[key] = value
     assert run().returncode == 1
     assert events() == []
+    receipt = json.loads((root / "artifacts/qualify-phase.json").read_text())
+    assert receipt["success"] is False and receipt["stage"] == "source_gates"
+    assert receipt["error_code"] == "untrusted_dispatch"
+    assert receipt["push_state"] == "push_not_attempted"
 
 
 def test_build_diagnostic_redacts_secrets_before_truncation(monkeypatch):
@@ -565,6 +569,11 @@ def test_workflow_command_bodies_compose_with_real_release_entrypoint(publicatio
     qualify_job, publish_job = workflow.split("\n  publish:\n")
     assert "packages: write" not in qualify_job and "packages: write" in publish_job
     assert "needs: qualify" in publish_job and "persist-credentials: false" in qualify_job
+    # Admit a typo in source_sha to the helper's receipt-producing refusal, but
+    # never execute a branch-dispatched helper or a different workflow revision.
+    assert "    if: github.ref == 'refs/heads/main' && github.workflow_sha == github.sha\n" in qualify_job
+    assert "github.sha == inputs.source_sha" not in qualify_job
+    assert "github.sha == inputs.source_sha" in publish_job
     # Model only the host-architecture boundary; never claim this local test ran native Linux Docker.
     (root / "bin/uname").write_text("#!/bin/sh\nprintf 'x86_64\\n'\n")
     (root / "bin/uname").chmod(0o755)

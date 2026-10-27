@@ -146,8 +146,10 @@ cutover, registry publication or live deployment.
 Merge/review the release workflow through a PR first; do not dispatch a branch
 version. The `release image` Actions workflow is **workflow_dispatch only**.
 Select `main` and supply `source_sha` as its full lowercase 40-character SHA.
-It refuses a stale source, a branch dispatch or a workflow revision different
-from that SHA. Both jobs require clean `HEAD == origin/main == current GitHub
+A branch dispatch or different workflow revision is skipped before helper execution;
+no skipped run qualifies a release. A mismatched source on a trusted main dispatch
+reaches the read-only helper and fails with a refusal receipt before build or login.
+Both jobs require clean `HEAD == origin/main == current GitHub
 main`, a merged main PR whose final head/tree matches the dispatch attestation,
 and the latest exact-source `ci.yml` **push/main** run completed with `success`.
 PR checks, generic combined status and an older successful attempt do not qualify.
@@ -166,8 +168,9 @@ never invent a receipt or a GitHub approval. The helper checks the referenced PR
 is merged into the selected main commit, its final head equals the attested head,
 and that head's API Git tree equals both the attested tree and selected main tree.
 A squash commit can have a different SHA from its reviewed PR head; its tree must
-still match. Both phases record receipt digest, PR/head/tree, actor, run and attempt,
-and publication requires the same attestation as qualification.
+still match. After source gates pass, both phases record receipt digest, PR/head/tree,
+actor, run and attempt; publication requires the same attestation as qualification.
+An early source-gate refusal records its phase/error but may omit that attestation.
 
 **Trust boundary:** the digest references an operator-verified independent PASS;
 it does not independently establish reviewer authenticity, receipt contents or

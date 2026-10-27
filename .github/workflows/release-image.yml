@@ -37,7 +37,7 @@ env:
 
 jobs:
   qualify:
-    if: github.ref == 'refs/heads/main' && github.sha == inputs.source_sha && github.workflow_sha == github.sha
+    if: github.ref == 'refs/heads/main' && github.workflow_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
