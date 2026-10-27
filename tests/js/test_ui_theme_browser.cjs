@@ -240,7 +240,8 @@ async function main() {
   }
   try {
     let target;
-    const deadline = Date.now() + 5000;
+    // Cold shared-runner browser startup is infrastructure readiness, not app performance.
+    const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
       if (terminated()) throw startupError('exited before CDP became ready');
       try {
