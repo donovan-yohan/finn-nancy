@@ -359,7 +359,7 @@ def test_linux_private_session_preserves_browser_deadline_and_cleanup(tmp_path, 
     try:
         with pytest.raises(AssertionError, match="startup deadline exceeded"):
             theme_browser.run_browser(tmp_path / "site", tmp_path, "focus-light")
-        assert 5 <= time.monotonic() - started < 9
+        assert 15 <= time.monotonic() - started < 19
         owned = json.loads(observed.read_text())
         assert owned["daemon"] > 0
         for pid in owned.values():
@@ -378,7 +378,10 @@ def test_linux_private_session_preserves_browser_deadline_and_cleanup(tmp_path, 
                         pass
 
 
-@pytest.mark.parametrize("response_mode", ["delayed-headers", "delayed-body", "stalled-headers", "stalled-body"])
+@pytest.mark.parametrize("response_mode", [
+    "delayed-headers", "delayed-body", "delayed-headers-past-old-budget",
+    "delayed-body-past-old-budget", "stalled-headers", "stalled-body", "polled-then-stalled-body",
+])
 def test_browser_readiness_allows_slow_response_within_startup_budget(tmp_path, response_mode):
     node = shutil.which("node")
     assert node, "Node is required for browser launcher regressions"
@@ -387,7 +390,7 @@ def test_browser_readiness_allows_slow_response_within_startup_budget(tmp_path, 
     requests = tmp_path / "requests.log"
     preload = tmp_path / "observe-handoff.cjs"
     marker = "generated page target reached WebSocket handoff"
-    # Observe just the readiness handoff; HTTP polling and child lifecycle are real.
+    # Phase-only sentinel, not a full browser journey: HTTP polling and child lifecycle are real.
     preload.write_text(
         "global.WebSocket = class { constructor() {\n"
         f"  throw Error({marker!r});\n"
@@ -399,17 +402,25 @@ def test_browser_readiness_allows_slow_response_within_startup_budget(tmp_path, 
         f"fs.writeFileSync({str(pid_file)!r}, String(process.pid));\n"
         "const port = Number(process.argv.find(arg => arg.startsWith('--remote-debugging-port=')).split('=')[1]);\n"
         "const body = JSON.stringify([{type:'page',webSocketDebuggerUrl:'ws://127.0.0.1:' + port + '/generated'}]);\n"
+        "let attempts = 0;\n"
         "http.createServer((req,res) => {\n"
         f"  fs.appendFileSync({str(requests)!r}, req.url + '\\n');\n"
         + {
             "delayed-headers": "  setTimeout(() => res.end(body), 150);\n",
             "delayed-body": "  res.writeHead(200, {'Content-Type':'application/json'}); res.flushHeaders(); setTimeout(() => res.end(body), 150);\n",
+            "delayed-headers-past-old-budget": "  setTimeout(() => res.end(body), 6000);\n",
+            "delayed-body-past-old-budget": "  res.writeHead(200, {'Content-Type':'application/json'}); res.flushHeaders(); setTimeout(() => res.end(body), 6000);\n",
             "stalled-headers": "  // Leave headers pending until launcher cleanup.\n",
             "stalled-body": "  res.writeHead(200, {'Content-Type':'application/json'}); res.flushHeaders(); res.write('[');\n",
+            "polled-then-stalled-body": (
+                "  if (++attempts <= 6) { setTimeout(() => res.end('[]'), 1000); return; }\n"
+                "  res.writeHead(200, {'Content-Type':'application/json'}); res.flushHeaders(); res.write('[');\n"
+            ),
         }[response_mode]
         + "}).listen(port, '127.0.0.1');\n"
     )
     browser.chmod(0o700)
+    started = time.monotonic()
     try:
         result = subprocess.run(
             [node, "--require", str(preload), str(HARNESS), str(tmp_path / "site"),
@@ -417,17 +428,23 @@ def test_browser_readiness_allows_slow_response_within_startup_budget(tmp_path, 
             cwd=tmp_path,
             env={"PATH": os.environ.get("PATH", ""), "TMPDIR": str(tmp_path),
                  "CHROMIUM_BIN": str(browser)},
-            text=True, capture_output=True, timeout=9, check=False,
+            text=True, capture_output=True, timeout=19, check=False,
         )
+        elapsed = time.monotonic() - started
         assert requests.read_text().splitlines(), "readiness must reach the real generated HTTP listener"
         assert set(requests.read_text().splitlines()) == {"/json/list"}
         assert result.returncode == 1, result.stdout + result.stderr
         if response_mode.startswith("delayed"):
             assert marker in result.stderr, result.stderr
             assert "startup deadline" not in result.stderr
+            if response_mode.endswith("past-old-budget"):
+                assert 6 <= elapsed < 15
         else:
             assert "startup deadline" in result.stderr, result.stderr
             assert marker not in result.stderr
+            assert 15 <= elapsed < 19
+            if response_mode == "polled-then-stalled-body":
+                assert len(requests.read_text().splitlines()) == 7, "polls must not reset the aggregate budget"
         with pytest.raises(ProcessLookupError):
             os.kill(int(pid_file.read_text()), 0)
     finally:
@@ -470,7 +487,7 @@ def test_browser_startup_failure_reports_cause_and_reaps_owned_child(tmp_path, f
                 env={"PATH": os.environ.get("PATH", ""), "TMPDIR": str(tmp_path),
                      "CHROMIUM_BIN": str(browser)},
                 text=True, capture_output=True,
-                timeout=9 if failure == "unresponsive" else 3, check=False,
+                timeout=19 if failure == "unresponsive" else 3, check=False,
             )
         except subprocess.TimeoutExpired:
             raise AssertionError("browser launcher hung instead of reporting startup failure and cleaning up") from None
