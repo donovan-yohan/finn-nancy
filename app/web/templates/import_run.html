@@ -1,17 +1,19 @@
-{% extends "base.html" %}
-{% block title %}import run · finn-nancy{% endblock %}
+{% extends "foundation_base.html" %}
+{% block styles %}{{ super() }}
+<link rel="stylesheet" href="/static/foundation/capture.css">
+{% endblock %}
+{% block title %}Import run · Finn Nancy{% endblock %}
 {% block content %}
-<header class="hero compact">
+<header class="fn-page-head">
   <div>
-    <p class="eyebrow">batch import</p>
     <h1>Import run · {{ rollup.total }} file{{ '' if rollup.total == 1 else 's' }}</h1>
-    <p class="subtle">Started {{ run.created_at }}.</p>
-    <p class="link-row subtle">
-      <a class="link" href="/upload">upload more</a>
-      <a class="link" href="/review">review queue</a>
-      <a class="link" href="/recon">reconcile</a>
-    </p>
+    <p class="fn-capture-meta">Started {{ run.created_at }}.</p>
   </div>
+  <nav class="fn-actions" aria-label="Import workflow">
+    <a class="btn btn-outline-secondary" href="/upload">Upload more</a>
+    <a class="btn btn-outline-secondary" href="/review">Review queue</a>
+    <a class="btn btn-outline-secondary" href="/recon">Reconcile</a>
+  </nav>
 </header>
 
 {% include "_import_run_status.html" %}

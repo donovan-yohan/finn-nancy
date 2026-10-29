@@ -317,11 +317,14 @@ async function main() {
     assert.equal(await evaluate(cdp, "return document.querySelector('#capture-center') === null;"), true);
     const toastGeometry = await evaluate(cdp, [
       "const toast = document.querySelector('.capture-toast').getBoundingClientRect();",
-      "const nav = document.querySelector('.tabbar').getBoundingClientRect();",
-      "return {left:toast.left,right:toast.right,bottom:toast.bottom,navTop:nav.top,width:innerWidth};",
+      "const nav = document.querySelector('.fn-nav').getBoundingClientRect();",
+      "return {left:toast.left,right:toast.right,top:toast.top,bottom:toast.bottom,",
+      "  navTop:nav.top,navBottom:nav.bottom,navLeft:nav.left,navRight:nav.right,width:innerWidth};",
     ].join("\n"));
     assert.ok(toastGeometry.left >= 0 && toastGeometry.right <= toastGeometry.width);
-    assert.ok(toastGeometry.bottom <= toastGeometry.navTop, "toast must not cover navigation");
+    assert.ok(toastGeometry.bottom <= toastGeometry.navTop || toastGeometry.top >= toastGeometry.navBottom ||
+      toastGeometry.right <= toastGeometry.navLeft || toastGeometry.left >= toastGeometry.navRight,
+      "toast must not cover the in-flow navigation");
     const queueLoaded = cdp.event("Page.loadEventFired", 15_000);
     await evaluate(cdp, "document.querySelector('.capture-toast-link').click(); return true;");
     await queueLoaded;
@@ -659,20 +662,21 @@ async function main() {
     const mobileUx = await evaluate(
       cdp,
       [
-        // The accepted workspace uses the Upload route, not the retired FAB.
-        // Opening a display:none disclosure does not make its buttons visible.
+        // Upload remains primary. Quick pickers are subordinate to native More;
+        // opening the child disclosure alone must not expose them.
         "document.querySelector('details.fab').open = true;",
         "const hiddenPickers = Array.from(document.querySelectorAll('[data-capture-picker]')).map(function (button) {",
         "  const rect = button.getBoundingClientRect();",
         "  return {name: button.textContent.trim(), width: rect.width, height: rect.height,",
         "    visible: button.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}),",
-        "    disclosureDisplay: getComputedStyle(button.closest('details.fab')).display};",
+        "    hittable: button.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2)),",
+        "    parentOpen: button.closest('.fn-more').open};",
         "});",
         "const panel = document.querySelector('#capture-center').getBoundingClientRect();",
 
         "return {",
         "  hiddenPickers: hiddenPickers,",
-        "  uploadHref: document.querySelector('.upload-tab').getAttribute('href'),",
+        "  uploadHref: document.querySelector('.fn-nav>a[href=\"/upload\"]').getAttribute('href'),",
         "  panel: { left: panel.left, right: panel.right, top: panel.top, bottom: panel.bottom },",
         "  position: getComputedStyle(document.querySelector('#capture-center')).position,",
         "  overflow: document.documentElement.scrollWidth - window.innerWidth,",
@@ -688,10 +692,11 @@ async function main() {
     assert.equal(mobileUx.uploadHref, "/upload");
     assert.equal(mobileUx.hiddenPickers.length, 2);
     for (const control of mobileUx.hiddenPickers) {
-      assert.equal(control.disclosureDisplay, "none");
+      assert.equal(control.parentOpen, false);
       assert.equal(control.visible, false);
-      assert.equal(control.height, 0);
-      assert.equal(control.width, 0);
+      // Native closed details may retain descendant layout rectangles. Its
+      // hidden controls must instead be absent from hit testing and AX.
+      assert.equal(control.hittable, false);
     }
     assert.equal(await evaluate(cdp, "return document.querySelector('#capture-toggle') === null;"), true);
 
@@ -705,6 +710,15 @@ async function main() {
       });
     assert.ok(!accessibleButtons.includes("Take photo"));
     assert.ok(!accessibleButtons.includes("Upload files"));
+    const disclosedPickers = await evaluate(cdp, [
+      "const more = document.querySelector('.fn-more'); more.open = true;",
+      "const controls = Array.from(document.querySelectorAll('[data-capture-picker]')).map(button => {",
+      "  const rect = button.getBoundingClientRect();",
+      "  return {visible:button.checkVisibility(),height:rect.height,width:rect.width}; });",
+      "more.open = false; return controls;",
+    ].join("\n"));
+    assert.equal(disclosedPickers.length, 2);
+    assert.ok(disclosedPickers.every(control => control.visible && control.height >= 48 && control.width >= 48));
     await navigate(cdp, baseUrl + "/", false);
     assert.equal(await evaluate(cdp, "return document.querySelector('#capture-center') === null;"), true);
     assert.equal(await evaluate(cdp, "return document.querySelector('#toast').childElementCount;"), 0);

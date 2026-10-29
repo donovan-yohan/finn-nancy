@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ ! -x "$REPO/.venv/bin/python" ]]; then
+  printf '%s\n' 'sandbox requires the existing locked .venv' >&2
+  exit 1
+fi
+exec "$REPO/.venv/bin/python" -I "$REPO/tools/sandbox/runner.py" "$@"

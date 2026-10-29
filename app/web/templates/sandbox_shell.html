@@ -1,22 +1,22 @@
-{% extends "base.html" %}
-{% block title %}{{ page_title }} · Finn Nancy{% endblock %}
+{% extends "foundation_base.html" %}
+{% block title %}{{ page_title }} · Sandbox · Finn Nancy{% endblock %}
+{% block styles %}{{ super() }}<link rel="stylesheet" href="/static/foundation/banking.css">{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/plaid-sandbox.css">
 <div class="sandbox-page" data-page="{{ active }}">
-  <header class="hero compact">
-    <div class="sandbox-heading"><h1>{{ page_title }}</h1><p class="subtle sandbox-caption">Not booked</p></div>
+  <header class="fn-page-head">
+    <div class="sandbox-heading"><h1>{{ page_title }}</h1><p class="fn-muted sandbox-caption">Not booked</p></div>
     <span class="db-pill sandbox-badge">Sandbox · test data</span>
-    <span class="sandbox-appearance" data-theme-host></span>
   </header>
-  <div class="grid single">
-    <div class="sandbox-feedback">
-      <p id="sandbox-status" class="subtle" role="status">Loading…</p>
-      <p id="sandbox-message" role="status" aria-live="polite" aria-atomic="true"></p>
-      <button id="sandbox-retry" class="ghost" type="button" hidden>Try loading again</button>
-    </div>
-    {% block sandbox_content %}{% endblock %}
+  <nav class="sandbox-nav" aria-label="Sandbox destinations">
+    {% for label, href, key in [('Home','/','home'),('Activity','/activity','activity'),('Accounts','/accounts','accounts'),('Connections','/connections','connections')] %}<a class="btn btn-link" href="{{ href }}"{% if active == key %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+  </nav>
+  <div class="sandbox-feedback">
+    <p id="sandbox-status" class="fn-muted" role="status">Loading…</p>
+    <p id="sandbox-message" role="status" aria-live="polite" aria-atomic="true"></p>
+    <button id="sandbox-retry" class="btn btn-outline-secondary" type="button" hidden>Try loading again</button>
   </div>
+  {% block sandbox_content %}{% endblock %}
 </div>
-<noscript><p class="card">Enable JavaScript to view imports and manage bank connections.</p></noscript>
-<script defer src="/static/plaid-sandbox.js"></script>
+<noscript><p class="banking-notice">Enable JavaScript to view Sandbox imports and manage test bank connections.</p></noscript>
 {% endblock %}
+{% block scripts %}{{ super() }}<script defer src="/static/plaid-sandbox.js"></script>{% endblock %}

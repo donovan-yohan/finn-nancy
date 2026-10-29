@@ -119,9 +119,14 @@ else:
         if not s.get('sticky_auth'):
             pathlib.Path(os.environ['DOCKER_CONFIG'], 'config.json').write_text('{"auths": {}}')
     elif args[0] == 'push':
+        e['pid'] = os.getpid()
         with open(os.environ['FAKE_EVENTS'], 'a') as f: f.write(json.dumps(e) + '\\n')
         if s.get('push_timeout'):
             import time
+            admitted_fd = os.environ.get('FAKE_PUSH_ADMITTED_FD')
+            if admitted_fd:
+                os.write(int(admitted_fd), b'1')
+                os.close(int(admitted_fd))
             time.sleep(20)
         if s.get('push_failure'): sys.exit(8)
         print('generated: digest: ' + s['digest'] + ' size: 123', file=sys.stderr if s.get('push_stderr') else sys.stdout)
@@ -452,6 +457,8 @@ def test_push_failure_or_ambiguous_digest_never_becomes_acceptance(publication, 
 
 def test_timed_out_push_is_uncertain_not_replayed_and_logout_is_bounded(publication, monkeypatch):
     import runpy
+    import select
+    import signal
 
     run, events, root, env, _ = publication
     assert run().returncode == 0
@@ -465,17 +472,49 @@ def test_timed_out_push_is_uncertain_not_replayed_and_logout_is_bounded(publicat
     module = runpy.run_path(str(ROOT / "scripts/release-image"))
     real_popen = subprocess.Popen
     timeouts = {}
+    pushes = []
 
     def popen(*args, **options):
-        process = real_popen(*args, **options)
         command = args[0]
+        admission = admitted = None
+        if command[:2] == ("docker", "push"):
+            admission, admitted = os.pipe()
+            options["env"] = {**options["env"], "FAKE_PUSH_ADMITTED_FD": str(admitted)}
+            options["pass_fds"] = (admitted,)
+        try:
+            process = real_popen(*args, **options)
+        except BaseException:
+            if admission is not None:
+                os.close(admission)
+            raise
+        finally:
+            if admitted is not None:
+                os.close(admitted)
         if command[:2] in (("docker", "push"), ("docker", "logout")):
             operation = command[1]
             communicate = process.communicate
+            if operation == "push":
+                pushes.append(process)
 
             def observed(input=None, timeout=None):
+                nonlocal admission
                 timeouts.setdefault(operation, timeout)
-                return communicate(input, timeout=0.1 if operation == "push" and timeout is not None else timeout)
+                if operation == "push" and timeout is not None:
+                    assert admission is not None
+                    try:
+                        # Bound fixture readiness separately: interpreter startup is
+                        # not push execution. The fake signals only after closing
+                        # its real admission event, then blocks in its timeout path.
+                        assert select.select([admission], [], [], 5)[0], "push was not admitted"
+                        assert os.read(admission, 1) == b"1", "push exited before admission"
+                        assert any(e["args"][0] == "push" and e["pid"] == process.pid for e in events())
+                        assert options["start_new_session"] is True
+                        assert os.getpgid(process.pid) == process.pid
+                    finally:
+                        os.close(admission)
+                        admission = None
+                    return communicate(input, timeout=0.1)
+                return communicate(input, timeout=timeout)
 
             process.communicate = observed
         return process
@@ -483,13 +522,24 @@ def test_timed_out_push_is_uncertain_not_replayed_and_logout_is_bounded(publicat
     monkeypatch.setattr(subprocess, "Popen", popen)
     monkeypatch.setattr(sys, "argv", ["release-image", "publish", "--repository", str(root / "repo"),
                                       "--revision", env["GITHUB_SHA"], "--artifacts", str(root / "artifacts")])
-    assert module["main"]() == 1
-    receipt = json.loads((root / "artifacts/publication.json").read_text())
-    assert receipt["error_code"] == "command_timeout" and receipt["command"] == "docker"
-    assert receipt["stage"] == "push" and receipt["push_state"] == "attempted_uncertain"
-    assert not receipt["push_completed"] and receipt["logout_verified"] and receipt["auth_directory_removed"]
-    assert timeouts == {"push": 300, "logout": 30}
-    assert len([e for e in events() if e["args"][0] == "push"]) == 1
+    try:
+        assert module["main"]() == 1
+        receipt = json.loads((root / "artifacts/publication.json").read_text())
+        assert receipt["error_code"] == "command_timeout" and receipt["command"] == "docker"
+        assert receipt["stage"] == "push" and receipt["push_state"] == "attempted_uncertain"
+        assert not receipt["push_completed"] and receipt["logout_verified"] and receipt["auth_directory_removed"]
+        assert timeouts == {"push": 300, "logout": 30}
+        assert len([e for e in events() if e["args"][0] == "push"]) == 1
+        assert len(pushes) == 1 and pushes[0].returncode == -signal.SIGKILL
+        assert events()[-1]["args"] == ["logout", "ghcr.io"]
+        assert not list(root.glob("fn-registry-auth-*"))
+        assert all(not Path(e["docker_config"]).exists() for e in events() if e.get("docker_config"))
+    finally:
+        # A failed readiness assertion must not leak a generated sleeping child.
+        for process in pushes:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=5)
 
 
 def test_artifact_tampering_refuses_before_registry_login(publication):

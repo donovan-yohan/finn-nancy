@@ -92,6 +92,13 @@ async function firstInstallOffline(cdp, base, stopServer) {
   // Inspect CacheStorage without requesting theme.js through the active worker.
   // A controlled online reload here would silently mask the first-install bug.
   const themePrecached = await cdp.eval("caches.match('/static/theme.js').then(Boolean)");
+  const stylesheetCache = await cdp.eval(`(async()=>Promise.all(
+    [...document.querySelectorAll('link[rel="stylesheet"]')].map(async link=>({
+      href:new URL(link.href).pathname,cached:!!(await caches.match(link.href))
+    }))
+  ))()`);
+  assert.ok(stylesheetCache.some(asset=>asset.href==='/static/foundation/capture.css'));
+  assert.deepEqual(stylesheetCache.filter(asset=>!asset.cached), [], 'first install must include the actual capture-page stylesheet');
   assert.equal(await cdp.eval('document.documentElement.dataset.theme'), 'dark');
   await cdp.call('Network.clearBrowserCache');
   await cdp.call('Network.setCacheDisabled', {cacheDisabled: true});
@@ -168,9 +175,8 @@ async function workspaceFocus(cdp, base, theme) {
     assert.equal(measure.visible, true, 'keyboard focus must activate :focus-visible');
     assert.equal(measure.width, '3px');
     assert.equal(measure.style, 'solid');
-    // The workspace's equal-specificity total-link rule intentionally uses
-    // its compact 2px offset; the other scoped controls retain 3px.
-    assert.equal(measure.offset, id === 'period-total' ? '2px' : '3px');
+    // The shared foundation uses the same visible ring on every workspace control.
+    assert.equal(measure.offset, '3px');
     measures.push(measure);
   }
   console.log(JSON.stringify({theme, keyboardTargets: measures.length, measures}));

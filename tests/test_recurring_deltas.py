@@ -222,8 +222,8 @@ def test_insights_page_renders_recurring_changes(app_env):
     assert r.status_code == 200
     body = r.text
     body_text = unescape(body)
-    assert "planning cards" in body
-    assert "recurring changes" in body
+    assert "Planning suggestions" in body
+    assert "Recurring changes" in body
     assert "Koodo" in body
     assert "$46.33" in body
     assert "$52.10" in body
@@ -250,7 +250,7 @@ def test_insights_page_renders_recurring_changes(app_env):
     assert "2026-05" in planning_segment_text
     assert "2026-06" in planning_segment_text
     assert "→" in planning_segment_text
-    changes_section = body.split("recurring changes", 1)[1].split("recurring candidates", 1)[0]
+    changes_section = body.split('aria-label="Recurring payment changes"', 1)[1].split("</section>", 1)[0]
     assert "Tiny Variance Cloud" not in changes_section
 
     action = _client().post(

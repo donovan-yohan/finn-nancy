@@ -1,23 +1,25 @@
-{% extends "base.html" %}
-{% block title %}Namako chat · finn-nancy{% endblock %}
+{% extends "foundation_base.html" %}
+{% block styles %}{{ super() }}<link rel="stylesheet" href="/static/foundation/nancy.css">{% endblock %}
+{% block title %}Namako chat · Finn Nancy{% endblock %}
 {% block content %}
+<div class="fn-nancy">
 <section class="chat-shell hermes-chat brand-nancy"
          data-chat-enabled="{{ 'true' if chat_enabled else 'false' }}"
          data-seed-message="{{ seed_message | default('', true) | e }}"
          aria-labelledby="chat-title">
-  <header class="chat-head">
+  <header class="fn-page-head chat-head">
     <div>
       <h1 id="chat-title">Namako</h1>
       <p class="subtle">Powered by Hermes</p>
     </div>
     <form method="post" action="/chat/new">
-      <button class="ghost" type="submit">New chat</button>
+      <button class="btn btn-outline-secondary" type="submit">New chat</button>
     </form>
   </header>
 
   <div class="chat-connection">
-    <p id="chat-status" role="status" aria-live="polite" aria-atomic="true">{% if chat_enabled %}Connecting…{% else %}Chat is not configured. Ask your administrator to connect Hermes.{% endif %}</p>
-    <button id="chat-reconnect" class="ghost" type="button" hidden>Reconnect</button>
+    <p id="chat-status" role="status" aria-live="polite" aria-atomic="true">{% if chat_enabled %}Connecting…{% else %}Chat is not configured. Connect Hermes to send messages.{% endif %}</p>
+    <button id="chat-reconnect" class="btn btn-outline-secondary" type="button" hidden>Reconnect</button>
     <p id="chat-error" class="chat-error" role="alert" hidden></p>
     <p id="chat-uncertain" class="chat-notice" role="status" hidden></p>
   </div>
@@ -30,16 +32,17 @@
   <div id="chat-requests" class="chat-requests" role="region" aria-label="Pending requests" aria-live="polite"></div>
 
   <form id="chat-form" class="chat-form" method="post" action="/chat">
-    <label for="chat-input">Message Namako</label>
-    <textarea id="chat-input" rows="2" required disabled
+    <label class="form-label" for="chat-input">Message Namako</label>
+    <textarea class="form-control" id="chat-input" rows="2" required disabled
               aria-describedby="chat-input-help" placeholder="Ask about spending, budgets, goals, or transactions"></textarea>
     <div class="chat-actions">
-      <button id="chat-send" class="ghost chat-send" type="submit" disabled>Send</button>
-      <button id="chat-stop" class="ghost" type="button" disabled>Stop</button>
+      <button id="chat-send" class="btn btn-primary chat-send" type="submit" disabled>Send</button>
+      <button id="chat-stop" class="btn btn-outline-secondary" type="button" disabled>Stop</button>
     </div>
     <p id="chat-input-help" class="subtle">Enter to send · Shift+Enter for a new line. Attachments go through <a href="/upload">Upload</a> or <a href="/processing">Processing</a>.</p>
   </form>
   <noscript><p class="chat-notice">JavaScript is required for chat. Upload and Processing remain available.</p></noscript>
 </section>
 <script defer src="/static/hermes-chat.js"></script>
+</div>
 {% endblock %}

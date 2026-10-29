@@ -22,10 +22,11 @@ def generated_theme_site(tmp_path):
     (site / "static").mkdir(parents=True)
     # Copy only public UI assets, never configuration, databases, or financial data.
     for name in (
-        "app.css", "theme.js", "capture-store.js", "capture-outbox.js", "htmx.min.js",
+        "theme.js", "capture-store.js", "capture-outbox.js", "htmx.min.js",
         "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png",
     ):
         shutil.copyfile(STATIC / name, site / "static" / name)
+    shutil.copytree(STATIC / "foundation", site / "static" / "foundation")
     (site / "sw.js").write_text(
         (STATIC / "sw.js").read_text().replace("__CACHE_VERSION__", "generated-theme-regression")
     )
@@ -49,22 +50,22 @@ def generated_theme_site(tmp_path):
     # keyboard navigation. No accounting/report state is needed for their CSS.
     focus_html = templates.from_string('''{% extends "base.html" %}
       {% block content %}
-      <header class="hero"><h1>Generated keyboard focus fixture</h1></header>
-      <div class="grid single period-statement-workspace">
-        <section class="card">
-          <a id="period-total" class="period-total-link stat-card" href="#generated">Generated total</a>
+      <header class="fn-page-head"><h1>Generated keyboard focus fixture</h1></header>
+      <div class="period-statement-workspace">
+        <section class="fn-section">
+          <a id="period-total" class="period-total-link" href="#generated">Generated total</a>
           <a id="period-link" class="link" href="#generated">Generated evidence</a>
-          <button id="period-primary" class="primary">Generated action</button>
-          <label>Generated period<select id="period-select"><option>Generated month</option></select></label>
+          <button id="period-primary" class="btn btn-primary">Generated action</button>
+          <label class="form-label">Generated period<select class="form-select" id="period-select"><option>Generated month</option></select></label>
         </section>
       </div>
-      <div class="grid single close-workspace">
-        <section class="card">
-          <button id="close-button" class="primary">Generated close</button>
+      <div class="close-workspace">
+        <section class="fn-section">
+          <button id="close-button" class="btn btn-primary">Generated close</button>
           <a id="close-link" class="link" href="#generated">Generated review</a>
-          <label>Generated reason<input id="close-input" class="text-input"></label>
-          <label>Generated decision<select id="close-select"><option>Generated option</option></select></label>
-          <details><summary id="close-summary">Generated history</summary></details>
+          <label class="form-label">Generated reason<input id="close-input" class="form-control"></label>
+          <label class="form-label">Generated decision<select class="form-select" id="close-select"><option>Generated option</option></select></label>
+          <details class="fn-disclosure"><summary id="close-summary">Generated history</summary></details>
         </section>
       </div>
       {% endblock %}''').render(sandbox_candidate=False, request=request("/focus"))

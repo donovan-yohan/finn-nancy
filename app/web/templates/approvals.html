@@ -1,204 +1,117 @@
-{% extends "base.html" %}
-{% block title %}approvals · finn-nancy{% endblock %}
+{% extends "foundation_base.html" %}
+{% block title %}Approvals · Finn Nancy{% endblock %}
+{% block styles %}{{ super() }}<link rel="stylesheet" href="/static/foundation/manage.css">{% endblock %}
 {% block content %}
+<div class="manage-review">
 {% if mode == 'audit' %}
-<header class="hero compact">
-  <div>
-    <p class="eyebrow finn">approval audit</p>
-    <h1>Action #{{ proposal.id }}</h1>
-    <p class="subtle">{{ proposal.kind }} · {{ proposal.status_label }}</p>
-  </div>
-  <a class="link" href="/actions">approval queue</a>
+<header class="fn-page-head">
+  <div><h1>Action #{{ proposal.id }}</h1><p class="fn-muted">{{ proposal.kind }} · {{ proposal.status_label }}</p></div>
+  <a href="/actions">Approval queue</a>
 </header>
-
-<div class="grid single">
-  <section class="card span-2">
-    <div class="card-head">
-      <div><p class="eyebrow finn">proposal</p><h2>{{ proposal.kind }}</h2></div>
-      <span class="db-pill">{{ proposal.status_label }}</span>
-    </div>
-    <p>{{ proposal.rationale }}</p>
-    <div class="action-row" style="margin-top:.8rem;">
-      {% for key, value in proposal.payload_items %}
-      <span class="db-pill">{{ key }}: {{ value }}</span>
-      {% endfor %}
-    </div>
-    {% if proposal.status in ['approved', 'edited_approved'] and proposal.revert %}
-    {% if proposal.locked_month %}
-    <p class="banner warn" role="alert" style="margin-top:1rem;">{{ proposal.locked_month }} is closed. Reverting edits this locked month — tick “override the lock” to proceed; the revert is audited.</p>
+<section class="manage-section" aria-label="Proposal">
+  <p class="manage-context">{{ proposal.rationale }}</p>
+  <dl class="manage-payload">
+    {% for key, value in proposal.payload_items %}<div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>{% endfor %}
+  </dl>
+  {% if proposal.status in ['approved', 'edited_approved'] and proposal.revert %}
+  {% if proposal.locked_month %}<p class="manage-warning" role="alert">{{ proposal.locked_month }} is closed. Reverting edits this locked month. Select “Override the lock” to proceed; the revert is audited.</p>{% endif %}
+  <form class="fn-editor manage-editor" method="post" action="/actions/{{ proposal.id }}/revert"
+        onsubmit='return confirm({{ ("Revert action #" ~ proposal.id ~ " (" ~ proposal.kind ~ ")?") | tojson }})'>
+    {% if proposal.locked_month %}<label class="fn-check" for="revert-override-{{ proposal.id }}"><input class="form-check-input" id="revert-override-{{ proposal.id }}" type="checkbox" name="override" value="1"> Override the lock (audited)</label>{% endif %}
+    <div class="fn-actions"><button class="btn btn-outline-secondary" type="submit">Revert action</button></div>
+  </form>
+  {% endif %}
+</section>
+<section class="manage-section" aria-labelledby="audit-title">
+  <h2 id="audit-title">Audit trail</h2>
+  <div class="table-responsive manage-table-wrap" role="region" tabindex="0" aria-label="Approval audit trail">
+    <table class="table manage-table">
+      <thead><tr><th scope="col">Time</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Actor</th><th scope="col">Feedback</th><th scope="col">Payload</th><th scope="col">Detail</th></tr></thead>
+      <tbody>{% for row in audit_rows %}<tr>
+        <td>{{ row.created_at }}</td><td>{{ row.from_status_label or 'Enqueue' }}</td><td>{{ row.to_status_label }}</td><td>{{ row.actor or 'System' }}</td><td>{{ row.feedback }}</td>
+        <td>{% for key, value in row.payload_snapshot.items() %}<span class="fn-muted manage-block">{{ key }}: {{ value }}</span>{% endfor %}</td>
+        <td>{% for key, value in row.detail.items() %}<span class="fn-muted manage-block">{{ key }}: {{ value }}</span>{% endfor %}</td>
+      </tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<header class="fn-page-head">
+  <div><h1>Approval queue</h1><p class="fn-muted">{{ proposals | length }} proposal{{ 's' if proposals | length != 1 else '' }} awaiting review.</p></div>
+  <nav class="fn-actions" aria-label="Related work"><a href="/backlog">Uncategorized</a><a href="/recon">Reconciliation</a></nav>
+</header>
+{% if not proposals %}<p class="fn-muted">No proposals awaiting review.</p>{% endif %}
+{% for proposal in proposals %}
+<article class="manage-proposal" id="proposal-{{ proposal.id }}">
+  <header class="manage-proposal-head">
+    <div><h2>{{ proposal.rationale or 'Agent proposed action' }}</h2><p class="fn-muted">{{ proposal.kind }} · {{ '%.0f'|format(proposal.confidence * 100) }}% confidence · {{ proposal.status_label }}</p></div>
+    <a href="/actions/{{ proposal.id }}/audit">Audit history</a>
+  </header>
+  {% if proposal.kind == 'recategorization' %}
+  {% set change = proposal.consequence %}
+  <section class="manage-consequence" aria-label="Category change">
+    {% if change.transaction %}
+    <p><strong>{{ change.transaction.description or 'Transaction description unavailable' }}</strong><br>
+      <time datetime="{{ change.transaction.posted_on }}">{{ change.transaction.posted_on }}</time> · Transaction total {{ change.transaction.amount_cents | money }} {{ change.transaction.currency or 'Currency unavailable' }}</p>
     {% endif %}
-    <form class="inline-form" method="post" action="/actions/{{ proposal.id }}/revert" style="margin-top:1rem;"
-          onsubmit='return confirm({{ ("Revert action #" ~ proposal.id ~ " (" ~ proposal.kind ~ ")?") | tojson }})'>
-      {% if proposal.locked_month %}
-      <label class="ack-row"><input type="checkbox" name="override" value="1"> override the lock (audited)</label>
-      {% endif %}
-      <button class="ghost" type="submit">revert</button>
+    {% if change.split %}
+    <p>{% if change.split_count > 1 %}Selected split{% else %}Category{% endif %}: <strong>{{ change.split.category_name or 'Current category unavailable' }} → {{ change.target.name if change.target else 'Proposed category unavailable' }}</strong>{% if change.split_count > 1 %}<br>Selected split amount {{ change.split.amount_cents | money }} {{ change.transaction.currency or 'Currency unavailable' }} · Other splits stay unchanged.{% endif %}</p>
+    {% endif %}
+    {% for message in change.unavailable %}<p class="manage-warning">{{ message }}</p>{% endfor %}
+  </section>
+  <details class="fn-disclosure manage-record">
+    <summary>Technical proposal details</summary>
+    <dl class="manage-payload">
+      {% for key, value in proposal.payload_items %}<div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>{% endfor %}
+    </dl>
+  </details>
+  {% else %}
+  <dl class="manage-payload">
+    {% for key, value in proposal.payload_items %}<div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>{% endfor %}
+  </dl>
+  {% endif %}
+  {% set evidence = proposal.evidence %}
+  <div class="manage-evidence-links">
+    {% if evidence.transaction_ids %}<span>Transactions {% for txn_id in evidence.transaction_ids %}<a href="/txn/{{ txn_id }}/edit">#{{ txn_id }}</a> {% endfor %}</span>{% endif %}
+    {% if evidence.statement_line_ids %}<span>Statement lines {% for line_id in evidence.statement_line_ids %}<a href="/recon?month={{ line_months.get(line_id) or line_months.get(line_id | int) or '' }}#line-{{ line_id }}">#{{ line_id }}</a> {% endfor %}</span>{% endif %}
+    {% if evidence.category_ids %}<span>Categories {% for cat_id in evidence.category_ids %}<a href="/categories#category-{{ cat_id }}">#{{ cat_id }}</a> {% endfor %}</span>{% endif %}
+  </div>
+  <p class="fn-muted">Run {{ proposal.agent_run_id or 'unknown' }} · created {{ proposal.created_at }}</p>
+  {% if proposal.locked_month %}<p class="manage-warning" role="alert">{{ proposal.locked_month }} is closed. Approving edits this locked month. Select “Override the lock” to proceed; the change is audited.</p>{% endif %}
+  <form method="post" action="/actions/{{ proposal.id }}/approve" class="fn-editor manage-editor">
+    {% if proposal.locked_month %}<label class="fn-check" for="approve-override-{{ proposal.id }}"><input class="form-check-input" id="approve-override-{{ proposal.id }}" type="checkbox" name="override" value="1"> Override the lock (audited)</label>{% endif %}
+    <div class="fn-actions"><button class="btn btn-primary" type="submit">Approve as-is</button></div>
+  </form>
+  <details class="fn-disclosure manage-record">
+    <summary>Other review options</summary>
+    {% if proposal.kind == 'recategorization' %}
+    <form method="post" action="/actions/{{ proposal.id }}/approve" class="fn-editor manage-editor">
+      <div class="fn-field"><label class="form-label" for="target-category-{{ proposal.id }}">Target category</label><select class="form-select" id="target-category-{{ proposal.id }}" name="to_category_id" aria-label="target category">{% for category in categories %}<option value="{{ category.id }}" {% if proposal.consequence.target and category.id == proposal.consequence.target.id %}selected{% endif %}>{{ category.kind }} · {{ category.name }}</option>{% endfor %}</select></div>
+      {% if proposal.locked_month %}<label class="fn-check" for="edit-override-{{ proposal.id }}"><input class="form-check-input" id="edit-override-{{ proposal.id }}" type="checkbox" name="override" value="1"> Override the lock (audited)</label>{% endif %}
+      <div class="fn-actions"><button class="btn btn-outline-secondary" type="submit">Edit then approve</button></div>
+    </form>
+    {% elif proposal.kind == 'subscription_label' %}
+    <form method="post" action="/actions/{{ proposal.id }}/approve" class="fn-editor manage-editor">
+      <div class="fn-field"><label class="form-label" for="subscription-decision-{{ proposal.id }}">Subscription decision</label><select class="form-select" id="subscription-decision-{{ proposal.id }}" name="decision" aria-label="subscription decision">{% for value, label in subscription_decisions.items() %}<option value="{{ value }}" {% if value == proposal.payload.decision %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div class="fn-actions"><button class="btn btn-outline-secondary" type="submit">Edit then approve</button></div>
     </form>
     {% endif %}
-  </section>
-
-  <section class="card span-2">
-    <div class="card-head">
-      <div><p class="eyebrow finn">history</p><h2>Audit trail</h2></div>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>time</th>
-            <th>from</th>
-            <th>to</th>
-            <th>actor</th>
-            <th>feedback</th>
-            <th>payload</th>
-            <th>detail</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in audit_rows %}
-          <tr>
-            <td>{{ row.created_at }}</td>
-            <td>{{ row.from_status_label or 'enqueue' }}</td>
-            <td>{{ row.to_status_label }}</td>
-            <td>{{ row.actor or 'system' }}</td>
-            <td>{{ row.feedback }}</td>
-            <td>
-              {% for key, value in row.payload_snapshot.items() %}
-              <span class="subtle block">{{ key }}: {{ value }}</span>
-              {% endfor %}
-            </td>
-            <td>
-              {% for key, value in row.detail.items() %}
-              <span class="subtle block">{{ key }}: {{ value }}</span>
-              {% endfor %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-</div>
-{% else %}
-<header class="hero compact">
-  <div>
-    <p class="eyebrow finn">human approval</p>
-    <h1>Approval queue</h1>
-    <p class="subtle">{{ proposals | length }} proposal{{ 's' if proposals | length != 1 else '' }} awaiting review.</p>
-  </div>
-  <div class="action-row">
-    <a class="link" href="/backlog">backlog</a>
-    <a class="link" href="/recon">reconciliation</a>
-  </div>
-</header>
-
-<div class="grid single">
-  {% if not proposals %}
-  <section class="card span-2">
-    <p class="subtle">No proposals awaiting review.</p>
-  </section>
-  {% endif %}
-
-  {% for proposal in proposals %}
-  <article class="card span-2 finn-card" id="proposal-{{ proposal.id }}">
-    <div class="card-head">
-      <div>
-        <p class="eyebrow finn">{{ proposal.kind }} · {{ '%.0f'|format(proposal.confidence * 100) }}% confidence</p>
-        <h2>{{ proposal.rationale or 'Agent proposed action' }}</h2>
-        <p class="subtle">run {{ proposal.agent_run_id or 'unknown' }} · created {{ proposal.created_at }}</p>
-      </div>
-      <span class="db-pill">{{ proposal.status_label }}</span>
-    </div>
-
-    <div class="action-row">
-      {% for key, value in proposal.payload_items %}
-      <span class="db-pill">{{ key }}: {{ value }}</span>
-      {% endfor %}
-    </div>
-
-    {% set evidence = proposal.evidence %}
-    <div class="action-row" style="margin-top:.8rem;">
-      {% if evidence.transaction_ids %}
-      <span class="db-pill evidence-pill">
-        <span>txns</span>
-        {% for txn_id in evidence.transaction_ids %}
-        <a href="/txn/{{ txn_id }}/edit">#{{ txn_id }}</a>
-        {% endfor %}
-      </span>
-      {% endif %}
-      {% if evidence.statement_line_ids %}
-      <span class="db-pill evidence-pill">
-        <span>lines</span>
-        {% for line_id in evidence.statement_line_ids %}
-        <a href="/recon?month={{ line_months.get(line_id) or line_months.get(line_id | int) or '' }}#line-{{ line_id }}">#{{ line_id }}</a>
-        {% endfor %}
-      </span>
-      {% endif %}
-      {% if evidence.category_ids %}
-      <span class="db-pill evidence-pill">
-        <span>categories</span>
-        {% for cat_id in evidence.category_ids %}
-        <a href="/categories#category-{{ cat_id }}">#{{ cat_id }}</a>
-        {% endfor %}
-      </span>
-      {% endif %}
-      <a class="link" href="/actions/{{ proposal.id }}/audit">audit history</a>
-    </div>
-
-    {% if proposal.locked_month %}
-    <p class="banner warn" role="alert" style="margin-top:1rem;">{{ proposal.locked_month }} is closed. Approving edits this locked month — tick “override the lock” to proceed; the change is audited.</p>
-    {% endif %}
-
-    <div class="action-row" style="margin-top:1rem;">
-      <form method="post" action="/actions/{{ proposal.id }}/approve">
-        {% if proposal.locked_month %}
-        <label class="ack-row"><input type="checkbox" name="override" value="1"> override the lock (audited)</label>
-        {% endif %}
-        <button class="ghost compact-action" type="submit">approve as-is</button>
-      </form>
-
-      {% if proposal.kind == 'recategorization' %}
-      <form method="post" action="/actions/{{ proposal.id }}/approve">
-        <select name="to_category_id" aria-label="target category">
-          {% for category in categories %}
-          <option value="{{ category.id }}" {% if category.id == (proposal.payload.to_category_id | int(-1)) %}selected{% endif %}>{{ category.kind }} · {{ category.name }}</option>
-          {% endfor %}
-        </select>
-        {% if proposal.locked_month %}
-        <label class="ack-row"><input type="checkbox" name="override" value="1"> override the lock (audited)</label>
-        {% endif %}
-        <button class="ghost compact-action" type="submit">edit then approve</button>
-      </form>
-      {% elif proposal.kind == 'subscription_label' %}
-      <form method="post" action="/actions/{{ proposal.id }}/approve">
-        <select name="decision" aria-label="subscription decision">
-          {% for value, label in subscription_decisions.items() %}
-          <option value="{{ value }}" {% if value == proposal.payload.decision %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-        <button class="ghost compact-action" type="submit">edit then approve</button>
-      </form>
-      {% endif %}
-
-      <form method="post" action="/actions/{{ proposal.id }}/snooze">
-        <input type="date" name="snoozed_until" value="{{ next_snooze_date }}">
-        <button class="ghost compact-action" type="submit">snooze</button>
-      </form>
-    </div>
-
-    <div class="action-row" style="margin-top:.8rem;">
-      <form method="post" action="/actions/{{ proposal.id }}/reject"
-            onsubmit='return confirm({{ ("Reject action #" ~ proposal.id ~ " (" ~ proposal.kind ~ ")?") | tojson }})'>
-        <textarea name="feedback" placeholder="feedback" required></textarea>
-        <button class="ghost compact-action" type="submit">reject</button>
-      </form>
-      <form method="post" action="/actions/{{ proposal.id }}/request-evidence">
-        <textarea name="feedback" placeholder="needed evidence" required></textarea>
-        <button class="ghost compact-action" type="submit">ask for more evidence</button>
-      </form>
-    </div>
-  </article>
-  {% endfor %}
-</div>
+    <form method="post" action="/actions/{{ proposal.id }}/snooze" class="fn-editor manage-editor">
+      <div class="fn-field"><label class="form-label" for="snooze-date-{{ proposal.id }}">Snooze until</label><input class="form-control" id="snooze-date-{{ proposal.id }}" type="date" name="snoozed_until" value="{{ next_snooze_date }}"></div>
+      <div class="fn-actions"><button class="btn btn-outline-secondary" type="submit">Snooze</button></div>
+    </form>
+    <form method="post" action="/actions/{{ proposal.id }}/request-evidence" class="fn-editor manage-editor">
+      <div class="fn-field"><label class="form-label" for="evidence-feedback-{{ proposal.id }}">Needed evidence</label><textarea class="form-control" id="evidence-feedback-{{ proposal.id }}" name="feedback" required></textarea></div>
+      <div class="fn-actions"><button class="btn btn-outline-secondary" type="submit">Ask for more evidence</button></div>
+    </form>
+    <form method="post" action="/actions/{{ proposal.id }}/reject" class="fn-editor manage-editor"
+          onsubmit='return confirm({{ ("Reject action #" ~ proposal.id ~ " (" ~ proposal.kind ~ ")?") | tojson }})'>
+      <div class="fn-field"><label class="form-label" for="reject-feedback-{{ proposal.id }}">Rejection feedback</label><textarea class="form-control" id="reject-feedback-{{ proposal.id }}" name="feedback" required></textarea></div>
+      <div class="fn-actions"><button class="btn btn-outline-secondary" type="submit">Reject action</button></div>
+    </form>
+  </details>
+</article>
+{% endfor %}
 {% endif %}
+</div>
 {% endblock %}

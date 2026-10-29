@@ -1,18 +1,19 @@
 {% if job_id %}
-<div class="doc-status done">
-  <strong>queued backlog suggestions</strong>
-  <span class="subtle block">job #{{ job_id }} · batch backlog:{{ batch }} · limit {{ 'all' if limit >= 100000 else limit }}</span>
+<div class="manage-status" role="status">
+  <strong>Queued backlog suggestions</strong>
+  <span class="fn-muted manage-block">Job #{{ job_id }} · batch backlog:{{ batch }} · limit {{ 'all' if limit >= 100000 else limit }}</span>
 </div>
 {% endif %}
 
 {% if jobs %}
-<div class="doc-status">
-  <strong>recent backlog jobs</strong>
+<div class="manage-status">
+  <h3>Recent backlog jobs</h3>
+  <ul class="manage-jobs">
   {% for job in jobs %}
-  <span class="subtle block">
-    #{{ job.id }} · {{ job.status }} · attempts {{ job.attempts }} · {{ job.created_at }}
-    {% if job.last_error %} · {{ job.last_error }}{% endif %}
-  </span>
+    <li>#{{ job.id }} · {{ job.status }} · attempts {{ job.attempts }} · {{ job.created_at }}
+      {% if job.last_error %}<span class="manage-job-errors">{{ job.last_error }}</span>{% endif %}
+    </li>
   {% endfor %}
+  </ul>
 </div>
 {% endif %}

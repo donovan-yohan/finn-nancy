@@ -19,10 +19,11 @@ def _read_static(name: str) -> bytes:
 
 def static_assets_version(static_dir: Path) -> str:
     hasher = hashlib.sha256()
-    for asset_path in sorted(static_dir.iterdir(), key=lambda path: path.name):
-        if asset_path.name == "sw.js" or not asset_path.is_file():
+    for asset_path in sorted(static_dir.rglob("*"), key=lambda path: path.relative_to(static_dir).as_posix()):
+        relative_path = asset_path.relative_to(static_dir).as_posix()
+        if relative_path == "sw.js" or not asset_path.is_file():
             continue
-        hasher.update(asset_path.name.encode("utf-8"))
+        hasher.update(relative_path.encode("utf-8"))
         hasher.update(b"\0")
         hasher.update(asset_path.read_bytes())
         hasher.update(b"\0")

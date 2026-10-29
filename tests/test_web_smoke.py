@@ -27,16 +27,29 @@ def test_dashboard_renders(sample_db, monkeypatch):
     body = r.text.lower()
     assert "finn" in body and "nancy" in body
     assert "$" in r.text  # money formatting rendered
-    assert r.text.count('name="nav-sheet"') >= 2
-    assert '<details class="fab" name="nav-sheet">' in r.text
-    assert '<details class="more" name="nav-sheet">' in r.text
+    assert '<title>Home · Finn Nancy</title>' in r.text
+    assert '<h1>Home</h1>' in r.text
+    assert r.text.count('<h1>') == 1
+    assert '<details class="fn-more" name="nav-sheet">' in r.text
+    assert 'aria-label="More navigation"' in r.text
+    assert 'class="fn-disclosure fn-quick-capture fab"' in r.text
+    assert 'data-capture-picker' in r.text
+    for href in ("/activity", "/upload", "/insights", "/processing", "/review", "/recon", "/close", "/statements"):
+        assert f'href="{href}"' in r.text
+    # Literal fixture expectations, not values recomputed by the same view.
+    totals = re.search(r'<section class="home-stats"[^>]*>(.*?)</section>', r.text, re.S)
+    assert totals is not None
+    assert re.findall(r'<a class="stat-number"[^>]*>(.*?)</a>', totals[1]) == [
+        '$6,100.00', '$2,405.29', '$3,694.71',
+    ]
+    assert 'Recorded totals for 2026-03' in r.text
 
 
-def test_dashboard_nav_pills_wrap_without_overlap(sample_db, monkeypatch):
-    """Pill links must be atomic inline-flex boxes (zero-specificity default
-    so explicit display rules like .block still win), and the hero nav row
-    must wrap via a flex container with gaps — not middot-separated inline
-    pills whose boxes overflow the line box and overlap on mobile."""
+def test_dashboard_attention_navigation_uses_wrapping_native_controls(sample_db, monkeypatch):
+    """Exercise real attention links and the deployed wrapping action recipe.
+
+    Pixel overlap is covered by the companion Home/Activity browser regression.
+    """
     with engine.write_tx(sample_db) as conn:
         repo_documents.insert_source_document(
             conn, kind="receipt", original_name="synthetic-review.jpg",
@@ -46,16 +59,18 @@ def test_dashboard_nav_pills_wrap_without_overlap(sample_db, monkeypatch):
     client = _client(sample_db, monkeypatch)
     r = client.get("/")
     assert r.status_code == 200
-    css = (
-        Path(__file__).parents[1] / "app" / "web" / "static" / "app.css"
-    ).read_text()
-    # Whitespace-tolerant: pins the rule and declaration, not its formatting.
-    assert re.search(r":where\(\s*\.link\s*\)\s*\{[^}]*display:\s*inline-flex;", css)
-    # The hero nav is a gap-separated chip row, not inline middot-separated pills.
-    assert '<p class="link-row subtle">' in r.text
-    hero = r.text.split('<header class="hero">')[1].split("</header>")[0]
-    assert "link-row" in hero
-    assert "·" not in re.sub(r"<[^>]+>", "", hero)
+    css = (Path(__file__).parents[1] / "app/web/static/foundation/components.css").read_text()
+    assert re.search(r"\.fn-actions\s*\{[^}]*display:flex;[^}]*flex-wrap:wrap;[^}]*gap:var\(--space-2\)", css)
+    assert re.search(r"\.btn\s*\{[^}]*display:inline-flex;", css)
+    assert '/static/foundation/components.css' in r.text
+    attention = re.search(r'<nav class="fn-actions home-attention"[^>]*>(.*?)</nav>', r.text, re.S)
+    assert attention is not None
+    assert 'aria-label="Needs attention"' in r.text
+    assert 'href="/review"' in attention[1]
+    assert 'Review (1)' in attention[1]
+    hero = r.text.split('<header class="fn-page-head">')[1].split("</header>")[0]
+    assert '<h1>Home</h1>' in hero
+    assert 'href="/manage"' not in hero
 
 
 def test_dashboard_discloses_transactions_excluded_from_totals(sample_db, monkeypatch):
@@ -78,7 +93,11 @@ def test_dashboard_discloses_transactions_excluded_from_totals(sample_db, monkey
 
     response = _client(sample_db, monkeypatch).get("/")
     assert response.status_code == 200
-    assert "1 transaction(s) are excluded from the totals above" in response.text
+    assert "1 transaction is excluded from these totals because flow meaning or required provenance is incomplete." in response.text
+    totals = re.search(r'<section class="home-stats"[^>]*>(.*?)</section>', response.text, re.S)
+    assert totals is not None
+    assert re.findall(r'<a class="stat-number"[^>]*>(.*?)</a>', totals[1]) == ['$0.00', '$0.00', '$0.00']
+    assert "Review excluded movements" in response.text
     assert 'href="/activity?semantic_review=1&amp;date_from=2026-06-01&amp;date_to=2026-06-30"' in response.text
 
 
@@ -88,7 +107,7 @@ def test_partials_and_health(sample_db, monkeypatch):
     assert client.get("/categories").status_code == 200
     insights = client.get("/insights")
     assert insights.status_code == 200
-    assert "budget vs actual" in insights.text
+    assert "Budget vs actual" in insights.text
     r = client.get("/healthz")
     assert r.status_code == 200
     assert r.text.strip() == "ok"

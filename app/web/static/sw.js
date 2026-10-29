@@ -6,7 +6,9 @@ const APP_SHELL = [
   "/upload",
   "/processing",
   "/manifest.webmanifest",
-  "/static/app.css",
+  "/static/foundation/vendor/bootstrap.min.css",
+  "/static/foundation/tokens.css",
+  "/static/foundation/components.css",
   "/static/theme.js",
   "/static/capture-store.js",
   "/static/capture-outbox.js",
@@ -17,12 +19,32 @@ const APP_SHELL = [
   "/static/icon-maskable-512.png"
 ];
 
+// Discover page-owned styles from the rendered shell, so an offline first
+// install does not depend on an earlier online CSS request. Only local static
+// styles are eligible; there is no remote asset transport here.
+async function cacheShell(cache) {
+  await cache.addAll(APP_SHELL);
+  const styles = new Set();
+  for (const path of ["/", "/upload", "/processing"]) {
+    const response = await cache.match(path);
+    const html = await response.text();
+    for (const match of html.matchAll(/<link\b[^>]*>/gi)) {
+      const rel = /\brel\s*=\s*["']([^"']+)["']/i.exec(match[0]);
+      const href = /\bhref\s*=\s*["']([^"']+)["']/i.exec(match[0]);
+      if (!rel || !href || !rel[1].split(/\s+/).includes("stylesheet")) continue;
+      const url = new URL(href[1], self.location.origin);
+      if (url.origin === self.location.origin && url.pathname.startsWith("/static/")) {
+        styles.add(url.href);
+      }
+    }
+  }
+  await cache.addAll(Array.from(styles));
+}
+
 self.addEventListener("install", function (event) {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(function (cache) {
-        return cache.addAll(APP_SHELL);
-      })
+      .then(cacheShell)
       .then(function () {
         return self.skipWaiting();
       })

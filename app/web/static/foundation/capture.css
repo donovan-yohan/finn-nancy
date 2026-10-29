@@ -1,0 +1,72 @@
+/* Capture and statement composition. State and persistence remain feature-owned. */
+.fn-capture-stack { display:grid; gap:var(--space-8); }
+.fn-capture-upload { max-width:640px; }
+.capture-page-form { display:grid; gap:var(--space-6); }
+.fn-capture-section { min-width:0; border-top:1px solid var(--line); }
+.fn-capture-section-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--space-3); padding-block:var(--space-4); }
+.capture-count { font-variant-numeric:tabular-nums; color:var(--muted); }
+.capture-sync-note,.capture-detail { color:var(--muted); font-size:var(--small); }
+.capture-sync-note:not(:empty) { margin-bottom:var(--space-4); max-width:65ch; }
+.capture-status-list { min-width:0; }
+.capture-status-item { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:var(--space-4); padding-block:var(--space-4); border-bottom:1px solid var(--line); }
+.capture-status-copy { display:grid; min-width:0; gap:var(--space-1); overflow-wrap:anywhere; }
+.capture-status-copy strong { font-weight:600; }
+.capture-state { color:var(--finn); font-size:var(--small); font-weight:600; }
+.capture-status-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:var(--space-2); max-width:100%; }
+/* capture-outbox.js emits these existing hooks, not Bootstrap classes. */
+.capture-status-actions .compact-action { display:inline-flex; align-items:center; justify-content:center; min-height:var(--control); padding:10px 16px; border:1px solid var(--control-line); border-radius:var(--radius); background:var(--canvas); color:var(--ink); font:inherit; font-weight:500; text-decoration:none; white-space:normal; overflow-wrap:anywhere; }
+.capture-status-actions .compact-action:hover { background:var(--hover); }
+.capture-error,.capture-status-item.state-failed .capture-state,.doc-status.failed { color:var(--danger); }
+.capture-error { font-size:var(--small); }
+.doc-status { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-2); overflow-wrap:anywhere; }
+.doc-status .btn { margin-block:var(--space-1); }
+.fn-capture-results:not(:empty) { display:grid; gap:var(--space-3); margin-top:var(--space-6); }
+.fn-capture-empty { padding-block:var(--space-6); }
+.fn-capture-pagination { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--space-4); padding-block:var(--space-6); }
+.fn-capture-meta { color:var(--muted); font-size:var(--small); }
+.fn-capture-state { display:inline-block; border:1px solid var(--line); border-radius:var(--radius); padding:var(--space-1) var(--space-2); color:var(--ink); }
+.fn-capture-context { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--space-4); padding-bottom:var(--space-4); }
+.fn-capture-context>div { display:grid; align-content:start; gap:var(--space-1); min-width:0; overflow-wrap:anywhere; }
+.fn-capture-context strong { font-weight:500; }
+.fn-capture-intro { max-width:65ch; margin-bottom:var(--space-6); }
+.fn-capture-notice { padding:var(--space-4); border:1px solid var(--line); border-radius:var(--radius); overflow-wrap:anywhere; }
+.fn-capture-warning { color:var(--danger); }
+.fn-capture-diagnostics { display:grid; gap:var(--space-2); margin-block:var(--space-4); }
+.fn-capture-diagnostic { display:block; padding:var(--space-3) var(--space-4); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); overflow-wrap:anywhere; }
+.fn-capture-table { overflow-x:auto; margin-block:var(--space-4); }
+.fn-capture-table .table { --bs-table-bg:var(--canvas); --bs-table-color:var(--ink); --bs-table-border-color:var(--line); margin-bottom:0; }
+.fn-capture-table .table th { color:var(--muted); font-size:var(--small); font-weight:500; }
+.fn-capture-table .table :is(th,td) { padding:var(--space-3) var(--space-4); vertical-align:top; }
+.fn-capture-table .table :is(th,td):first-child { padding-left:0; }
+.fn-capture-table .table :is(th,td):last-child { padding-right:0; }
+.fn-capture-money { font-variant-numeric:tabular-nums; }
+.fn-capture-table caption { caption-side:top; color:var(--muted); font-size:var(--small); }
+.fn-capture-scroll-hint { display:none; }
+.fn-capture-editor { max-width:640px; }
+.statement-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-4); }
+.statement-form-grid>.form-label { display:grid; gap:var(--space-2); align-content:start; margin:0; min-width:0; }
+.statement-form-grid>.form-label :is(input,select) { min-width:0; width:100%; font-weight:400; }
+.statement-form-wide { grid-column:1/-1; min-width:0; }
+.statement-csv-fields { border:0; border-block:1px solid var(--line); padding-block:var(--space-6); margin-block:var(--space-2); min-width:0; }
+.statement-csv-fields legend { float:none; width:auto; margin-bottom:var(--space-2); font-size:1rem; color:var(--ink); font-weight:600; }
+.statement-csv-fields>p { margin-bottom:var(--space-4); }
+.fn-capture-section>p,.fn-capture-section>form>p { margin-bottom:var(--space-4); }
+.fn-capture-section>form:not(.statement-form-grid) { margin-block:var(--space-6); }
+.upload-run-link { display:flex; flex-wrap:wrap; gap:var(--space-2) var(--space-4); align-items:center; }
+.fn-capture-run .run-counts { display:flex; flex-wrap:wrap; gap:var(--space-2) var(--space-6); padding-block:var(--space-4); border-block:1px solid var(--line); }
+.fn-capture-run .run-counts strong { font-variant-numeric:tabular-nums; }
+.fn-capture-run .run-heading { margin-top:var(--space-6); padding-bottom:var(--space-3); border-bottom:1px solid var(--line); }
+.fn-capture-run .run-item { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:var(--space-2) var(--space-4); padding-block:var(--space-4); border-bottom:1px solid var(--line); }
+.fn-capture-run .run-item-copy { display:grid; gap:var(--space-1); min-width:0; overflow-wrap:anywhere; }
+.fn-capture-run .run-item-copy strong { font-weight:600; }
+.fn-capture-run .run-item-copy .fn-muted { font-size:var(--small); }
+.fn-capture-run .run-working-note { margin-top:var(--space-3); }
+@media (max-width:767px) {
+  .fn-capture-scroll-hint { display:inline; }
+  .capture-status-item,.fn-capture-run .run-item { grid-template-columns:minmax(0,1fr); }
+  .capture-status-actions { justify-content:flex-start; }
+  .fn-capture-context { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:479px) {
+  .statement-form-grid,.fn-capture-context { grid-template-columns:minmax(0,1fr); }
+}

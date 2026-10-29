@@ -8,44 +8,61 @@
         "text": "#f5f5f5",
         "muted": "#a3a3a3",
         "panel": "#0a0a0a",
-        "inset": "#141414",
+        "inset": "#1a1a1a",
         "border": "#333333",
+        "control-line": "#797979",
+        "danger": "#ff6b6b",
+        "on-finn": "#000000",
+        "focus": "#52a8ff",
         "light-canvas": "#ffffff",
         "light-text": "#171717",
         "light-muted": "#595959",
         "light-panel": "#fafafa",
-        "light-inset": "#f5f5f5",
+        "light-inset": "#f2f2f2",
         "light-border": "#d4d4d4",
+        "light-control-line": "#7c7c7c",
         "light-facts": "#0064d9",
-        "light-interpretation": "#bc4700"
+        "light-interpretation": "#bc4700",
+        "light-danger": "#b42323",
+        "light-on-finn": "#ffffff",
+        "light-focus": "#0064d9"
       },
       "fontFamily": {
         "heading": [
-          "system-ui"
+          "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+        ],
+        "section": [
+          "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
         ],
         "body-md": [
-          "system-ui"
+          "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
         ],
         "label": [
-          "system-ui"
+          "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
         ]
       },
       "fontSize": {
         "heading": [
-          "1.5rem",
+          "1.75rem",
           {
-            "letterSpacing": "-0.025em",
-            "fontWeight": "600"
+            "letterSpacing": "-0.035em",
+            "fontWeight": "650"
+          }
+        ],
+        "section": [
+          "1.125rem",
+          {
+            "fontWeight": "650"
           }
         ],
         "body-md": [
-          "0.875rem",
+          "0.9375rem",
           {
             "fontWeight": "400"
           }
         ],
         "label": [
-          "0.75rem",
+          "0.8125rem",
           {
             "fontWeight": "500"
           }
@@ -53,14 +70,16 @@
       },
       "borderRadius": {
         "sm": "6px",
-        "md": "8px"
+        "md": "6px"
       },
       "spacing": {
         "xs": "4px",
         "sm": "8px",
         "md": "12px",
         "lg": "16px",
-        "xl": "24px"
+        "xl": "24px",
+        "xxl": "32px",
+        "xxxl": "48px"
       }
     }
   }

@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: Finn Nancy
-description: A compact financial workspace. Blue records facts; orange marks interpretation.
+description: A local-first financial workspace. Blue records facts; orange marks interpretation.
 colors:
   primary: "#52a8ff"
   secondary: "#ff8a3d"
@@ -9,42 +9,57 @@ colors:
   text: "#f5f5f5"
   muted: "#a3a3a3"
   panel: "#0a0a0a"
-  inset: "#141414"
+  inset: "#1a1a1a"
   border: "#333333"
+  control-line: "#797979"
+  danger: "#ff6b6b"
+  on-finn: "#000000"
+  focus: "#52a8ff"
   light-canvas: "#ffffff"
   light-text: "#171717"
   light-muted: "#595959"
   light-panel: "#fafafa"
-  light-inset: "#f5f5f5"
+  light-inset: "#f2f2f2"
   light-border: "#d4d4d4"
+  light-control-line: "#7c7c7c"
   light-facts: "#0064d9"
   light-interpretation: "#bc4700"
+  light-danger: "#b42323"
+  light-on-finn: "#ffffff"
+  light-focus: "#0064d9"
 typography:
   heading:
-    fontFamily: system-ui
-    fontSize: 1.5rem
-    fontWeight: 600
+    fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontSize: 1.75rem
+    fontWeight: 650
     lineHeight: 1.2
-    letterSpacing: "-0.025em"
-  body-md:
-    fontFamily: system-ui
-    fontSize: 0.875rem
-    fontWeight: 400
-    lineHeight: 1.45
-  label:
-    fontFamily: system-ui
-    fontSize: 0.75rem
-    fontWeight: 500
+    letterSpacing: "-0.035em"
+  section:
+    fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontSize: 1.125rem
+    fontWeight: 650
     lineHeight: 1.4
+  body-md:
+    fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontSize: 0.9375rem
+    fontWeight: 400
+    lineHeight: 1.5
+  label:
+    fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    fontSize: 0.8125rem
+    fontWeight: 500
+    lineHeight: 1.5
 rounded:
   sm: 6px
-  md: 8px
+  md: 6px
 spacing:
   xs: 4px
   sm: 8px
   md: 12px
   lg: 16px
   xl: 24px
+  xxl: 32px
+  xxxl: 48px
 components:
   bookkeeping-label-dark:
     backgroundColor: "{colors.inset}"
@@ -76,67 +91,161 @@ components:
   muted-light:
     backgroundColor: "{colors.light-panel}"
     textColor: "{colors.light-muted}"
+  button-primary-dark:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-finn}"
+    rounded: "{rounded.sm}"
+    height: 48px
+  button-primary-light:
+    backgroundColor: "{colors.light-facts}"
+    textColor: "{colors.light-on-finn}"
+    rounded: "{rounded.sm}"
+    height: 48px
+  error-dark:
+    backgroundColor: "{colors.panel}"
+    textColor: "{colors.danger}"
+  error-light:
+    backgroundColor: "{colors.light-panel}"
+    textColor: "{colors.light-danger}"
 ---
 
 ## Overview
 
-Finn Nancy is a financial workspace, not a dashboard demonstration. Put transactions and the next useful action ahead of commentary. One page heading is enough. Use a small vocabulary of surfaces, controls and spacing across bookkeeping and planning.
+Finn Nancy is a local-first household financial workspace. Home, Activity, capture,
+evidence/reconciliation, close/reports, banking, management and Nancy's planning
+pages share the same application foundation. Sandbox remains a separate transport
+and explicitly identified data context, not the scope of this design system.
+Imported observations are not booked transactions.
 
-The current implementation is an isolated Plaid Sandbox candidate. Its imported rows are not ledger transactions. This design must not make them appear reconciled, categorized or booked.
+The runtime authority is `app/web/static/foundation/tokens.json`, with explicit
+`global`, `light` and `dark` groups. Its generated `tokens.css` and unchanged
+Bootstrap 5.3.8 CSS load before the shared `components.css` adapter in
+`foundation_base.html`. Feature sheets compose those primitives; they must not
+create competing palettes. `base.html` is only an inheritance compatibility entry.
+There is no runtime `app.css`, CDN, external font or Bootstrap JavaScript dependency.
+Native HTML and existing HTMX/feature scripts own interaction.
+
+This file is a portable description of those runtime tokens, not another theme
+engine. The root `tokens.json` (DTCG) and `tailwind.theme.json` (Tailwind v3) are
+exports of this file, not runtime inputs. CLI 0.4.0 exports typography sizes,
+weights and font families but omits `lineHeight`; the source spec and runtime
+adapter retain that contract. Their historical color names map to
+foundation roles: primary/facts = finn, secondary/interpretation = nancy,
+neutral/canvas = canvas, text = ink, panel = surface, inset = hover, border = line.
+`tests/test_design_tokens.py` enforces that mapping in both themes, including type,
+spacing, control size, focus and control boundaries.
+
+Regenerate the portable exports with the existing `@google/design.md` 0.4.0 CLI:
+
+```sh
+npx --offline @google/design.md lint DESIGN.md
+npx --offline @google/design.md export --format dtcg DESIGN.md > tokens.json
+npx --offline @google/design.md export --format json-tailwind DESIGN.md > tailwind.theme.json
+```
+
+The foundation snapshot and Bootstrap hashes are pinned in
+`app/web/static/foundation/SOURCE.json`. The snapshot's upstream
+`build_reference.py` JSON-to-CSS adapter is not installed in this repository.
+Do not claim a local regeneration command or edit generated runtime CSS by hand.
+A token change must update the canonical JSON, regenerate with the upstream
+adapter, review the pinned hashes and reconcile this specification/exports.
 
 ## Colors
 
-Use a true black page in dark mode and a white page in light mode. Panels and separators are neutral gray, never navy. There are no gradients, glass effects, glows or floating card shadows.
+Use a black dark canvas, white light canvas and neutral gray surfaces. No navy,
+gradients, glass blur, glows or floating card shadows. Blue identifies bookkeeping
+actions and recorded facts. Orange identifies categories, budgets, planning and
+interpretation. Orange is not an expense sign or a generic warning. Signed money
+is neutral unless validated financial meaning justifies emphasis. A positive sign
+alone never means income.
 
-Blue identifies bookkeeping actions and recorded facts. Orange identifies categories, budgets, insights, estimates and interpretation. Orange does not mean expense. A positive sign alone does not mean income. A negative sign alone does not mean spending. Keep signed amounts neutral unless a validated accounting meaning supports further emphasis.
-
-Use theme-specific foregrounds rather than one low-contrast accent everywhere. Dark blue `#52a8ff` and orange `#ff8a3d` contrast with black at 8.40:1 and 8.95:1. Light blue `#0064d9` and orange `#bc4700` contrast with white at 5.49:1 and 5.20:1. The brighter dark-mode orange may be used as a fill with black text, not as small orange text on white. Validate foregrounds on actual panel/tinted backgrounds too. Errors and destructive actions have their own explicit semantics.
-
-The existing CSS variables `--finn` and `--nancy` remain the implementation names for these functional roles. The application stylesheet is the runtime source of truth; this file defines intent and the core token values, not a separate theme engine.
+Use theme-specific accents on the actual canvas, surface and hover backgrounds.
+Normal text, including muted/semantic text, must meet 4.5:1. Control boundaries and
+visible focus must meet 3:1 against adjacent surfaces. Separator lines are not
+control boundaries. Danger has its own explicit label and role; color alone does
+not communicate error or approval. The primary button uses `on-finn`, not a
+hard-coded white foreground in dark mode.
 
 ## Typography
 
-Use the installed system sans-serif stack. No external font request is required. Body UI text is approximately 14px, secondary text 12px, and page headings 24px. Headings and merchant names use moderate weight. Avoid excessive uppercase, widely tracked micro-labels and oversized headline numbers. Monetary values use tabular numerals and retain sign, precision and currency.
+Use the installed system stack. Runtime sizes are `.9375rem` body, `.8125rem`
+metadata, `1.125rem` section heading and `1.75rem` destination heading, equivalent
+to 15/13/18/28px at the default 16px root. Body line height is 1.5. Headings use
+600–650 weight, ordinary labels 500. Do not compensate for enlarged text by
+shrinking fonts. Amounts use tabular lining numerals; preserve sign, currency and
+all cents, allowing grouping-aware line breaks for extreme values rather than
+ellipsis or rounding. Unknown currency stays unknown.
 
 ## Layout
 
-Use the 4/8/12/16/24px spacing scale. Reduce nesting and repeated labels before reducing text size. Desktop rows align description, account/connection owner, date, source status and amount. Mobile uses the same transaction DOM with a compact two-line summary and full-width disclosure. Ordinary interactive rows remain at least 44px high. Do not squeeze long or unknown values into clipped cells to meet a density target.
+The shared shell is at most 1200px wide, with 32px minimum side gutters at 768px
+and above, 16px below. The header is in normal flow, at least 80px on desktop;
+phone navigation wraps onto a second row. Page headings, forms, toolbars, lists
+and section separators share one start edge. Heading spacing is 32px top/24px
+bottom on desktop, 24px top on phone. Use the 4/8/12/16/24/32/48px spacing scale.
+Editors are at most 640px; ordinary prose is at most 65ch.
 
-Keep search and the filter disclosure in one compact toolbar. Less common filters expand below it. The result count states the current range and exact total. Pagination preserves the selected filters. Do not build a saved-view or bulk-action feature merely because the reference application has one.
+Labels, prose, empty/error messages and forms start-align. Amount columns end-align.
+Center only the outer shell, labels within their control targets, vertically aligned
+row groups, or the outer box of an actual blocking dialog. Never center ordinary
+page copy because space is available. Controls and summaries have a 48px minimum
+target, not a fixed height. Rows grow with content. Reflow long labels and actions;
+never hide money or consequential warnings to satisfy a density target.
 
 ## Elevation & Depth
 
-Use one-pixel separators and restrained surface differences. Depth is structural, not decorative. Focus rings remain obvious in both themes. Expanded evidence is visually attached to its row.
+Use one-pixel separators and restrained surface changes. Evidence is attached to
+its row. No decorative elevation. The shared visible focus is an opaque 3px
+`--focus` outline with 3px offset. Do not override it with translucent outlines.
+Normal-flow navigation must not obscure evidence anchors. Motion is limited to
+100ms feedback; reduced motion sets durations to zero and disables smooth scrolling.
 
 ## Shapes
 
-Controls use 6px corners and containers use at most 8px corners. Prefer a continuous transaction list over a stack of mobile cards. Status labels are compact text or subtle markers, not a different pill for every fact.
+Use the canonical 6px corner for controls and containers. Prefer continuous rows
+over stacked decorative cards. Status needs text, not a different pill for every
+fact. Checkboxes have a 20px visible box inside a labelled 48px target.
 
 ## Components
 
-### Transaction rows
+Use Bootstrap `.btn` variants, `.form-control`, `.form-select`, `.form-label`,
+`.form-check-input` and `.table`, adapted by `components.css`. Reuse `fn-*` shell,
+page-header, toolbar, action, disclosure, state and table recipes and existing
+Jinja macros. Feature sheets own domain composition, not global primitive resets.
+Persistent labels belong above fields, helper/error text below the affected field.
+Use native disabled/required/invalid semantics and keep draft values on failed saves.
 
-Activity uses native disclosure controls. Home uses links to account-scoped activity. Do not pretend the disclosure list is an ARIA data grid. Desktop visual column headings help scanning; each row retains a useful native accessible name.
+Activity uses native disclosure, not an ARIA grid. Home has one real Home heading,
+period-scoped Money in, Money out and Net links, and a visible warning/link for
+transactions excluded because meaning or provenance is incomplete. Do not invent
+categories, insights or balances to fill a layout. Reports link to contributing
+rows and keep blocked/frozen/unsupported-currency states distinguishable.
 
-Collapsed rows show merchant, signed amount/currency, date, account and enough connection ownership to distinguish identical account names. Source status such as pending or removed remains inspectable. Excluded accounts are not hidden by default. Expanded evidence preserves complete merchant text, unknown accounting meaning, not-booked state and nested raw provenance. Provider identifiers stay out of the default scan view.
+Evidence tables scroll locally in named keyboard-focusable regions, not at the
+page level. The PDF lens preserves normalized bounding-box coordinates and a
+readable source/row relationship. Preserve source links, revision/fingerprint
+fields, confirmations, approval gates and undo authority through presentation
+changes. Statement completeness is not inferred from a successful bank sync.
 
-The API payload, integer-cent arithmetic, currency treatment and row identity do not change with the layout. No category, budget, balance or insight is invented to fill an empty column.
+Appearance follows the system by default with explicit Light/Dark choices.
+Its non-financial preference is independent of capture/transaction/session storage.
+Processing owns durable device/server progress. Notifications are transient
+feedback, never authority for Saved. Pending originals stay device-owned until
+committed server acknowledgement; Saved does not mean parsed, approved or closed.
 
-### Appearance
-
-Follow the operating system by default, with explicit Light and Dark choices. Any retained theme preference is non-financial and independent of transaction, session and capture data. Browser chrome follows the selected theme.
-
-### Labels and copy
-
-A visible label must identify a control or field, distinguish otherwise ambiguous information, communicate an actionable state, or prevent a consequential misunderstanding. If removing it changes none of those, remove it.
-
-Remove repeated page/section headings, generic eyebrows, routine enabled-state narration and implementation commentary. Show loading/error text only while it is true and useful. Keep accessible control names, exact counts, dates/currencies, a single Sandbox marker, concise Not booked context and decision-critical consent or uncertain-operation warnings. Recovery guidance must not claim that an uncertain remote exchange or revocation succeeded.
+Product copy is professional sentence case. One heading per destination. Buttons
+name an action; labels identify a field. Keep exact counts, dates/currencies,
+unknowns, Sandbox/Not booked context, consent, incomplete totals and uncertain
+outcomes. Put technical provenance behind deliberate disclosure, not essential
+uncertainty. A failed read is not an empty account, and an uncertain write is not
+a definite success or failure. See [docs/UI_DESIGN.md](docs/UI_DESIGN.md) for
+vocabulary, route ownership and verification boundaries.
 
 ## Do's and Don'ts
 
-- Do keep the safety and accounting boundaries while removing redundant prose.
-- Do test mobile, desktop, long names, extreme amounts, unknown currencies and keyboard disclosure in both themes.
-- Do preserve complete signed amounts and distinguish accounts across connections.
-- Do use orange for interpretation without fabricating interpretation.
-- Do not add decoration, empty insights, duplicate data trees, fake sort buttons or explanatory card stacks.
-- Do not shrink touch targets or hide errors to make a screen look clean.
+- Preserve signed integer cents, validated flow meaning, approved splits and evidence.
+- Keep review, reconciliation, approvals, retry, close guards and recovery reachable.
+- Exercise real routes, forms, HTMX fragments and browser states, not only token strings.
+- Test both themes, keyboard focus, local scrolling, long names and enlarged text.
+- Do not add fabricated data, fake controls, another component framework or palette.
+- Treat inheritance coverage as structural adoption, not proof that every state was accepted.

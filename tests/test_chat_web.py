@@ -162,5 +162,5 @@ def test_transactions_partial_contains_why_affordance(app_env):
 
     assert response.status_code == 200
     assert 'data-why-url="/chat?why=3"' in response.text
-    assert 'href="/chat?why=3">why?</a>' in response.text
+    assert 'href="/chat?why=3">Why this transaction?</a>' in response.text
     assert "hold for why" not in response.text

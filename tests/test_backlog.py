@@ -530,7 +530,7 @@ def test_backlog_keeps_cleared_and_assigned_but_unconfirmed_rows_actionable(
     assert "reconciled" in response.text
     assert f'id="txn-{assigned_id}"' in response.text
     assert "Assigned Without Evidence" in response.text
-    assert "current category: Groceries" in response.text
+    assert "Current category: Groceries" in response.text
 
 
 def test_backlog_shows_multi_split_blocker_but_disables_batch_approval(app_env):
@@ -588,7 +588,7 @@ def test_backlog_shows_multi_split_blocker_but_disables_batch_approval(app_env):
         f'aria-label="Batch approval unavailable for multi-split transaction '
         f'{transaction_id}"'
     ) in response.text
-    assert f'href="/txn/{transaction_id}/edit">review splits</a>' in response.text
+    assert f'href="/txn/{transaction_id}/edit">Review splits</a>' in response.text
 
 
 def test_backlog_approval_seeds_classification_label_and_drops_uncategorized_rate(

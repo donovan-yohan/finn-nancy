@@ -94,9 +94,12 @@ def test_unknown_flow_is_visible_filterable_and_warns_about_excluded_totals(app_
     assert "Unknown flows and movements without required provenance" in page.text
     assert "ambiguous bank text" in page.text
     assert "orphan owned transfer" in page.text
-    assert f"#{transaction_id} · unknown · needs review" in page.text
+    row = page.text.split(f'id="transaction-{transaction_id}"', 1)[1].split("</details>", 1)[0]
+    assert f"#{transaction_id}" in row
+    assert "<dt>Accounting flow</dt><dd>unknown</dd>" in row
+    assert "Needs accounting review" in row
     assert "active provenance relationship is required" in page.text
-    assert '<input type="hidden" name="semantic_review" value="1">' in page.text
+    assert re.search(r'<input[^>]*type="checkbox"[^>]*name="semantic_review" value="1" checked', page.text)
 
 
 def test_filters_compose_category_and_date_range(app_env):
@@ -120,7 +123,8 @@ def test_filters_compose_category_and_date_range(app_env):
 def test_empty_state_when_nothing_matches(app_env):
     r = _client(app_env).get("/transactions", params={"q": "zzz-no-such-merchant"})
     assert _row_count(r.text) == 0
-    assert "no transactions match" in r.text
+    assert "No matching activity." in r.text
+    assert 'href="/activity">Clear filters</a>' in r.text
 
 
 def test_activity_full_page_ignores_stray_cursor(app_env):
@@ -184,7 +188,7 @@ def test_keyset_pagination_pages_beyond_fifty(app_env):
     assert _row_count(first.text) == 50
     cursor = _cursor_from(first.text)
     assert cursor is not None
-    assert "load more" in first.text
+    assert "Load more" in first.text
 
     # Second page via the cursor: remaining 30 rows (80 total - 50), no further cursor.
     second = client.get("/transactions", params={"cursor": cursor})

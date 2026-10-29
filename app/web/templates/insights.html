@@ -1,16 +1,18 @@
-{% extends "base.html" %}
-{% block title %}insights · finn-nancy{% endblock %}
+{% extends "foundation_base.html" %}
+{% block styles %}{{ super() }}<link rel="stylesheet" href="/static/foundation/nancy.css">{% endblock %}
+{% block title %}Insights · Finn Nancy{% endblock %}
 {% block content %}
-<header class="hero compact">
+<div class="fn-nancy">
+<header class="fn-page-head">
   <div>
-    <p class="eyebrow nancy">Nancy</p>
     <h1>Insights</h1>
     {% if selected_month %}
-    <p><a class="link" href="/statements?month={{ selected_month }}">open evidence-backed statement</a></p>
+    <p><a class="nancy-link" href="/statements?month={{ selected_month }}">View statement</a></p>
     {% endif %}
   </div>
-  <form class="inline-form" method="get" action="/insights">
-    <select name="month" onchange="this.form.submit()">
+  <form class="fn-field nancy-period" method="get" action="/insights">
+    <label class="form-label" for="nancy-month">Month</label>
+      <select class="form-select" id="nancy-month" name="month" onchange="this.form.submit()">
       {% for m in months %}
       <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
       {% endfor %}
@@ -18,64 +20,48 @@
   </form>
 </header>
 
-<div class="grid">
-  <details class="card span-2 home-history nancy-card">
-    <summary class="nancy">Monthly summary</summary>
-    <div class="card-head">
-      <div><p class="eyebrow nancy">monthly summary</p><h2>{{ selected_month }}</h2></div>
-      <form method="post" action="/insights/prose/generate">
-        <input type="hidden" name="month" value="{{ selected_month }}">
-        {% if insight_prose %}
-        <button class="ghost compact-action" type="submit">Regenerate</button>
-        {% else %}
-        <button class="ghost compact-action" type="submit">Generate monthly summary</button>
-        {% endif %}
-      </form>
-    </div>
-    {% if insight_prose %}
-    <div class="prose-body">{{ insight_prose.body }}</div>
-    <p class="subtle compact-head">Generated {{ insight_prose.created_at }} · {{ insight_prose.model }}</p>
-    {% else %}
-    <p class="subtle">Generate a summary, then refresh when processing finishes.</p>
-    {% endif %}
-  </details>
+{% if not budget_rows and not runway and not planning_insight_cards and not subscription_watchlist and not recurring and not recurring_deltas and not trends and not top_merchants %}
+<p class="subtle">No activity yet. <a href="/upload">Upload a receipt or statement</a> to get started.</p>
+{% else %}
+<div class="nancy-sections">
 
-  <section class="stat-strip span-2" aria-label="budget summary">
-    <article class="stat-card nancy-card">
-      <p class="eyebrow nancy">budget</p>
-      <p class="stat-number">{{ budget_summary.budget_cents | money }}</p>
+
+  <section class="nancy-totals" aria-label="budget summary">
+    <article class="nancy-total">
+      <p class="nancy-label">Budget</p>
+      <p class="stat-number">{{ budget_summary.budget_cents | money | replace(',', ',<wbr>') | safe }}</p>
     </article>
-    <article class="stat-card">
-      <p class="eyebrow">actual</p>
-      <p class="stat-number negative">{{ budget_summary.actual_cents | money }}</p>
+    <article class="nancy-total">
+      <p class="nancy-label">Actual</p>
+      <p class="stat-number">{{ budget_summary.actual_cents | money | replace(',', ',<wbr>') | safe }}</p>
     </article>
-    <article class="stat-card emphasis">
-      <p class="eyebrow">remaining</p>
-      <p class="stat-number {{ budget_summary.remaining_class }}">{{ budget_summary.remaining_cents | money }}</p>
+    <article class="nancy-total">
+      <p class="nancy-label">Remaining</p>
+      <p class="stat-number {{ budget_summary.remaining_class }}">{{ budget_summary.remaining_cents | money | replace(',', ',<wbr>') | safe }}</p>
     </article>
-    <article class="stat-card">
-      <p class="eyebrow">underspend</p>
-      <p class="stat-number positive">{{ budget_summary.underspend_cents | money }}</p>
+    <article class="nancy-total">
+      <p class="nancy-label">Underspend</p>
+      <p class="stat-number">{{ budget_summary.underspend_cents | money | replace(',', ',<wbr>') | safe }}</p>
     </article>
   </section>
 
-  <section class="card span-2">
-    <div class="card-head">
-      <div><p class="eyebrow nancy">budget vs actual</p><h2>{{ selected_month }}</h2></div>
-      <a class="link nancy-link" href="/categories">edit budget</a>
+  <section class="nancy-section">
+    <div class="nancy-section-head">
+      <div><h2>Budget vs actual</h2></div>
+      <a class="nancy-link" href="/categories">Edit budget</a>
     </div>
     {% if budget_rows %}
     <div class="budget-list">
       {% for row in budget_rows %}
       <article class="budget-row">
         <div>
-          <p><span class="dot" style="background: {{ row.color }}"></span><b>{{ row.category_name }}</b></p>
-          <p class="subtle">{{ row.actual_cents | money }} of {{ row.budget_cents | money }}</p>
+          <p><b class="nancy-category">{{ row.category_name }}</b></p>
+          <p class="subtle">{{ row.actual_cents | money | replace(',', ',<wbr>') | safe }} of {{ row.budget_cents | money | replace(',', ',<wbr>') | safe }}</p>
         </div>
-        <div class="budget-meter {{ 'over' if row.remaining_cents < 0 else '' }}">
+        <div class="budget-meter {{ 'over' if row.remaining_cents < 0 else '' }}" aria-hidden="true">
           <i style="width: {{ row.progress_width }}"></i>
         </div>
-        <div class="money {{ row.status_class }}">{{ row.remaining_cents | money }}</div>
+        <div class="money {{ row.status_class }}">{{ row.remaining_cents | money | replace(',', ',<wbr>') | safe }}<span class="subtle block">Remaining</span></div>
       </article>
       {% endfor %}
     </div>
@@ -84,47 +70,134 @@
     {% endif %}
   </section>
 
-  <section class="card nancy-card">
-    <div class="card-head">
-      <div><p class="eyebrow nancy">runway</p><h2>Cashflow</h2></div>
+  <section class="nancy-section">
+    <div class="nancy-section-head">
+      <div><h2>Planning suggestions</h2></div>
     </div>
-    {% if runway %}
-    <p class="big-number {{ 'negative' if runway.net_cents < 0 else 'positive' }}">{{ runway.net_cents | money }}</p>
-    <p class="subtle">cumulative net {{ runway.cumulative_net_cents | money }} &middot; runway {{ runway.runway_months if runway.runway_months is not none else 'n/a' }} months</p>
+    {% if planning_insight_cards %}
+    <div class="insight-card-list">
+      {% for card in planning_insight_cards %}
+      <article class="insight-card insight-{{ card.severity_class }}" data-card-key="{{ card.card_key }}">
+        <div class="insight-card-copy">
+          <p class="nancy-label">{{ card.reason_code }} · {{ card.confidence_label }} confidence</p>
+          <h3>{{ card.title }}</h3>
+          <p>{{ card.body }}</p>
+          {% for note in card.evidence_notes | default([]) %}
+          <p class="subtle">{{ note }}</p>
+          {% endfor %}
+          <p class="subtle">Suggested action: {{ card.suggested_action }}</p>
+          <p class="subtle">Review status: <strong>{{ card.current_action_label }}</strong></p>
+        </div>
+        <div class="insight-evidence">
+          {% if card.transaction_evidence_groups %}
+          <span class="db-pill evidence-pill">
+            <span>Transactions</span>
+            {% for group in card.transaction_evidence_groups %}
+            <span class="evidence-group">
+              <span class="subtle">{{ group.label }}</span>
+              {% for txn_id in group.transaction_ids %}
+              <a href="/txn/{{ txn_id }}/edit">#{{ txn_id }}</a>
+              {% endfor %}
+            </span>
+            {% if not loop.last %}<span class="subtle">&rarr;</span>{% endif %}
+            {% endfor %}
+          </span>
+          {% elif card.transaction_ids %}
+          <span class="db-pill evidence-pill">
+            <span>Transactions</span>
+            {% for txn_id in card.transaction_ids %}
+            <a href="/txn/{{ txn_id }}/edit">#{{ txn_id }}</a>
+            {% endfor %}
+          </span>
+          {% endif %}
+          {% if card.statement_line_evidence_groups and card.statement_line_ids %}
+          <span class="db-pill evidence-pill">
+            <span>Statement lines</span>
+            {% for group in card.statement_line_evidence_groups %}
+            <span class="evidence-group">
+              <span class="subtle">{{ group.label }}</span>
+              {% for line_id in group.statement_line_ids %}
+              <a href="/recon?month={{ selected_month }}#line-{{ line_id }}">#{{ line_id }}</a>
+              {% endfor %}
+            </span>
+            {% if not loop.last %}<span class="subtle">&rarr;</span>{% endif %}
+            {% endfor %}
+          </span>
+          {% elif card.statement_line_ids %}
+          <span class="db-pill evidence-pill">
+            <span>Statement lines</span>
+            {% for line_id in card.statement_line_ids %}
+            <a href="/recon?month={{ selected_month }}#line-{{ line_id }}">#{{ line_id }}</a>
+            {% endfor %}
+          </span>
+          {% endif %}
+          {% if card.category_ids %}
+          <span class="db-pill evidence-pill">
+            <span>Categories</span>
+            {% for cat_id in card.category_ids %}
+            <a href="/categories#category-{{ cat_id }}">#{{ cat_id }}</a>
+            {% endfor %}
+          </span>
+          {% endif %}
+        </div>
+        <div class="fn-actions">
+          <form class="fn-actions" method="post" action="/insights/cards/action">
+            <input type="hidden" name="card_key" value="{{ card.card_key }}">
+            <input type="hidden" name="month" value="{{ selected_month }}">
+            <button class="btn btn-outline-secondary" type="submit" name="action" value="accepted">Accept suggestion</button>
+            <button class="btn btn-outline-secondary" type="submit" name="action" value="dismissed">Dismiss</button>
+            <button class="btn btn-outline-secondary" type="submit" name="action" value="snoozed">Snooze</button>
+          </form>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
     {% else %}
-    <p class="subtle">No cashflow rows yet.</p>
+    <p class="subtle">No planning suggestions for {{ selected_month }}.</p>
     {% endif %}
   </section>
 
-  <section class="card nancy-card">
-    <div class="card-head">
-      <div><p class="eyebrow nancy">leisure / big-ticket</p><h2>{{ selected_month }}</h2></div>
-      <span class="db-pill">{{ big_ticket_threshold_cents | money }}</span>
+  <section class="nancy-section">
+    <div class="nancy-section-head">
+      <div><h2>Cash flow</h2></div>
     </div>
-    <div class="stacked-bar" aria-label="leisure versus big-ticket">
+    {% if runway %}
+    <p class="big-number {{ 'negative' if runway.net_cents < 0 else 'positive' }}">{{ runway.net_cents | money | replace(',', ',<wbr>') | safe }}</p>
+    <p class="subtle">Cumulative net {{ runway.cumulative_net_cents | money | replace(',', ',<wbr>') | safe }} &middot; Runway {% if runway.runway_months is not none %}{{ runway.runway_months }} months{% else %}unavailable{% endif %}</p>
+    {% else %}
+    <p class="subtle">No cash flow rows yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="nancy-section">
+    <div class="nancy-section-head">
+      <div><h2>Spending mix</h2></div>
+      <span class="subtle">Big-ticket threshold {{ big_ticket_threshold_cents | money | replace(',', ',<wbr>') | safe }}</span>
+    </div>
+    <div class="stacked-bar" aria-hidden="true">
       <i class="leisure" style="width: {{ leisure.leisure_width }}"></i>
       <i class="bigticket" style="width: {{ leisure.bigticket_width }}"></i>
       <i class="everyday" style="width: {{ leisure.everyday_width }}"></i>
     </div>
     <div class="legend">
-      <span><i class="legend-dot leisure"></i>leisure {{ leisure.leisure_cents | money }}</span>
-      <span><i class="legend-dot bigticket"></i>big-ticket {{ leisure.bigticket_cents | money }}</span>
-      <span><i class="legend-dot everyday"></i>everyday {{ leisure.everyday_cents | money }}</span>
+      <span><i class="legend-dot leisure"></i>Leisure {{ leisure.leisure_cents | money | replace(',', ',<wbr>') | safe }}</span>
+      <span><i class="legend-dot bigticket"></i>Big-ticket {{ leisure.bigticket_cents | money | replace(',', ',<wbr>') | safe }}</span>
+      <span><i class="legend-dot everyday"></i>Everyday {{ leisure.everyday_cents | money | replace(',', ',<wbr>') | safe }}</span>
     </div>
   </section>
 
   {% if trends %}
-  <section class="card">
-    <div class="card-head"><div><p class="eyebrow nancy">category trends</p><h2>Month over month</h2></div></div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>category</th><th class="money">spent</th><th class="money">change</th></tr></thead>
+  <section class="nancy-section">
+    <div class="nancy-section-head"><div><h2>Category trends</h2></div></div>
+    <div class="table-responsive" role="region" aria-label="Category trends" tabindex="0">
+      <table class="table nancy-table">
+        <thead><tr><th scope="col">Category</th><th scope="col" class="money">Spent</th><th scope="col" class="money">Change</th></tr></thead>
         <tbody>
           {% for t in trends %}
           <tr>
-            <td><span class="dot" style="background: {{ t.color }}"></span>{{ t.category_name }}</td>
-            <td class="money">{{ t.magnitude_cents | money }}</td>
-            <td class="money {{ t.delta_class }}">{{ t.magnitude_delta_cents | money }}</td>
+            <td><span class="nancy-category">{{ t.category_name }}</span></td>
+            <td class="money">{{ t.magnitude_cents | money | replace(',', ',<wbr>') | safe }}</td>
+            <td class="money {{ t.delta_class }}">{{ t.magnitude_delta_cents | money | replace(',', ',<wbr>') | safe }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -134,16 +207,16 @@
 
   {% endif %}
   {% if top_merchants %}
-  <section class="card">
-    <div class="card-head"><div><p class="eyebrow nancy">merchants</p><h2>Top spend</h2></div></div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>merchant</th><th class="money">spent</th><th class="money">count</th></tr></thead>
+  <section class="nancy-section">
+    <div class="nancy-section-head"><div><h2>Top merchants</h2></div></div>
+    <div class="table-responsive" role="region" aria-label="Top merchants" tabindex="0">
+      <table class="table nancy-table">
+        <thead><tr><th scope="col">Merchant</th><th scope="col" class="money">Spent</th><th scope="col" class="money">Count</th></tr></thead>
         <tbody>
           {% for m in top_merchants %}
           <tr>
             <td>{{ m.merchant }}</td>
-            <td class="money">{{ m.amount_cents | money }}</td>
+            <td class="money">{{ m.amount_cents | money | replace(',', ',<wbr>') | safe }}</td>
             <td class="money">{{ m.tx_count }}</td>
           </tr>
           {% endfor %}
@@ -153,21 +226,21 @@
   </section>
 
   {% endif %}
-  <section class="card span-2 nancy-card">
-    <div class="card-head">
-      <div><p class="eyebrow nancy">new recurring watchlist</p><h2>{{ selected_month }}</h2></div>
+  <section class="nancy-section">
+    <div class="nancy-section-head">
+      <div><h2>New recurring charges</h2></div>
     </div>
     {% if subscription_watchlist %}
-    <div class="table-wrap">
-      <table>
+    <div class="table-responsive" role="region" aria-label="Recurring charge candidates" tabindex="0">
+      <table class="table nancy-table">
         <thead>
           <tr>
-            <th>merchant</th>
-            <th>evidence</th>
-            <th class="money">estimate</th>
-            <th>next</th>
-            <th>decision</th>
-            <th>actions</th>
+            <th scope="col">Merchant</th>
+            <th scope="col">Evidence</th>
+            <th scope="col" class="money">Estimate</th>
+            <th scope="col">Next</th>
+            <th scope="col">Decision</th>
+            <th scope="col">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -185,20 +258,20 @@
               {% endif %}
             </td>
             <td class="money">
-              {{ item.estimated_amount_cents | money }}
-              <span class="subtle block">{{ item.previous_amount_cents | money }} &rarr; {{ item.current_amount_cents | money }}</span>
+              {{ item.estimated_amount_cents | money | replace(',', ',<wbr>') | safe }}
+              <span class="subtle block">{{ item.previous_amount_cents | money | replace(',', ',<wbr>') | safe }} &rarr; {{ item.current_amount_cents | money | replace(',', ',<wbr>') | safe }}</span>
             </td>
             <td>{{ item.expected_next_charge_on }}</td>
             <td><span class="db-pill">{{ item.decision_label }}</span></td>
             <td>
-              <div class="action-row">
+              <div class="fn-actions">
                 {% for action, label in subscription_decisions.items() %}
                 <form method="post" action="/insights/subscriptions/action">
                   <input type="hidden" name="merchant" value="{{ item.merchant }}">
                   <input type="hidden" name="account_id" value="{{ item.account_id }}">
                   <input type="hidden" name="month" value="{{ selected_month }}">
                   <input type="hidden" name="decision" value="{{ action }}">
-                  <button class="ghost compact-action" type="submit">{{ label }}</button>
+                  <button class="btn btn-outline-secondary" type="submit">{{ label }}</button>
                 </form>
                 {% endfor %}
               </div>
@@ -213,108 +286,23 @@
     {% endif %}
   </section>
 
-  <section class="card span-2 nancy-card">
-    <div class="card-head">
-      <div><p class="eyebrow nancy">planning cards</p><h2>All planning cards</h2></div>
-    </div>
-    {% if planning_insight_cards %}
-    <div class="insight-card-list">
-      {% for card in planning_insight_cards %}
-      <article class="insight-card insight-{{ card.severity_class }}" data-card-key="{{ card.card_key }}">
-        <div class="insight-card-copy">
-          <p class="eyebrow">{{ card.reason_code }} · {{ card.confidence_label }} confidence</p>
-          <h3>{{ card.title }}</h3>
-          <p>{{ card.body }}</p>
-          {% for note in card.evidence_notes | default([]) %}
-          <p class="subtle">{{ note }}</p>
-          {% endfor %}
-          <p class="subtle">Suggested action: {{ card.suggested_action }}</p>
-          <p class="subtle">Review status: <strong>{{ card.current_action_label }}</strong></p>
-        </div>
-        <div class="insight-evidence">
-          {% if card.transaction_evidence_groups %}
-          <span class="db-pill evidence-pill">
-            <span>txns</span>
-            {% for group in card.transaction_evidence_groups %}
-            <span class="evidence-group">
-              <span class="subtle">{{ group.label }}</span>
-              {% for txn_id in group.transaction_ids %}
-              <a href="/txn/{{ txn_id }}/edit">#{{ txn_id }}</a>
-              {% endfor %}
-            </span>
-            {% if not loop.last %}<span class="subtle">&rarr;</span>{% endif %}
-            {% endfor %}
-          </span>
-          {% elif card.transaction_ids %}
-          <span class="db-pill evidence-pill">
-            <span>txns</span>
-            {% for txn_id in card.transaction_ids %}
-            <a href="/txn/{{ txn_id }}/edit">#{{ txn_id }}</a>
-            {% endfor %}
-          </span>
-          {% endif %}
-          {% if card.statement_line_evidence_groups and card.statement_line_ids %}
-          <span class="db-pill evidence-pill">
-            <span>lines</span>
-            {% for group in card.statement_line_evidence_groups %}
-            <span class="evidence-group">
-              <span class="subtle">{{ group.label }}</span>
-              {% for line_id in group.statement_line_ids %}
-              <a href="/recon?month={{ selected_month }}#line-{{ line_id }}">#{{ line_id }}</a>
-              {% endfor %}
-            </span>
-            {% if not loop.last %}<span class="subtle">&rarr;</span>{% endif %}
-            {% endfor %}
-          </span>
-          {% elif card.statement_line_ids %}
-          <span class="db-pill evidence-pill">
-            <span>lines</span>
-            {% for line_id in card.statement_line_ids %}
-            <a href="/recon?month={{ selected_month }}#line-{{ line_id }}">#{{ line_id }}</a>
-            {% endfor %}
-          </span>
-          {% endif %}
-          {% if card.category_ids %}
-          <span class="db-pill evidence-pill">
-            <span>categories</span>
-            {% for cat_id in card.category_ids %}
-            <a href="/categories#category-{{ cat_id }}">#{{ cat_id }}</a>
-            {% endfor %}
-          </span>
-          {% endif %}
-        </div>
-        <div class="action-row">
-          <form method="post" action="/insights/cards/action">
-            <input type="hidden" name="card_key" value="{{ card.card_key }}">
-            <input type="hidden" name="month" value="{{ selected_month }}">
-            <button class="ghost compact-action" type="submit" name="action" value="accepted">accept</button>
-            <button class="ghost compact-action" type="submit" name="action" value="dismissed">dismiss</button>
-            <button class="ghost compact-action" type="submit" name="action" value="snoozed">snooze</button>
-          </form>
-        </div>
-      </article>
-      {% endfor %}
-    </div>
-    {% else %}
-    <p class="subtle">No planning cards need attention for {{ selected_month }}.</p>
-    {% endif %}
-  </section>
 
-  <section class="card span-2">
-    <div class="card-head">
-      <div><p class="eyebrow nancy">recurring changes</p><h2>{{ selected_month }}</h2></div>
+
+  <section class="nancy-section">
+    <div class="nancy-section-head">
+      <div><h2>Recurring changes</h2></div>
     </div>
     {% if recurring_deltas %}
-    <div class="table-wrap">
-      <table>
+    <div class="table-responsive" role="region" aria-label="Recurring payment changes" tabindex="0">
+      <table class="table nancy-table">
         <thead>
           <tr>
-            <th>merchant</th>
-            <th>months</th>
-            <th class="money">previous</th>
-            <th class="money">current</th>
-            <th class="money">change</th>
-            <th>evidence</th>
+            <th scope="col">Merchant</th>
+            <th scope="col">Months</th>
+            <th scope="col" class="money">Previous</th>
+            <th scope="col" class="money">Current</th>
+            <th scope="col" class="money">Change</th>
+            <th scope="col">Evidence</th>
           </tr>
         </thead>
         <tbody>
@@ -325,10 +313,10 @@
               <span class="subtle block">{{ r.category_names or 'expense' }} · {{ r.account_name }}</span>
             </td>
             <td>{{ r.previous_month }} &rarr; {{ r.month }}</td>
-            <td class="money">{{ r.previous_amount_cents | money }}</td>
-            <td class="money">{{ r.current_amount_cents | money }}</td>
+            <td class="money">{{ r.previous_amount_cents | money | replace(',', ',<wbr>') | safe }}</td>
+            <td class="money">{{ r.current_amount_cents | money | replace(',', ',<wbr>') | safe }}</td>
             <td class="money {{ r.delta_class }}">
-              {{ r.amount_delta_cents | money }}
+              {{ r.amount_delta_cents | money | replace(',', ',<wbr>') | safe }}
               <span class="subtle block">{{ r.direction_label }} {{ r.pct_change }}%</span>
             </td>
             <td>
@@ -348,18 +336,18 @@
   </section>
 
   {% if recurring %}
-  <section class="card span-2">
-    <div class="card-head"><div><p class="eyebrow nancy">recurring candidates</p><h2>Repeated merchants</h2></div></div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>merchant</th><th>months</th><th>range</th><th class="money">average</th></tr></thead>
+  <section class="nancy-section">
+    <div class="nancy-section-head"><div><h2>Repeated merchants</h2></div></div>
+    <div class="table-responsive" role="region" aria-label="Repeated merchants" tabindex="0">
+      <table class="table nancy-table">
+        <thead><tr><th scope="col">Merchant</th><th scope="col">Months</th><th scope="col">Range</th><th scope="col" class="money">Average</th></tr></thead>
         <tbody>
           {% for r in recurring %}
           <tr>
             <td>{{ r.merchant }}</td>
             <td>{{ r.months_seen }}</td>
             <td>{{ r.first_month }} &rarr; {{ r.last_month }}</td>
-            <td class="money">{{ r.avg_monthly_cents | int | money }}</td>
+            <td class="money">{{ r.avg_monthly_cents | int | money | replace(',', ',<wbr>') | safe }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -367,5 +355,29 @@
     </div>
   </section>
   {% endif %}
+
+
+</div>
+{% endif %}
+  <details class="nancy-section fn-disclosure nancy-summary">
+    <summary>Monthly summary</summary>
+    <div class="nancy-section-head">
+      <p class="subtle">{{ selected_month }}</p>
+      <form method="post" action="/insights/prose/generate">
+        <input type="hidden" name="month" value="{{ selected_month }}">
+        {% if insight_prose %}
+        <button class="btn btn-outline-secondary" type="submit">Regenerate</button>
+        {% else %}
+        <button class="btn btn-primary" type="submit" {% if not selected_month %}disabled{% endif %}>Generate summary</button>
+        {% endif %}
+      </form>
+    </div>
+    {% if insight_prose %}
+    <div class="prose-body">{{ insight_prose.body }}</div>
+    <p class="subtle compact-head">Generated {{ insight_prose.created_at }} · {{ insight_prose.model }}</p>
+    {% else %}
+    <p class="subtle">Generate a summary, then refresh when processing finishes.</p>
+    {% endif %}
+  </details>
 </div>
 {% endblock %}

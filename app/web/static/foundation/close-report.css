@@ -1,0 +1,115 @@
+/* Close and canonical period reports. Tokens and controls belong to foundation. */
+.close-hero, .period-statement-hero { align-items:flex-start; }
+.close-hero > div:first-child, .period-statement-hero > div:first-child { flex:1 1 28rem; min-width:0; }
+.close-hero-detail, .period-statement-hero .fn-muted { margin-top:var(--space-2); }
+.close-hero-tools, .period-statement-controls { display:flex; flex-wrap:wrap; align-items:flex-end; gap:var(--space-4); min-width:0; max-width:100%; }
+.close-report-filter { display:grid; gap:var(--space-2); min-width:0; width:10rem; max-width:100%; }
+.close-report-filter .form-label { margin:0; }
+.close-report-jump, .period-journey-links { display:flex; flex-wrap:wrap; gap:0 var(--space-4); }
+.close-report-jump { border-bottom:1px solid var(--line); padding-bottom:var(--space-3); }
+.close-report-jump a, .period-journey-links a, .close-report-link,
+.period-reference-links a, .period-evidence-ids a { display:inline-flex; align-items:center; min-height:var(--control); min-width:var(--control); overflow-wrap:anywhere; }
+.close-workspace, .period-statement-workspace { display:grid; min-width:0; }
+.close-report-section { min-width:0; padding-block:var(--space-6); border-bottom:1px solid var(--line); }
+.close-report-section > * + * { margin-top:var(--space-4); }
+.close-report-section-head, .close-exception-head, .period-evidence-head { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:var(--space-3) var(--space-6); }
+.close-report-section-head > div:first-child, .close-exception-head > div:first-child, .period-evidence-head > div:first-child { flex:1 1 20rem; min-width:0; }
+.close-report-label, .close-report-meta { color:var(--muted); font-size:var(--small); }
+.close-report-label { margin-bottom:var(--space-1); }
+.close-report-meta { display:inline-block; overflow-wrap:anywhere; }
+.close-state-pill, .close-exception-status { display:inline-block; font-size:var(--small); font-weight:600; padding-block:var(--space-2); }
+.close-state-pill.is-clean-closed { color:var(--finn); }
+.close-report-notice { padding:var(--space-4); background:var(--surface); border:1px solid var(--line); overflow-wrap:anywhere; }
+.close-truth-layout, .period-report-truth-layout { display:grid; grid-template-columns:minmax(0, 2fr) minmax(0, 1fr); gap:var(--space-6); }
+.close-truth-metrics, .period-report-truth-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--space-4); margin:0; }
+.close-truth-metrics > div { display:grid; align-content:start; gap:var(--space-1); text-align:end; }
+.close-truth-metrics strong { font-size:var(--heading); }
+.period-report-truth-metrics dt { font-size:var(--small); color:var(--muted); font-weight:400; }
+.period-report-truth-metrics dd { margin:var(--space-1) 0 0; }
+.close-decision-form, .close-ack-form { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--space-4); max-width:40rem; }
+.close-decision-form > label, .close-ack-form > label, .close-row-form label { display:grid; align-content:start; min-width:0; }
+.close-decision-form .fn-check, .close-ack-form .fn-check { display:flex; align-items:center; }
+.close-form-wide, .close-ack-warning { grid-column:1 / -1; }
+.close-decision-form .btn, .close-ack-form .btn { justify-self:start; }
+.close-submit-requirements { margin:0; color:var(--muted); }
+.close-submit-requirements.is-ready { color:var(--ink); }
+.close-setup-gate { display:grid; gap:var(--space-4); }
+.close-exception-list, .close-history-list, .period-evidence-list, .period-row-list, .period-account-list { display:grid; }
+.close-exception, .close-history-item, .period-evidence-panel, .period-report-row { min-width:0; padding-block:var(--space-6); border-top:1px solid var(--line); overflow-wrap:anywhere; }
+.close-exception > * + *, .period-evidence-panel > * + *, .period-report-row > * + * { margin-top:var(--space-4); }
+.close-exception-meta, .period-evidence-ids { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--space-4) var(--space-6); margin-bottom:0; }
+.close-exception-meta dt, .period-evidence-ids dt { color:var(--muted); font-size:var(--small); font-weight:400; }
+.close-exception-meta dd, .period-evidence-ids dd { margin:var(--space-1) 0 0; overflow-wrap:anywhere; }
+.close-ack-receipt { display:grid; gap:var(--space-1); padding:var(--space-4); background:var(--surface); }
+.close-withdrawal-panel { max-width:40rem; }
+.close-history-item { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:var(--space-4) var(--space-6); }
+.close-history-reason, .close-history-digest { display:grid; gap:var(--space-1); }
+.close-history-digest code, .period-digest-row code { color:var(--muted); overflow-wrap:anywhere; }
+.close-report-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 var(--space-6); }
+.close-report-stat { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:var(--space-2) var(--space-4); border-top:1px solid var(--line); padding-block:var(--space-3); min-width:0; }
+.close-report-number { font-size:var(--heading); font-weight:600; font-variant-numeric:tabular-nums lining-nums; text-align:end; overflow-wrap:anywhere; }
+.close-report-stat .close-report-label { margin:0; }
+.close-workspace .checklist-row { display:grid; grid-template-columns:1.5rem minmax(0,1fr) auto; gap:var(--space-3); padding-block:var(--space-4); border-top:1px solid var(--line); color:var(--ink); text-decoration:none; }
+.close-workspace .checklist-mark, .close-workspace .checklist-count { font-variant-numeric:tabular-nums; }
+.close-workspace .checklist-count { text-align:end; }
+.close-prepare-form { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-3); }
+.close-statement-table { --bs-table-color:var(--ink); --bs-table-bg:transparent; --bs-table-border-color:var(--line); margin:0; }
+.close-statement-table :is(th,td) { padding:var(--space-4) var(--space-3); vertical-align:top; overflow-wrap:anywhere; }
+.close-statement-table :is(th,td):first-child { padding-left:0; }
+.close-statement-table :is(th,td):last-child { padding-right:0; }
+.close-waiver-editor { max-width:40rem; }
+.close-row-form { display:grid; gap:var(--space-3); min-width:12rem; max-width:40rem; }
+.close-row-form .btn { justify-self:start; }
+.period-digest-row { display:grid; grid-template-columns:auto minmax(0,1fr); gap:var(--space-2) var(--space-4); font-size:var(--small); color:var(--muted); }
+.period-reference-links { display:flex; flex-wrap:wrap; gap:0 var(--space-4); }
+.period-total-grid, .period-resolution-grid, .period-bucket-list { display:grid; }
+.period-total-grid { padding-block:var(--space-4); border-bottom:1px solid var(--line); }
+.period-total-link.close-report-stat { display:grid; border-top:0; }
+.period-total-link { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:var(--space-1) var(--space-6); color:var(--ink); text-decoration:none; padding-block:var(--space-3); border-bottom:1px solid var(--line); min-height:var(--control); overflow-wrap:anywhere; }
+.period-total-link:last-child { border-bottom:0; }
+.period-total-link:hover, .close-workspace .checklist-row:hover, .period-account-row:hover { background:var(--surface); }
+.period-total-link .close-report-label { color:var(--ink); font-size:inherit; margin:0; }
+.period-total-link > strong { text-align:end; font-size:inherit; font-weight:600; }
+.period-total-link > .fn-muted { grid-column:1 / -1; font-size:var(--small); }
+.period-account-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:var(--space-4); padding-block:var(--space-4); border-top:1px solid var(--line); color:var(--ink); text-decoration:none; overflow-wrap:anywhere; }
+.period-account-row > span:last-child { color:var(--muted); }
+.period-exclusion-list { display:grid; gap:var(--space-2); }
+.period-evidence-head > strong, .period-report-row-main > strong { text-align:end; font-variant-numeric:tabular-nums lining-nums; overflow-wrap:anywhere; }
+.period-reference-links a { border-bottom:1px solid var(--line); }
+.period-source-details { background:var(--surface); padding-inline:var(--space-3); }
+.period-evidence-ids { padding-block:var(--space-3); }
+.period-report-row-main { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:var(--space-4); }
+.period-report-row-links { display:flex; flex-wrap:wrap; align-items:center; gap:0 var(--space-4); }
+.period-report-row-links .close-report-meta { padding-block:var(--space-2); }
+.period-empty-state { padding-block:var(--space-4); }
+.close-workspace :is([id], article), .period-statement-workspace :is([id], article) { scroll-margin-top:var(--space-4); }
+.close-workspace :target, .period-statement-workspace :target { outline:2px solid var(--finn); outline-offset:var(--space-1); }
+.close-workspace :is(strong, .close-report-number), .period-statement-workspace strong { font-variant-numeric:tabular-nums lining-nums; }
+@media (max-width: 1099px) {
+  .close-truth-layout, .period-report-truth-layout { grid-template-columns:minmax(0,1fr); }
+}
+@media (max-width: 767px) {
+  .close-truth-layout, .period-report-truth-layout, .close-decision-form, .close-ack-form,
+  .close-report-summary, .close-history-item, .period-account-row { grid-template-columns:minmax(0,1fr); }
+  .close-truth-metrics > div { text-align:start; }
+  .close-exception-meta, .period-evidence-ids { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .close-statement-table, .close-statement-table tbody, .close-statement-table tr, .close-statement-table td { display:block; }
+  .close-statement-table thead { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); }
+  .close-statement-table tr { border-top:1px solid var(--line); padding-block:var(--space-3); }
+  .close-statement-table td { padding:var(--space-2) 0; border:0; }
+  .close-statement-table td::before { content:attr(data-label); display:block; font-size:var(--small); color:var(--muted); margin-bottom:var(--space-1); }
+  .close-row-form { min-width:0; }
+  .period-report-row-main { grid-template-columns:minmax(0,1fr); }
+  .period-digest-row { grid-template-columns:minmax(0,1fr); }
+}
+@media (max-width: 359px) {
+  .period-total-link, .close-exception-meta, .period-evidence-ids { grid-template-columns:minmax(0,1fr); }
+  .close-truth-metrics, .period-report-truth-metrics { grid-template-columns:minmax(0,1fr); }
+}
+@media print {
+  .fn-header, .close-report-jump, .close-report-filter, .period-journey-links,
+  .close-decision-form, .close-ack-form, .close-row-form, .period-export-actions { display:none; }
+  .close-report-section, .period-evidence-panel, .period-report-row { break-inside:avoid; }
+  .period-source-details::details-content, .period-report-identity::details-content { display:block; content-visibility:visible; }
+  .close-workspace :target, .period-statement-workspace :target { outline:0; }
+}

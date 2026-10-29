@@ -634,4 +634,4 @@ def test_close_page_renders_redirected_notice(app_env):
     page = _full_client().get(f"/close?month={MONTH}&notice=Chequing+is+closed")
     assert page.status_code == 200
     assert "Chequing is closed" in page.text
-    assert 'class="banner warn' in page.text
+    assert '<p class="close-report-notice" role="status">Chequing is closed</p>' in page.text

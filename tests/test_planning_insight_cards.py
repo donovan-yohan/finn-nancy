@@ -347,8 +347,8 @@ def test_statement_only_future_month_does_not_shift_planning_defaults(app_env):
     client = _client()
     categories = client.get("/categories")
     assert categories.status_code == 200
-    assert "actuals from 2026-03" in categories.text
-    assert "actuals from 2027-01" not in categories.text
+    assert "Actuals from 2026-03" in categories.text
+    assert "Actuals from 2027-01" not in categories.text
 
     insights = client.get("/insights")
     assert insights.status_code == 200
@@ -412,8 +412,7 @@ def test_insights_page_renders_planning_cards_with_evidence_links(app_env):
     body = r.text
     body_text = unescape(body)
 
-    assert "planning cards" in body
-    assert "All planning cards" in body
+    assert body.count("<h2>Planning suggestions</h2>") == 1
     assert "Koodo increased from $46.33 to $52.10" in body
     assert "Groceries Test budget overrun" in body
     assert "Dining Test spending increased" in body
@@ -456,8 +455,8 @@ def test_recurring_card_without_statement_lines_suppresses_lines_pill(app_env):
     assert page.status_code == 200
     segment = _article_segment(page.text, card["card_key"])
     assert "Koodo increased from $46.33 to $52.10" in segment
-    assert "<span>txns</span>" in segment
-    assert "<span>lines</span>" not in segment
+    assert "<span>Transactions</span>" in segment
+    assert "<span>Statement lines</span>" not in segment
 
 
 def test_budget_overrun_uses_signed_net_refunds_and_suppresses_zero_net(app_env):

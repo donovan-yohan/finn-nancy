@@ -196,9 +196,9 @@ def test_manage_uses_current_policy_and_labels_future_version(app_env):
 
     response = _client().get("/manage")
     assert response.status_code == 200
-    assert f"current for {current_month}: configured" in response.text
+    assert f"Current for {current_month}: configured" in response.text
     assert re.search(
-        rf"future from {future_month}: configured\s*· no_statement\s*· none",
+        rf"Future from {future_month}: configured\s*· no_statement\s*· none",
         response.text,
     )
     assert re.search(

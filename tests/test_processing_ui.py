@@ -80,32 +80,38 @@ def test_page_role_colors(app_env, path, brand):
 
 
 def test_theme_has_no_gradients_or_blur():
-    css = (Path(__file__).resolve().parents[1] / "app/web/static/app.css").read_text()
-    assert "gradient(" not in css
-    assert "blur(" not in css
+    static = Path(__file__).resolve().parents[1] / "app/web/static"
+    for path in [*static.joinpath("foundation").glob("*.css"), static / "household-onboarding.css"]:
+        css = path.read_text()
+        assert "gradient(" not in css, path
+        assert "blur(" not in css, path
 
 
-def test_text_tokens_meet_normal_text_contrast():
-    css = (Path(__file__).resolve().parents[1] / "app/web/static/app.css").read_text()
-    colors = dict(re.findall(r"--([\w-]+):\s*#([0-9a-f]{6});", css))
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_text_tokens_meet_normal_text_contrast(mode):
+    css = (Path(__file__).resolve().parents[1] / "app/web/static/foundation/tokens.css").read_text()
+    palette = re.search(r'\[data-bs-theme="' + mode + r'"\]\s*\{([^}]+)\}', css)
+    assert palette is not None
+    colors = dict(re.findall(r"--([\w-]+):\s*#([0-9a-f]{6});", palette[1]))
 
     def luminance(hex_color):
         components = [int(hex_color[i:i + 2], 16) / 255 for i in (0, 2, 4)]
         linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in components]
         return sum(c * weight for c, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
 
-    for surface in ("bg", "panel", "panel-2"):
-        for text in ("text", "muted", "finn", "nancy", "green", "red"):
-            ratio = (luminance(colors[text]) + 0.05) / (luminance(colors[surface]) + 0.05)
-            assert ratio >= 4.5, (text, surface, ratio)
+    for surface in ("canvas", "surface", "hover"):
+        for text in ("ink", "muted", "finn", "nancy", "danger"):
+            levels = sorted((luminance(colors[text]), luminance(colors[surface])))
+            ratio = (levels[1] + 0.05) / (levels[0] + 0.05)
+            assert ratio >= 4.5, (mode, text, surface, ratio)
 
 
 def test_home_keeps_detail_available_without_empty_decoration(app_env):
     response = TestClient(create_app()).get("/")
     assert response.status_code == 200
-    assert '<details class="card span-2 home-history">' in response.text
-    assert 'class="month-card period-entry-link"' in response.text
-    hero = response.text.split('<header class="hero">')[1].split('</header>')[0]
+    assert '<details class="fn-disclosure home-history">' in response.text
+    assert 'class="home-cashflow-row period-entry-link"' in response.text
+    hero = response.text.split('<header class="fn-page-head">')[1].split('</header>')[0]
     assert 'href="/manage"' not in hero
     assert 'local finance' not in hero
     assert 'href="/manage"' in response.text  # retained in More

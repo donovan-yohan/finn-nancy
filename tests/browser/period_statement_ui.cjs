@@ -352,7 +352,7 @@ async function main() {
     const desktop = await inspect(cdp, "desktop");
     assertMetrics(desktop, {
       viewport: { width: 1440, height: 1000 },
-      resolutionColumns: 4,
+      resolutionColumns: 1,
     });
     await evaluate(cdp, "scrollTo(0, 0); return scrollY;");
     await capture(cdp, "03-desktop-statement-top.png");

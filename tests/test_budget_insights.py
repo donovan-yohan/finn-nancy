@@ -64,7 +64,7 @@ def test_budget_page_sets_leisure_budget_and_insights(app_env):
     assert "$150.00" in body
     assert "$67.60" in body
     assert "$82.40" in body
-    assert "leisure $67.60" in body
+    assert "Leisure $67.60" in body
 
 
 def test_budget_members_can_be_added_and_assigned(app_env):

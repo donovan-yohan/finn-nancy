@@ -9,7 +9,7 @@
 - CSS SHA-256: `d85327d99c7a3ee1f9b5d0500d1370acea3ad2db39c163c2f51f232baedbdede`
 - License SHA-256: `4620c84ad5ce8602ff65640ed6b7c8b78ebb9e036584f0ebc1ccc88206a4bb51`
 
-Copied unchanged from Hotate's released local design foundation. No Bootstrap JavaScript or runtime network dependency is used. `app/web/static/foundation/SOURCE.json` pins that snapshot and the canonical token source/generated CSS hashes; `tokens.css` is generated upstream from `tokens.json`, not independently authored. `components.css` adapts the shared primitives and normal-flow shell; Connections alone adopts this new base in this slice.
+Copied unchanged from Hotate's released local design foundation. No Bootstrap JavaScript or runtime network dependency is used. `app/web/static/foundation/SOURCE.json` pins that snapshot and the canonical token source/generated CSS hashes; `tokens.css` is generated upstream from `app/web/static/foundation/tokens.json`, not independently authored. `components.css` adapts the shared primitives and normal-flow shell across the application. Page-family styles extend that shared foundation.
 
 ## htmx
 

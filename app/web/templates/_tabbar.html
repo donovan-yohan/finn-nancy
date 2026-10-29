@@ -1,106 +1,37 @@
-{% if sandbox_candidate %}
-<nav class="tabbar" aria-label="primary">
-  {% for key, label, href, icon in [('home', 'Home', '/', 'M3 10.5 12 3l9 7.5 M5 9.5V21h14V9.5'), ('activity', 'Activity', '/activity', 'M3 12h4l3 8 4-16 3 8h4'), ('accounts', 'Accounts', '/accounts', 'M3 7l9-4 9 4 M4 10h16 M6 10v8 M12 10v8 M18 10v8 M3 21h18'), ('connections', 'Connections', '/connections', 'M8 12h8 M9 7H6a5 5 0 0 0 0 10h3 M15 7h3a5 5 0 0 1 0 10h-3')] %}
-  <a class="tab {% if active == key %}is-active{% endif %}" href="{{ href }}"{% if active == key %} aria-current="page"{% endif %}>
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="{{ icon }}"/></svg><span>{{ label }}</span>
-  </a>
-  {% endfor %}
-</nav>
-{% else %}
-{% set pending = pending_action_count() %}
-<nav class="tabbar" aria-label="primary">
-  <a class="tab {% if active == 'home' %}is-active{% endif %}" href="/"{% if active == 'home' %} aria-current="page"{% endif %}>
-    <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
-    <span>Home</span>
-  </a>
-  <a class="tab {% if active == 'activity' %}is-active{% endif %}" href="/activity"{% if active == 'activity' %} aria-current="page"{% endif %}>
-    <svg viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
-    <span>Activity</span>
-  </a>
-
+{# Shared in-flow navigation. Capture hooks stay native and device-owned. #}
+{% set path = request.url.path %}
+<nav class="fn-nav" aria-label="primary">
   {% if sandbox_candidate %}
-  <a class="tab" href="/upload"><svg viewBox="0 0 24 24"><path d="M12 15V4M7 9l5-5 5 5M4 15v6h16v-6"/></svg><span>Upload</span></a>
+  {% for label, href in [('Home','/'),('Activity','/activity'),('Accounts','/accounts'),('Connections','/connections')] %}
+  <a href="{{ href }}"{% if path == href %} aria-current="page"{% endif %}><span>{{ label }}</span></a>
+  {% endfor %}
   {% else %}
-  <div class="fab-slot">
-    <a class="tab upload-tab {% if request.url.path == '/upload' %}is-active{% endif %}" href="/upload"{% if request.url.path == '/upload' %} aria-current="page"{% endif %}>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5M4 15v6h16v-6"/></svg><span>Upload</span>
-    </a>
-    <details class="fab" name="nav-sheet">
-      <summary class="fab-btn" aria-label="Add a transaction">
-        <svg viewBox="0 0 24 24"><path d="M12 15V4"/><path d="m7 9 5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
-      </summary>
-      <div class="fab-menu">
-        <div class="fab-form">
-          <button class="fab-item" type="button" data-capture-picker data-input-id="capture-camera-input">
-            <svg viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg>
-            <span>Take photo</span>
-          </button>
-          <input
-            id="capture-camera-input"
-            class="capture-file-input"
-            type="file"
-            name="files"
-            accept="image/*"
-            capture="environment"
-            data-capture-input
-            data-source="camera"
-            data-intent="receipt"
-          >
-        </div>
-        <div class="fab-form">
-          <button class="fab-item" type="button" data-capture-picker data-input-id="capture-files-input">
-            <svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/></svg>
-            <span>Upload files</span>
-          </button>
-          <input
-            id="capture-files-input"
-            class="capture-file-input"
-            type="file"
-            name="files"
-            accept="image/*,application/pdf"
-            multiple
-            data-capture-input
-            data-source="file"
-            data-intent="receipt"
-          >
-        </div>
-        <noscript><a class="fab-item" href="/upload">Open upload page</a></noscript>
+  {% set pending = pending_action_count() if pending_action_count is defined else 0 %}
+  {% set primary_paths = ['/', '/activity', '/upload', '/insights'] %}
+  {% set capture_disabled = read_only|default(false) or (overview is defined and overview.read_only|default(false)) %}
+  <a href="/"{% if path == '/' %} aria-current="page"{% endif %}>Home</a>
+  <a href="/activity"{% if path == '/activity' or active == 'activity' %} aria-current="page"{% endif %}>Activity</a>
+  <a href="/upload"{% if path == '/upload' %} aria-current="page"{% endif %}>Upload</a>
+  <a class="fn-nancy" href="/insights"{% if path == '/insights' %} aria-current="page"{% endif %}>Insights</a>
+  <details class="fn-more" name="nav-sheet">
+    <summary{% if path not in primary_paths and active != 'activity' %} class="is-active"{% endif %} aria-label="More navigation">More{% if pending > 0 %}<span class="fn-count" aria-label="{{ pending }} pending approvals">{{ pending }}</span>{% endif %}</summary>
+    <nav aria-label="More destinations">
+      {% for label, href in [('Connections','/connections'),('Bank feed','/bank-feed'),('Goals','/goals'),('Ask Nancy','/chat'),('Processing','/processing'),('Statements','/statements'),('Approvals','/actions'),('Monthly close','/close'),('Reconcile','/recon'),('Review inbox','/review'),('Uncategorized','/backlog'),('Budget','/categories'),('Manage','/manage')] %}
+      <a{% if href in ['/goals', '/chat', '/categories'] %} class="fn-nancy"{% endif %} href="{{ href }}"{% if path == href or path.startswith(href ~ '/') %} aria-current="page"{% endif %}>{{ label }}{% if href == '/processing' %}<span id="processing-nav-count" class="fn-count" hidden></span>{% elif href == '/actions' and pending > 0 %}<span class="fn-count">{{ pending }}</span>{% endif %}</a>
+      {% endfor %}
+    </nav>
+    <details class="fn-disclosure fn-quick-capture fab">
+      <summary>Quick upload</summary>
+      <div class="fn-capture-menu">
+        <button class="btn btn-outline-secondary" type="button" data-capture-picker data-input-id="capture-camera-input"{% if capture_disabled %} disabled{% endif %}>Take photo</button>
+        <label class="visually-hidden" for="capture-camera-input">Take a receipt photo</label>
+        <input id="capture-camera-input" class="capture-file-input" type="file" name="files" accept="image/*" capture="environment" data-capture-input data-source="camera" data-intent="receipt"{% if capture_disabled %} disabled{% endif %}>
+        <button class="btn btn-outline-secondary" type="button" data-capture-picker data-input-id="capture-files-input"{% if capture_disabled %} disabled{% endif %}>Upload files</button>
+        <label class="visually-hidden" for="capture-files-input">Upload receipt files</label>
+        <input id="capture-files-input" class="capture-file-input" type="file" name="files" accept="image/*,application/pdf" multiple data-capture-input data-source="file" data-intent="receipt"{% if capture_disabled %} disabled{% endif %}>
+        <noscript><a href="/upload">Open upload page</a></noscript>
       </div>
     </details>
-  </div>
-  {% endif %}
-
-  <a class="tab nancy-tab {% if request.url.path == '/insights' %}is-active{% endif %}" href="/insights"{% if request.url.path == '/insights' %} aria-current="page"{% endif %}>
-    <svg viewBox="0 0 24 24"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/></svg>
-    <span>Insights</span>
-  </a>
-
-  <details class="more" name="nav-sheet">
-    <summary class="tab {% if active != 'activity' and request.url.path not in ['/', '/activity', '/upload', '/insights'] %}is-active{% endif %}" aria-label="More navigation"{% if active != 'activity' and request.url.path not in ['/', '/activity', '/upload', '/insights'] %} aria-current="page"{% endif %}>
-      <span class="tab-icon">
-        <svg viewBox="0 0 24 24"><path d="M5 12h.01"/><path d="M12 12h.01"/><path d="M19 12h.01"/></svg>
-        {% if pending > 0 %}<span class="tab-badge">{{ pending }}</span>{% endif %}
-      </span>
-      <span>More</span>
-    </summary>
-    <div class="more-menu">
-      <a class="fab-item more-item" href="/connections"><span>Connections</span></a>
-      <a class="fab-item more-item" href="/bank-feed"><span>Bank feed</span></a>
-      <a class="fab-item more-item nancy-link" href="/goals"><span>Goals</span></a>
-      <a class="fab-item more-item nancy-link" href="/chat"><span>Ask Nancy</span></a>
-      <a class="fab-item more-item" href="/processing"><span>Processing</span><span id="processing-nav-count" class="menu-count" hidden></span></a>
-      <a class="fab-item more-item" href="/statements"><span>Statements</span></a>
-      <a class="fab-item more-item" href="/actions">
-        <span>Approvals</span>
-        {% if pending > 0 %}<span class="menu-count">{{ pending }}</span>{% endif %}
-      </a>
-      <a class="fab-item more-item" href="/close"><span>Monthly close</span></a>
-      <a class="fab-item more-item" href="/recon"><span>Reconcile</span></a>
-      <a class="fab-item more-item" href="/review"><span>Review inbox</span></a>
-      <a class="fab-item more-item" href="/backlog"><span>Uncategorized</span></a>
-      <a class="fab-item more-item nancy-link" href="/categories"><span>Budget</span></a>
-      <a class="fab-item more-item" href="/manage"><span>Manage</span></a>
-    </div>
   </details>
+  {% endif %}
 </nav>
-{% endif %}
