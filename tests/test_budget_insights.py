@@ -13,14 +13,13 @@ def _client():
 
 def test_budget_page_sets_leisure_budget_and_insights(app_env):
     client = _client()
-    with engine.read_conn(app_env) as conn:
-        sample_member_a = conn.execute(
-            "SELECT * FROM household_members WHERE name='Sample Member A'"
-        ).fetchone()
+    from app.db import repo_budgets
+    with engine.write_tx(app_env) as conn:
+        member_id = repo_budgets.create_household_member(conn, name="Generated Budget Owner")
 
     r = client.post(
         "/categories/5/budget",
-        data={"amount": "150.00", "owner_member_id": str(sample_member_a["id"]), "is_leisure": "1"},
+        data={"amount": "150.00", "owner_member_id": str(member_id), "is_leisure": "1"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -48,10 +47,10 @@ def test_budget_page_sets_leisure_budget_and_insights(app_env):
         ).fetchone()
 
     assert budget["amount_cents"] == 15000
-    assert budget["owner_member_id"] == sample_member_a["id"]
+    assert budget["owner_member_id"] == member_id
     assert category["is_leisure"] == 1
     assert actual["budget_cents"] == 15000
-    assert actual["budget_owner"] == "Sample Member A"
+    assert actual["budget_owner"] == "Generated Budget Owner"
     assert actual["actual_cents"] == 6760
     assert actual["remaining_cents"] == 8240
     assert underspend["underspend_cents"] == 8240

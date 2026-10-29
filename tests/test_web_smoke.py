@@ -107,7 +107,7 @@ def test_version_reports_loaded_revision_and_schema_head(sample_db, monkeypatch)
     assert str(uuid.UUID(body["database_identity"])) == body["database_identity"]
     assert re.fullmatch(r"[0-9a-f]{64}", body["schema_digest"])
     expected_head = max(path.name for path in migrate.MIGRATIONS_DIR.glob("*.sql"))
-    assert expected_head == "041_bank_feed.sql"
+    assert expected_head == "042_household_onboarding.sql"
     assert body["expected_migration_head"] == expected_head
     assert body["applied_migration_head"] == body["expected_migration_head"]
     assert body["expected_migration_digest"] == body["applied_migration_digest"]

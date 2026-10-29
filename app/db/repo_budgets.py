@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 import re
+import unicodedata
 
 DEFAULT_BIG_TICKET_THRESHOLD_CENTS = 30_000
 SUBSCRIPTION_WATCHLIST_DECISIONS = {
@@ -98,15 +99,32 @@ def set_category_leisure(conn: sqlite3.Connection, *, category_id: int, is_leisu
         raise LookupError("expense category not found")
 
 
+class MemberError(ValueError):
+    """Safe local member validation code for every repository caller."""
+
+
+def _validate_member_name(conn: sqlite3.Connection, name: str, member_id: int | None = None) -> None:
+    if not isinstance(name, str):
+        raise MemberError("invalid_member_name")
+    if any(unicodedata.category(c) in {"Cc", "Cs"} or c in "\u2028\u2029" for c in name):
+        raise MemberError("member_name_control_characters")
+    if not name.strip():
+        raise MemberError("member_name_required")
+    if len(name) > 100:
+        raise MemberError("member_name_too_long")
+    # Compare without altering accepted human text; include inactive identities.
+    for row in conn.execute("SELECT id,name FROM household_members"):
+        if row["id"] != member_id and row["name"].strip().casefold() == name.strip().casefold():
+            raise MemberError("member_name_exists")
+
+
 def create_household_member(
     conn: sqlite3.Connection,
     *,
     name: str,
     source: str = "manual",
 ) -> int:
-    name = name.strip()
-    if not name:
-        raise ValueError("name is required")
+    _validate_member_name(conn, name)
     if source not in {"manual", "seed", "account", "statement"}:
         raise ValueError("invalid member source")
     base_slug = _slugify_name(name)
@@ -122,16 +140,26 @@ def create_household_member(
     return int(cur.lastrowid)
 
 
+def rename_household_member(conn: sqlite3.Connection, *, member_id: int, name: str) -> None:
+    if not conn.execute(
+        "SELECT 1 FROM household_members WHERE id=? AND (is_active=1 OR name_required=1)",
+        (member_id,),
+    ).fetchone():
+        raise MemberError("member_not_found")
+    _validate_member_name(conn, name, member_id)
+    conn.execute("UPDATE household_members SET name=?,name_required=0 WHERE id=?", (name, member_id))
+
+
 def household_members(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT id, name, slug, source
+        SELECT id, name, slug, source, name_required AS needs_name, is_active
         FROM household_members
-        WHERE is_active=1
-        ORDER BY name
+        WHERE is_active=1 OR name_required=1
+        ORDER BY name, id
         """
     ).fetchall()
-    return [dict(r) for r in rows]
+    return [dict(r) | {"needs_name": bool(r["needs_name"])} for r in rows]
 
 
 def available_months(conn: sqlite3.Connection) -> list[str]:
@@ -184,8 +212,7 @@ def budget_management_context(conn: sqlite3.Connection) -> dict:
           b.owner_member_id,
           COALESCE(hm.name,
             CASE
-              WHEN b.owner = 'sample_member_a' THEN 'Sample Member A'
-              WHEN b.owner = 'sample_member_b' THEN 'Sample Member B'
+              WHEN b.owner IN ('sample_member_a', 'sample_member_b') THEN 'Name required'
               ELSE 'Shared'
             END
           ) AS budget_owner,

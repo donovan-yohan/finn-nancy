@@ -11,14 +11,14 @@ from app.db import engine
 
 
 @pytest.fixture
-def banking(empty_db, tmp_path):
+def banking(household_db, tmp_path):
     credential = tmp_path / 'generated-credentials.json'
     credential.write_text(json.dumps({'client_id': secrets.token_hex(12), 'secret': secrets.token_hex(24)}))
     credential.chmod(0o600)
     calls = []
     def unexpected(req):
         raise AssertionError(req.url.path)
-    service = BankingService(db_path=empty_db, private_dir=tmp_path/'private', credentials_file=credential,
+    service = BankingService(db_path=household_db, private_dir=tmp_path/'private', credentials_file=credential,
         origin='http://banking.example.invalid', completion_uri='http://banking.example.invalid/connections',
         enabled=lambda: True, strict_local=lambda: False, read_only=lambda: False,
         transport=httpx.MockTransport(unexpected))

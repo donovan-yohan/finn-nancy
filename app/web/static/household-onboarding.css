@@ -1,0 +1,26 @@
+/* Feature compositions only; controls/shell are shared foundation components. */
+[data-household-onboarding] { max-width:800px; }
+.household-consent-body { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:var(--space-6); }
+@media (max-width:767px) { .household-consent-body { padding:var(--space-4); } .household-consent>summary { width:100%; } }
+.household-add { border-top:1px solid var(--line); padding-block:var(--space-6); }
+.household-add>.fn-muted { margin-block:var(--space-2) var(--space-4); max-width:65ch; }
+.household-setup { padding-bottom:var(--space-6); color:var(--muted); max-width:65ch; }
+.household-member { border-top:1px solid var(--line); padding-block:var(--space-6); }
+.household-member-head,.household-connection-head { display:flex; flex-wrap:wrap; gap:var(--space-3); align-items:baseline; }
+.household-member p,.household-member h2,.household-member h3 { overflow-wrap:anywhere; }
+.household-name { max-width:640px; }
+.household-connection { margin-top:var(--space-4); padding-block:var(--space-4); border-top:1px solid var(--line); }
+.household-connection>.fn-actions { margin-block:var(--space-3); }
+.household-account { padding:var(--space-4) 0; border-top:1px solid var(--line); }
+.household-account-summary { color:var(--muted); margin-top:var(--space-2); }
+.household-binding { padding-block:var(--space-3); }
+.household-binding fieldset { display:grid; gap:var(--space-4); }
+.household-consent-body { max-width:640px; display:grid; gap:var(--space-4); }
+.household-consent-body .form-text { margin:0; }
+.household-no-banks { margin-top:var(--space-4); }
+.household-pending,[data-active-link]:not([hidden]) { padding:var(--space-4); border:1px solid var(--line); background:var(--surface); margin-block:var(--space-4); display:grid; gap:var(--space-3); max-width:65ch; }
+.household-pending .btn { justify-self:start; }
+.household-refresh { border:1px solid var(--control-line); padding:var(--space-4); margin-bottom:var(--space-6); display:grid; gap:var(--space-3); }
+.fn-feedback:not([hidden]) { margin-block:var(--space-3); }
+[data-household-onboarding][aria-busy="true"] { cursor:progress; }
+@media (max-width:359px) { .household-binding .fn-actions .btn { width:100%; } }

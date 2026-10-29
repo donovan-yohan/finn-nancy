@@ -1,38 +1,118 @@
-{% extends 'base.html' %}
+{% extends 'foundation_base.html' %}
+{% import 'foundation_macros.html' as ui %}
 {% block title %}Connections · Finn Nancy{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/household-onboarding.css">{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/banking.css">
-<section class="banking" data-banking="connections">
-<header class="banking-header"><h1>Connections</h1><a href="/bank-feed">Review bank feed</a></header>
-<div id="banking-error" role="alert" hidden></div>
-{% if not overview.network_allowed %}<p class="banking-notice">Bank connections are disabled. Enable approved Production access outside strict-local mode to connect.</p>{% endif %}
-<p class="muted">Shared household operator · Select the member giving consent, not an authenticated identity.</p>
-<form id="banking-member" class="banking-inline"><label>Household member<input name="name" maxlength="100" required autocomplete="off"></label><button type="submit">Add member</button></form>
-<div id="banking-members">
-{% for m in overview.members %}
-<section class="banking-member" data-member="{{ m.id }}"><strong>{{ m.name }}</strong>
-{% if m.consented %}<button type="button" data-withdraw="{{ m.id }}">Withdraw consent</button>{% else %}
-<details><summary>Consent for {{ m.name }}</summary><p>{{ overview.consent_text }}</p><button type="button" data-consent="{{ m.id }}">Give consent for {{ m.name }}</button></details>{% endif %}
-<button type="button" data-link="{{ m.id }}" {% if not m.consented or not overview.network_allowed %}disabled{% endif %}>Add bank for {{ m.name }}</button>
-</section>{% endfor %}
-</div>
-<section id="banking-link" hidden><h2>Finish connecting</h2><a id="banking-hosted" target="_blank" rel="noopener noreferrer">Open Plaid</a><button type="button" id="banking-finish">Check connection</button><p id="banking-link-status" role="status"></p></section>
-{% for pending in pending_links %}<p>{{ pending.member_name }} · {% if pending.state=='pending' %}<button type="button" data-finish-session="{{ pending.session_id }}">Check pending connection</button>{% else %}Connection outcome uncertain. Do not connect again; verify provider access before recovery.{% endif %}</p>{% endfor %}
-{% for c in overview.connections %}
-<section class="banking-connection" data-connection="{{ c.id }}"><header class="banking-inline"><h2>{{ c.member_name }} · Connection {{ c.id }}</h2><span>{{ c.state|replace('_',' ') }}</span></header>
-<div class="banking-inline"><button data-accounts="{{ c.id }}">Load accounts</button><button data-sync="{{ c.id }}" {% if c.state!='active' %}disabled{% endif %}>Sync</button>{% if c.state=='needs_repair' %}<button data-repair="{{ c.id }}" data-member-id="{{ c.member_id }}">Repair connection</button>{% endif %}<button data-disconnect="{{ c.id }}" {% if c.state not in ['active','needs_repair'] %}disabled{% endif %}>Disconnect</button></div>
-{% for a in c.accounts %}
-<details class="banking-account"><summary>{{ a.name }} · {{ a.currency }} · Account {{ a.id }}{% if a.account_id %} → Ledger {{ a.account_id }}{% else %} · Not mapped{% endif %}</summary>
-<form class="banking-binding" data-connection="{{ c.id }}" data-provider-account="{{ a.provider_account_id }}" data-revision="{{ a.revision }}">
-<label>Canonical account<select name="account_id"><option value="">Create an account</option>{% for account in overview.accounts %}<option value="{{ account.id }}" {% if a.account_id==account.id %}selected{% endif %}>{{ account.name }} · {{ account.currency }} · {{ account.id }}</option>{% endfor %}</select></label>
-<label>New account name<input name="new_name" maxlength="100" value="{{ a.name if not a.account_id else '' }}"></label>
-<label>New account kind<select name="new_kind">{% for kind in ['chequing','savings','credit','cash','investment'] %}<option {% if kind==a.kind %}selected{% endif %}>{{ kind }}</option>{% endfor %}</select></label>
-<label class="banking-check"><input type="checkbox" name="included" {% if a.included %}checked{% endif %}>Include in review</label>
-<label>Economic owner<select name="owner"><option value="shared">Shared</option>{% for m in overview.members %}<option value="{{ m.id }}" {% if a.owner_member_id==m.id %}selected{% endif %}>{{ m.name }}</option>{% endfor %}</select></label>
-<label>Feed role<select name="role"><option value="primary" {% if a.role=='primary' %}selected{% endif %}>Primary · may record new</option><option value="secondary" {% if a.role=='secondary' %}selected{% endif %}>Secondary · match only</option></select></label>
-<p class="muted">Map joint accounts to the same canonical account explicitly. Only one included primary feed is allowed.</p>
-<button type="submit" disabled>Save changes</button><button type="reset">Cancel</button>
-</form></details>{% endfor %}
-</section>{% else %}<p>No banks connected.</p>{% endfor %}
-</section><script defer src="/static/banking.js"></script>
+<section data-household-onboarding data-consent-version="{{ overview.consent_version }}" data-read-only="{{ 'true' if overview.read_only else 'false' }}" data-network-allowed="{{ 'true' if overview.network_allowed else 'false' }}">
+{% call ui.page_header('Connections') %}<a class="btn btn-link" href="/bank-feed">Review bank feed</a>{% endcall %}
+<div class="household-refresh" data-refresh-panel hidden><p data-refresh-message role="alert"></p><button class="btn btn-outline-secondary" type="button" data-action="refresh">Check current state</button></div>
+{% if not overview.network_allowed %}<p class="household-setup">{{ overview.setup.message if overview.setup is defined else 'Bank connections are disabled. Ask the operator to configure access.' }}</p>{% endif %}
+<section class="household-add" data-scope="member-add">
+  <h2>Your household</h2>
+  <p class="fn-muted">{{ 'Add another person, then connect banks for each member if needed.' if overview.members else 'Start with your name. Add other household members next; bank connections are optional.' }}</p>
+  <form class="fn-editor" data-form="member-add" data-draft-key="member-add">
+    {{ ui.name_field('member-name', disabled=overview.read_only) }}
+    <div class="fn-actions"><button class="btn btn-primary" type="submit"{% if overview.read_only %} disabled{% endif %}>{{ 'Add family member' if overview.members else 'Add yourself' }}</button></div>
+  </form>
+  {{ ui.feedback('member-add-feedback') }}
+</section>
+{% set display_members = overview.members|list %}
+{% set listed_member_ids = overview.members|map(attribute='id')|list %}
+{# Connections retain their corrected owner label even when an inactive rename
+   recovery row leaves the active member selector. This is a read projection. #}
+{% for c in overview.connections if c.member_id not in listed_member_ids %}
+  {% set seen = namespace(found=false) %}{% for row in display_members if row.id == c.member_id %}{% set seen.found = true %}{% endfor %}
+  {% if not seen.found %}{% set _ = display_members.append({'id':c.member_id,'name':c.member_name,'needs_name':false,'consented':false,'is_active':false,'view_only':true}) %}{% endif %}
+{% endfor %}
+{% for m in display_members %}
+{% set member_active = m.is_active|default(true) %}
+{% set local_read_only = overview.read_only or not member_active %}
+{% set member_label = 'Name required' if m.needs_name else m.name %}
+{% set pending_state = namespace(any=false, uncertain=false, connection_uncertain=false) %}
+{% for c in overview.connections if c.member_id == m.id and c.state in ['removing','remove_uncertain'] %}{% set pending_state.connection_uncertain = true %}{% endfor %}
+{% for pending in pending_links %}{% if (pending.member_id is defined and pending.member_id == m.id) or (pending.member_id is not defined and pending.member_name == m.name) %}{% set pending_state.any = true %}{% if pending.state != 'pending' %}{% set pending_state.uncertain = true %}{% endif %}{% endif %}{% endfor %}
+<section class="household-member" data-member="{{ m.id }}" data-member-active="{{ 'true' if member_active else 'false' }}" data-link-allowed="{{ 'true' if member_active and not m.needs_name and m.consented and overview.network_allowed and not overview.read_only else 'false' }}" data-member-name="{{ member_label }}" data-scope="member-{{ m.id }}" aria-labelledby="member-{{ m.id }}-title">
+  <header class="household-member-head"><h2 id="member-{{ m.id }}-title" tabindex="-1">{{ member_label }}</h2></header>
+  {% if not member_active %}<p class="fn-muted">Inactive member · Existing connections retained.</p>{% endif %}
+  {% if not m.view_only %}<details class="fn-disclosure household-name" data-disclosure-key="name-{{ m.id }}"{% if m.needs_name %} open{% endif %}>
+    <summary>{{ 'Name this member' if m.needs_name else 'Edit name' }}</summary>
+    <form class="fn-editor" data-form="member-rename" data-member-id="{{ m.id }}" data-draft-key="member-{{ m.id }}">
+      {{ ui.name_field('member-name-' ~ m.id, '' if m.needs_name else m.name, overview.read_only, 'Keeps this member’s existing accounts and connections.') }}
+      <div class="fn-actions"><button class="btn btn-outline-secondary" type="submit"{% if overview.read_only %} disabled{% endif %}>Save name</button><button class="btn btn-link" type="reset"{% if overview.read_only %} disabled{% endif %}>Cancel</button></div>
+    </form>
+  </details>{% endif %}
+  {{ ui.feedback('member-' ~ m.id ~ '-feedback') }}
+  {% for pending in pending_links %}{% if (pending.member_id is defined and pending.member_id == m.id) or (pending.member_id is not defined and pending.member_name == m.name) %}
+  <div class="household-pending" data-scope="session-{{ pending.session_id }}" data-link-state="{{ pending.state }}">
+    {% if pending.state == 'pending' %}<p>Connection in progress for {{ member_label }}. Select your bank and accounts in Plaid, then return here.</p>
+    <button class="btn btn-outline-secondary" type="button" data-action="finish" data-session-id="{{ pending.session_id }}" data-focus-key="finish-{{ pending.session_id }}"{% if not overview.network_allowed or local_read_only or not m.consented or m.needs_name %} disabled{% endif %}>Check connection for {{ member_label }}</button>
+    {% else %}<p>Connection outcome uncertain for {{ member_label }}. Do not connect again. Verify access in Plaid or your bank before recovery.</p>{% endif %}
+    {{ ui.feedback('session-' ~ pending.session_id ~ '-feedback') }}
+  </div>
+  {% endif %}{% endfor %}
+  {% for c in overview.connections if c.member_id == m.id %}
+  <section class="household-connection" data-connection="{{ c.id }}" data-scope="connection-{{ c.id }}">
+    <header class="household-connection-head"><h3 tabindex="-1" data-focus-key="connection-{{ c.id }}-title">Connection {{ loop.index }} · {{ member_label }}</h3><span class="fn-muted">{{ c.state|replace('_',' ')|capitalize }}</span></header>
+    {% if member_active %}<div class="fn-actions">
+      <button class="btn btn-outline-secondary" type="button" data-action="accounts" data-connection-id="{{ c.id }}" data-focus-key="accounts-{{ c.id }}"{% if not overview.network_allowed or local_read_only or c.state != 'active' %} disabled{% endif %}>Load accounts</button>
+      <button class="btn btn-outline-secondary" type="button" data-action="sync" data-connection-id="{{ c.id }}" data-focus-key="sync-{{ c.id }}"{% if not overview.network_allowed or local_read_only or c.state != 'active' %} disabled{% endif %}>Sync</button>
+      {% if c.state == 'needs_repair' and not m.needs_name %}<button class="btn btn-outline-secondary" type="button" data-action="repair" data-connection-id="{{ c.id }}" data-member-id="{{ m.id }}" data-focus-key="repair-{{ c.id }}"{% if not overview.network_allowed or local_read_only or not m.consented or pending_state.any or pending_state.connection_uncertain %} disabled{% endif %}>Repair connection for {{ member_label }}</button>{% endif %}
+      <button class="btn btn-link" type="button" data-action="disconnect" data-connection-id="{{ c.id }}" data-focus-key="disconnect-{{ c.id }}"{% if not overview.network_allowed or local_read_only or c.state not in ['active','needs_repair'] %} disabled{% endif %}>Disconnect</button>
+    </div>{% endif %}
+    {{ ui.feedback('connection-' ~ c.id ~ '-feedback') }}
+    {% if c.state in ['removing','remove_uncertain'] %}<p>Disconnection is not confirmed for {{ member_label }}. Do not retry. Check access in Plaid or your bank before recovery.</p>{% endif %}
+    {% if not c.accounts and c.state == 'active' %}<p class="fn-muted">No accounts loaded. Load accounts from this connection; do not connect the bank again.</p>{% endif %}
+    {% for a in c.accounts %}
+    {% set key = 'account-' ~ c.id ~ '-' ~ a.id %}
+    <article class="household-account" data-account-key="{{ key }}" data-scope="{{ key }}">
+      <h3>{{ a.name }} <span class="fn-muted">· {{ a.currency or 'Currency unknown' }}</span></h3>
+      <p class="household-account-summary">
+        {% if a.account_id %}{% for account in overview.accounts if account.id == a.account_id %}{{ account.name }} · {% endfor %}
+        {% if a.ownership == 'shared' %}Shared{% elif a.ownership == 'personal' %}{% for owner in overview.members if owner.id == a.owner_member_id %}{{ 'Name required' if owner.needs_name else owner.name }}{% else %}Personal owner unavailable{% endfor %}{% else %}Owner required{% endif %}
+        · {{ 'Included in review' if a.included else 'Excluded from review' }} · {{ 'Main source' if a.role == 'primary' else 'Matching source' }}
+        {% else %}Not mapped · Choose an account and owner{% endif %}
+      </p>
+      <details class="fn-disclosure" data-editor data-disclosure-key="{{ key }}">
+        <summary data-focus-key="edit-{{ key }}">{{ 'Edit account' if a.account_id else 'Set up account' }}</summary>
+        <form class="fn-editor household-binding" data-form="binding" data-read-only="{{ 'true' if local_read_only else 'false' }}" data-draft-key="{{ c.id }}:{{ a.provider_account_id }}" data-connection-id="{{ c.id }}" data-provider-account="{{ a.provider_account_id }}" data-revision="{{ a.revision }}">
+          <div class="fn-field"><label class="form-label" for="{{ key }}-ledger">Ledger account</label><select class="form-select" id="{{ key }}-ledger" name="account_id" required{% if local_read_only %} disabled{% endif %}><option value=""{% if not a.account_id %} selected{% endif %}>Choose an account</option><option value="new">Create an account</option>{% for account in overview.accounts %}<option value="{{ account.id }}"{% if account.id == a.account_id %} selected{% endif %}>{{ account.name }} · {{ account.currency or 'Currency unknown' }}</option>{% endfor %}</select><p class="form-text">For a joint account connected by another member, choose the same ledger account.</p></div>
+          <fieldset data-new-account hidden disabled><legend class="visually-hidden">New account</legend>
+            <div class="fn-field"><label class="form-label" for="{{ key }}-new-name">New account name</label><input class="form-control" id="{{ key }}-new-name" name="new_name" value="{{ a.name }}" maxlength="100" required{% if local_read_only %} disabled{% endif %}></div>
+            <div class="fn-field"><label class="form-label" for="{{ key }}-kind">Account kind</label><select class="form-select" id="{{ key }}-kind" name="new_kind"{% if local_read_only %} disabled{% endif %}>{% for kind in ['chequing','savings','credit','cash','investment'] %}<option value="{{ kind }}"{% if kind == a.kind %} selected{% endif %}>{{ kind|capitalize }}</option>{% endfor %}</select></div>
+          </fieldset>
+          <div class="fn-field"><label class="form-label" for="{{ key }}-owner">Account owner</label><select class="form-select" id="{{ key }}-owner" name="owner" required{% if local_read_only %} disabled{% endif %}><option value=""{% if not a.ownership %} selected{% endif %}>Choose personal or shared</option><option value="shared"{% if a.ownership == 'shared' %} selected{% endif %}>Shared household account</option>{% for owner in overview.members if not owner.needs_name and owner.is_active|default(true) %}<option value="{{ owner.id }}"{% if a.ownership == 'personal' and a.owner_member_id == owner.id %} selected{% endif %}>Personal · {{ owner.name }}</option>{% endfor %}</select></div>
+          <div class="fn-field"><label class="form-label" for="{{ key }}-included">Use in household review</label><select class="form-select" id="{{ key }}-included" name="included" required{% if local_read_only %} disabled{% endif %}><option value=""{% if a.included is none %} selected{% endif %}>Choose include or exclude</option><option value="include"{% if a.included %} selected{% endif %}>Include in review</option><option value="exclude"{% if a.included is not none and not a.included %} selected{% endif %}>Exclude from review</option></select></div>
+          <div class="fn-field"><label class="form-label" for="{{ key }}-role">Bank feed source</label><select class="form-select" id="{{ key }}-role" name="role" required{% if local_read_only %} disabled{% endif %}><option value=""{% if not a.role %} selected{% endif %}>Choose a source role</option><option value="primary"{% if a.role == 'primary' %} selected{% endif %}>Main source · New transactions</option><option value="secondary"{% if a.role == 'secondary' %} selected{% endif %}>Matching source · Existing transactions only</option></select><p class="form-text">Use one main source per ledger account. A second connection matches evidence without recording duplicates.</p></div>
+          <div class="fn-actions"><button class="btn btn-primary" type="submit" data-save disabled>Save changes</button><button class="btn btn-outline-secondary" type="reset"{% if local_read_only %} disabled{% endif %}>Cancel</button></div>
+        </form>
+      </details>
+      {{ ui.feedback(key ~ '-feedback') }}
+    </article>
+    {% endfor %}
+  </section>
+  {% else %}<p class="household-no-banks fn-muted">No banks connected for {{ member_label }}.</p>{% endfor %}
+  {% if pending_state.any and not pending_state.uncertain %}<p class="form-text">Finish the connection above before adding another bank.</p>{% endif %}
+  {% if member_active and not m.needs_name and not pending_state.any and not pending_state.connection_uncertain %}
+  <details class="fn-disclosure household-consent" data-disclosure-key="consent-{{ m.id }}">
+    <summary data-focus-key="add-bank-{{ m.id }}">Add bank for {{ member_label }}</summary>
+    <div class="household-consent-body" data-scope="consent-{{ m.id }}">
+      {% if not overview.network_allowed %}<p class="fn-muted">Bank connections are not available yet. You can still add household members.</p>{% endif %}
+      <p>{{ overview.consent_text }}</p>
+      <p class="form-text">Select the bank and accounts in Plaid, then return here and check the connection for {{ member_label }}.</p>
+      <div class="fn-actions">
+      {% if m.consented %}<p>Current consent saved for {{ member_label }}.</p><button class="btn btn-primary" type="button" data-action="link" data-member-id="{{ m.id }}" data-focus-key="link-{{ m.id }}"{% if not overview.network_allowed or local_read_only %} disabled{% endif %}>Connect bank for {{ member_label }}</button>
+      {% else %}<button class="btn btn-outline-secondary" type="button" data-action="consent" data-member-id="{{ m.id }}" data-focus-key="consent-{{ m.id }}"{% if not overview.network_allowed or local_read_only %} disabled{% endif %}>Give consent for {{ member_label }}</button>{% endif %}
+      </div>
+      <div class="fn-actions"><button class="btn btn-link" type="button" data-action="cancel-consent" data-member-id="{{ m.id }}">Cancel</button></div>
+      {{ ui.feedback('consent-' ~ m.id ~ '-feedback') }}
+    </div>
+  </details>
+  {% endif %}
+  {% if member_active and m.consented %}<details class="fn-disclosure" data-disclosure-key="withdraw-{{ m.id }}"><summary>Manage consent for {{ member_label }}</summary><div data-scope="withdraw-{{ m.id }}"><p class="form-text">Disconnect banks before withdrawing to revoke provider access. Withdrawal stops further requests.</p><button class="btn btn-link" type="button" data-action="withdraw" data-member-id="{{ m.id }}" data-focus-key="withdraw-{{ m.id }}"{% if local_read_only %} disabled{% endif %}>Withdraw consent for {{ member_label }}</button>{{ ui.feedback('withdraw-' ~ m.id ~ '-feedback') }}</div></details>{% endif %}
+</section>
+{% endfor %}
+<div data-active-link hidden></div>
+<noscript><p>Enable JavaScript to add members or manage bank connections.</p></noscript>
+</section>
 {% endblock %}
+{% block scripts %}<script defer src="/static/household-onboarding.js"></script>{% endblock %}

@@ -8,7 +8,7 @@ import pytest
 from app.db import engine
 
 
-def test_hosted_link_server_consumes_its_own_token_once(empty_db, tmp_path):
+def test_hosted_link_server_consumes_its_own_token_once(household_db, tmp_path):
     from app.banking.service import BankingService, CONSENT_VERSION
     credential = tmp_path / 'credentials.json'
     credential.write_text(json.dumps({'client_id': secrets.token_hex(12), 'secret': secrets.token_hex(24)}))
@@ -38,7 +38,7 @@ def test_hosted_link_server_consumes_its_own_token_once(empty_db, tmp_path):
             return httpx.Response(200,json={'accounts':[{'account_id':'generated-account','name':'Checking',
                 'type':'depository','subtype':'checking','balances':{'iso_currency_code':'CAD'}}]})
         raise AssertionError(req.url.path)
-    service = BankingService(db_path=empty_db, private_dir=tmp_path/'private', credentials_file=credential,
+    service = BankingService(db_path=household_db, private_dir=tmp_path/'private', credentials_file=credential,
         origin='http://banking.example.invalid',completion_uri='http://banking.example.invalid/connections', enabled=lambda:True,
         strict_local=lambda:False,read_only=lambda:False,transport=httpx.MockTransport(provider))
     service.consent(1, granted=True,version=CONSENT_VERSION)
@@ -54,7 +54,7 @@ def test_hosted_link_server_consumes_its_own_token_once(empty_db, tmp_path):
     assert calls.count('/item/public_token/exchange')==1
     serialized = json.dumps(service.overview())
     assert all(secret not in serialized for secret in (link,public,access))
-    with engine.read_conn(empty_db) as conn:
+    with engine.read_conn(household_db) as conn:
         dump='\n'.join(conn.iterdump())
         assert all(secret not in dump for secret in (link,public,access))
         assert conn.execute('SELECT COUNT(*) FROM bank_accounts').fetchone()[0]==1
@@ -75,7 +75,7 @@ def test_hosted_link_server_consumes_its_own_token_once(empty_db, tmp_path):
     assert calls.count('/item/remove')==1
 
 
-def test_uncertain_exchange_is_never_retried(empty_db,tmp_path):
+def test_uncertain_exchange_is_never_retried(household_db,tmp_path):
     from app.banking.service import BankingService,CONSENT_VERSION
     credentials=tmp_path/'generated.json'
     credentials.write_text(json.dumps({'client_id':secrets.token_hex(12),'secret':secrets.token_hex(24)}));credentials.chmod(0o600)
@@ -87,7 +87,7 @@ def test_uncertain_exchange_is_never_retried(empty_db,tmp_path):
         if req.url.path=='/link/token/get':
             return httpx.Response(200,json={'link_token':'generated-link','link_sessions':[{'finished_at':'generated-finished','on_success':{'public_token':'generated-public'}}]})
         raise httpx.ReadTimeout('generated uncertain response')
-    service=BankingService(db_path=empty_db,private_dir=tmp_path/'private',credentials_file=credentials,
+    service=BankingService(db_path=household_db,private_dir=tmp_path/'private',credentials_file=credentials,
         origin='http://banking.example.invalid',completion_uri='http://banking.example.invalid/connections',
         enabled=lambda:True,strict_local=lambda:False,read_only=lambda:False,transport=httpx.MockTransport(provider))
     service.consent(1,granted=True,version=CONSENT_VERSION)

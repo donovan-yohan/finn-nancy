@@ -22,6 +22,8 @@
   function apply() {
     var theme = preference === "system" ? (system.matches ? "dark" : "light") : preference;
     root.dataset.theme = theme;
+    // Bootstrap uses the same resolved preference; no second theme store.
+    root.dataset.bsTheme = theme;
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", theme === "dark" ? "#000000" : "#ffffff");
   }

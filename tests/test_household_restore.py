@@ -34,14 +34,15 @@ def test_generated_household_restore_preserves_data_evidence_and_token_reference
     banking = BankingService(db_path=database, private_dir=source / 'private',
         credentials_file=None, origin='', completion_uri='', enabled=lambda: False,
         strict_local=lambda: True, read_only=lambda: False, home_currency='CAD')
-    banking.consent(1, granted=True, version=CONSENT_VERSION)
+    member_id = banking.add_member('Generated recovery member')['member_id']
+    banking.consent(member_id, granted=True, version=CONSENT_VERSION)
     reference = banking.store.put('generated-restored-access-token')
     with engine.write_tx(database) as conn:
         document = repo_documents.insert_source_document(conn, kind='receipt',
             original_name='generated-recovery-receipt.txt', storage_ref=relative.as_posix(),
             sha256=digest, mime_type='text/plain', status='processed')
         conn.execute('UPDATE transactions SET source_document_id=? WHERE id=3', (document,))
-        conn.execute("INSERT INTO bank_connections(member_id,item_id,token_ref,consent_version,state) VALUES (1,'generated-recovery-item',?,?,'active')", (reference, CONSENT_VERSION))
+        conn.execute("INSERT INTO bank_connections(member_id,item_id,token_ref,consent_version,state) VALUES (?,'generated-recovery-item',?,?,'active')", (member_id, reference, CONSENT_VERSION))
         expected = {table: [tuple(row) for row in conn.execute(f'SELECT * FROM {table} ORDER BY id')]
                     for table in ('accounts', 'transactions', 'transaction_splits', 'source_documents',
                                   'bank_connections', 'bank_consents', 'transaction_relationships')}

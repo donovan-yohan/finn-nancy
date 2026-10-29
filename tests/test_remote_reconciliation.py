@@ -73,10 +73,11 @@ def remote_household(empty_db, tmp_path, monkeypatch):
         document = repo_documents.get_document(conn, doc)
         assert document is not None
         baseline_document = dict(document)
-    service.consent(1, granted=True, version=CONSENT_VERSION)
+    member_id = service.add_member('Generated reconciliation member')['member_id']
+    service.consent(member_id, granted=True, version=CONSENT_VERSION)
     token_ref = service.store.put('generated-reconciliation-access')
     with engine.write_tx(empty_db) as conn:
-        connection = conn.execute("INSERT INTO bank_connections(member_id,item_id,token_ref,consent_version,state) VALUES (1,'generated-existing-item',?,?,'active')", (token_ref, CONSENT_VERSION)).lastrowid
+        connection = conn.execute("INSERT INTO bank_connections(member_id,item_id,token_ref,consent_version,state) VALUES (?,'generated-existing-item',?,?,'active')", (member_id, token_ref, CONSENT_VERSION)).lastrowid
         conn.execute("INSERT INTO bank_accounts(connection_id,provider_account_id,name,currency,kind) VALUES (?,'generated-provider-account','Generated account','CAD','chequing')", (connection,))
 
     def observation(ident, amount, **updates):

@@ -1,0 +1,63 @@
+/* Hotate Bootstrap adapter. Values come from the pinned generated tokens.css.
+   Loaded by foundation_base only: existing pages keep their own CSS/reset. */
+:root,[data-bs-theme] {
+  --bs-body-bg:var(--canvas); --bs-body-color:var(--ink);
+  --bs-secondary-color:var(--muted); --bs-border-color:var(--line);
+  --bs-border-radius:var(--radius); --bs-link-color:var(--finn);
+  --bs-link-hover-color:var(--finn); --bs-body-font-family:var(--font);
+}
+body { background:var(--canvas); color:var(--ink); font-family:var(--font); font-size:var(--body); line-height:var(--line-height); }
+h1,h2,h3,p { margin:0; }
+h1 { font-size:var(--title); font-weight:650; line-height:1.2; letter-spacing:-.035em; }
+h2 { font-size:var(--heading); font-weight:650; line-height:1.4; }
+h3 { font-size:1rem; font-weight:600; }
+a { color:var(--finn); text-underline-offset:3px; }
+[hidden] { display:none !important; }
+.fn-muted,.form-text { color:var(--muted); }
+.fn-shell { width:calc(100% - 64px); max-width:var(--content); margin-inline:auto; }
+.fn-header { border-bottom:1px solid var(--line); }
+.fn-header-inner { min-height:80px; display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-6); padding-block:var(--space-3); }
+.fn-wordmark { display:flex; gap:var(--space-1); font-size:1.2rem; font-weight:700; text-decoration:none; }
+.fn-wordmark span:last-child { color:var(--nancy); }
+.fn-nav { display:flex; flex-wrap:wrap; align-items:start; gap:var(--space-2); min-width:0; }
+.fn-nav>a,.fn-more>summary,.fn-more nav a { display:flex; align-items:center; min-height:var(--control); padding:var(--space-3); color:var(--ink); text-decoration:none; border-radius:var(--radius); }
+.fn-nav a:hover,.fn-more>summary:hover { background:var(--hover); }
+.fn-nav a[aria-current] { color:var(--finn); text-decoration:underline; }
+.fn-more>summary { cursor:pointer; list-style:none; }
+.fn-more>summary::-webkit-details-marker { display:none; }
+.fn-more>summary::after { content:'⌄'; margin-left:var(--space-2); }
+.fn-more nav { display:flex; flex-direction:column; border:1px solid var(--line); padding:var(--space-2); margin-top:var(--space-2); background:var(--surface); }
+.fn-appearance { margin-left:auto; max-width:100%; }
+.theme-control { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-2); }
+.theme-control .form-label { margin:0; }
+.theme-control select { width:auto; max-width:100%; }
+.fn-page-head { padding-block:var(--space-8) var(--space-6); display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--space-4); }
+.fn-actions { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-2); }
+.fn-editor { max-width:640px; display:grid; gap:var(--space-4); }
+.fn-field { min-width:0; }
+.form-label { font-weight:500; margin-bottom:var(--space-2); }
+.form-text { margin-top:var(--space-2); font-size:var(--small); }
+.btn,.form-control,.form-select { min-height:var(--control); font-size:inherit; border-radius:var(--radius); }
+.btn { padding:10px 16px; display:inline-flex; align-items:center; justify-content:center; font-weight:500; white-space:normal; }
+.btn-primary { --bs-btn-bg:var(--finn); --bs-btn-color:var(--on-finn); --bs-btn-border-color:var(--finn); --bs-btn-hover-bg:var(--finn); --bs-btn-hover-color:var(--on-finn); --bs-btn-hover-border-color:var(--finn); --bs-btn-active-bg:var(--finn); --bs-btn-active-color:var(--on-finn); --bs-btn-active-border-color:var(--finn); --bs-btn-disabled-bg:var(--finn); --bs-btn-disabled-color:var(--on-finn); --bs-btn-disabled-border-color:var(--finn); }
+.btn-outline-secondary { --bs-btn-color:var(--ink); --bs-btn-border-color:var(--control-line); --bs-btn-hover-bg:var(--hover); --bs-btn-hover-color:var(--ink); --bs-btn-hover-border-color:var(--control-line); --bs-btn-active-bg:var(--hover); --bs-btn-active-color:var(--ink); --bs-btn-active-border-color:var(--control-line); --bs-btn-disabled-color:var(--muted); --bs-btn-disabled-border-color:var(--line); }
+.btn-link { --bs-btn-color:var(--finn); --bs-btn-hover-color:var(--finn); --bs-btn-active-color:var(--finn); }
+.form-control,.form-select { color:var(--ink); background-color:var(--canvas); border-color:var(--control-line); padding-block:10px; }
+.form-control:focus,.form-select:focus { color:var(--ink); background-color:var(--canvas); border-color:var(--finn); box-shadow:none; }
+.fn-check { min-height:var(--control); display:flex; gap:var(--space-3); align-items:center; }
+.form-check-input { width:20px; height:20px; margin:0; flex:none; border-color:var(--control-line); background-color:var(--canvas); }
+.form-check-input:checked { background-color:var(--finn); border-color:var(--finn); }
+:focus-visible { outline:3px solid var(--focus) !important; outline-offset:3px; box-shadow:none !important; }
+.fn-feedback { color:var(--danger); overflow-wrap:anywhere; }
+.fn-feedback[data-kind="success"] { color:var(--ink); }
+.fn-disclosure>summary { min-height:var(--control); display:flex; align-items:center; cursor:pointer; color:var(--finn); padding-block:var(--space-3); list-style:none; }
+.fn-disclosure>summary::-webkit-details-marker { display:none; }
+.fn-disclosure>summary::after { content:'⌄'; margin-left:var(--space-2); }
+.skip-link { position:absolute; top:0; left:var(--space-4); padding:var(--space-3); background:var(--canvas); transform:translateY(-150%); z-index:10; }
+.skip-link:focus { transform:none; }
+#workspace-content { padding-bottom:var(--space-12); }
+#toast:not(:empty) { position:fixed; inset:auto var(--space-4) var(--space-4); max-width:640px; margin-inline:auto; padding:var(--space-4); background:var(--canvas); border:1px solid var(--line); z-index:20; }
+.capture-toast { display:flex; flex-wrap:wrap; gap:var(--space-3); align-items:center; }
+.capture-toast button { min-height:var(--control); color:var(--ink); background:var(--surface); border:1px solid var(--control-line); }
+@media (max-width:767px) { .fn-shell { width:calc(100% - 32px); } .fn-nav { order:3; width:100%; } .fn-header-inner { gap:var(--space-3); } .fn-page-head { padding-top:var(--space-6); } }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition-duration:var(--reducedMotion) !important; animation-duration:var(--reducedMotion) !important; } }
