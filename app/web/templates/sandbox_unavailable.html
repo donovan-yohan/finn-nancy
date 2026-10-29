@@ -1,5 +1,9 @@
-{% extends "base.html" %}
-{% block title %}Isolated Sandbox candidate · Finn Nancy{% endblock %}
+{% extends "foundation_base.html" %}
+{% block title %}Sandbox workflow unavailable · Finn Nancy{% endblock %}
+{% block styles %}{{ super() }}<link rel="stylesheet" href="/static/foundation/banking.css">{% endblock %}
 {% block content %}
-<div class="grid single"><section class="card"><h1>SANDBOX candidate only</h1><p>This workflow is unavailable in this isolated candidate. The normal app and its financial data have not been loaded here.</p><p><a href="/connections">Return to Connections and unbooked synthetic activity</a></p></section></div>
+<section class="banking-unavailable">
+  <header class="fn-page-head"><h1>Sandbox workflow unavailable</h1><span class="sandbox-badge">Sandbox · test data</span></header>
+  <div class="banking-empty"><p>This workflow is unavailable in this isolated candidate. The normal app and its financial data have not been loaded here.</p><p><a class="btn btn-outline-secondary" href="/connections">Return to Sandbox connections</a></p></div>
+</section>
 {% endblock %}

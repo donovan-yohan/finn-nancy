@@ -1,25 +1,26 @@
 {% if not rows %}
-<p class="subtle">no rows.</p>
+<p class="fn-muted">No rows.</p>
 {% else %}
-<div class="table-wrap">
-  <table>
+<div class="evidence-table-wrap" tabindex="0" role="region" aria-label="{{ coverage_label }} coverage">
+  <table class="table align-middle">
+    <caption class="caption-top">{{ coverage_label }} coverage</caption>
     <thead>
       <tr>
-        <th>group</th>
-        <th class="money">spend</th>
-        <th class="money">matched</th>
-        <th class="money">unmatched</th>
-        <th>coverage</th>
+        <th>Group</th>
+        <th class="evidence-money">Spend</th>
+        <th class="evidence-money">Matched</th>
+        <th class="evidence-money">Unmatched</th>
+        <th>Coverage</th>
       </tr>
     </thead>
     <tbody>
       {% for row in rows %}
       <tr>
         <td>{{ row.label or 'Unassigned' }}</td>
-        <td class="money">{{ row.statement_spend_cents | money }}</td>
-        <td class="money positive">{{ row.covered_spend_cents | money }}</td>
-        <td class="money negative">{{ row.unmatched_spend_cents | money }}</td>
-        <td>{{ row.coverage_pct }}%</td>
+        <td class="evidence-money">{{ row.statement_spend_cents | money }}</td>
+        <td class="evidence-money positive">{{ row.covered_spend_cents | money }}</td>
+        <td class="evidence-money negative">{{ row.unmatched_spend_cents | money }}</td>
+        <td>{% if row.covered_spend_cents + row.unmatched_spend_cents %}{{ row.coverage_pct }}%{% else %}No eligible spend{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

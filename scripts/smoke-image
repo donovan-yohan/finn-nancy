@@ -77,7 +77,10 @@ print(json.dumps(result))
 HTTP = r'''
 import json, os, urllib.request, urllib.error
 paths = [('/healthz', 'none', None, 200), ('/version', 'none', None, 200), ('/', 'none', None, 200),
-         ('/static/app.css', 'none', None, 200), ('/api/finance/categories', 'missing', None, 401),
+         ('/static/app.css', 'none', None, 404),
+         *[('/static/foundation/' + asset, 'none', None, 200)
+           for asset in ('vendor/bootstrap.min.css', 'tokens.css', 'components.css', 'activity.css')],
+         ('/api/finance/categories', 'missing', None, 401),
          ('/api/finance/categories', 'wrong', 'Bearer generated-wrong-key', 401),
          ('/api/finance/categories', 'valid', 'Bearer ' + os.environ['API_TOKEN'], 200)]
 result = {}
@@ -95,8 +98,12 @@ for path, authority, key, expected in paths:
         assert body == b'ok\n'
     if path == '/':
         assert b'<html' in body.lower()
-    if path == '/static/app.css':
+        assert b'/static/app.css' not in body
+        for asset in ('vendor/bootstrap.min.css', 'tokens.css', 'components.css', 'activity.css'):
+            assert ('/static/foundation/' + asset).encode() in body
+    if path.startswith('/static/foundation/'):
         assert len(body) > 100
+        assert response.headers.get('Content-Type', '').split(';')[0].strip() == 'text/css'
     if path == '/version':
         result['version'] = json.loads(body)
     result[path + ':' + authority] = response.code

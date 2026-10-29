@@ -1,8 +1,10 @@
 """Human approval queue for agent-proposed financial actions."""
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import date
+from typing import TypedDict
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -16,6 +18,7 @@ from ...db import (
     repo_close,
     repo_embeddings,
     repo_labels,
+    repo_ledger,
     repo_merchant_knowledge,
 )
 from ..templating import templates
@@ -189,6 +192,83 @@ def _annotate_locked_month(conn: sqlite3.Connection, proposal: dict) -> None:
         proposal["locked_month"] = month
 
 
+class RecategorizationConsequence(TypedDict):
+    """Queue-only observed facts. This projection never authorizes a mutation."""
+
+    transaction: sqlite3.Row | None
+    split: sqlite3.Row | None
+    target: sqlite3.Row | None
+    split_count: int
+    unavailable: list[str]
+
+
+def _read_reference_id(value: object) -> int | None:
+    """Do not repair malformed stored identifiers for presentation."""
+    if type(value) is int:
+        return value if 0 < value <= 9223372036854775807 else None
+    if isinstance(value, str) and re.fullmatch(r"[1-9][0-9]{0,18}", value):
+        parsed = int(value)
+        return parsed if parsed <= 9223372036854775807 else None
+    return None
+
+
+def _recategorization_consequence(
+    conn: sqlite3.Connection, payload: dict,
+) -> RecategorizationConsequence:
+    consequence: RecategorizationConsequence = {
+        "transaction": None, "split": None, "target": None,
+        "split_count": 0, "unavailable": [],
+    }
+    transaction_id = _read_reference_id(payload.get("transaction_id"))
+    if transaction_id is not None:
+        consequence["transaction"] = conn.execute(
+            """SELECT t.*, a.currency FROM transactions t
+               LEFT JOIN accounts a ON a.id=t.account_id WHERE t.id=?""",
+            (transaction_id,),
+        ).fetchone()
+    if consequence["transaction"] is None:
+        consequence["unavailable"].append("Transaction unavailable: the reference is missing or invalid.")
+    else:
+        splits = conn.execute(
+            """SELECT s.*, c.name AS category_name FROM transaction_splits s
+               LEFT JOIN categories c ON c.id=s.category_id
+               WHERE s.transaction_id=? ORDER BY s.id""",
+            (transaction_id,),
+        ).fetchall()
+        consequence["split_count"] = len(splits)
+        if payload.get("split_id") in (None, ""):
+            if len(splits) == 1:
+                consequence["split"] = splits[0]
+            else:
+                consequence["unavailable"].append(
+                    "Category change unavailable: cannot resolve a single split for this transaction."
+                )
+        else:
+            split_id = _read_reference_id(payload["split_id"])
+            consequence["split"] = next((s for s in splits if s["id"] == split_id), None)
+            if consequence["split"] is None:
+                consequence["unavailable"].append(
+                    "Category change unavailable: the selected split is missing or invalid for this transaction."
+                )
+        if consequence["split"] is not None and not consequence["split"]["category_name"]:
+            consequence["unavailable"].append("Current category unavailable.")
+
+    raw_target = payload.get("to_category_id")
+    if raw_target not in (None, ""):
+        target_id = _read_reference_id(raw_target)
+        if target_id is not None:
+            consequence["target"] = conn.execute(
+                "SELECT * FROM categories WHERE id=?", (target_id,),
+            ).fetchone()
+    else:
+        name = str(payload.get("to_category_name") or "").strip()
+        if name:
+            consequence["target"] = repo_ledger.find_category_by_name(conn, name)
+    if consequence["target"] is None:
+        consequence["unavailable"].append("Proposed category unavailable: the reference is missing or invalid.")
+    return consequence
+
+
 @router.get("/actions", response_class=HTMLResponse)
 def actions_queue(request: Request):
     settings = get_settings()
@@ -196,6 +276,11 @@ def actions_queue(request: Request):
         proposals = repo_actions.list_proposals(conn)
         _payload_items(proposals)
         for proposal in proposals:
+            if proposal["kind"] == "recategorization":
+                proposal["consequence"] = _recategorization_consequence(conn, proposal["payload"])
+                if _read_reference_id(proposal["payload"].get("transaction_id")) is None:
+                    proposal["locked_month"] = None
+                    continue
             _annotate_locked_month(conn, proposal)
         categories = conn.execute("SELECT * FROM categories ORDER BY kind, name").fetchall()
         line_months = _statement_line_months(conn, proposals)

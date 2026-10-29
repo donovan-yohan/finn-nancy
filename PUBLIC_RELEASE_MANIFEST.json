@@ -2,7 +2,13 @@
   "binary_assets": {
     "app/web/static/icon-192.png": "f72dacb430283998d1a98d09f7a8a4f59bad04bbb1af214e94546f53533959c5",
     "app/web/static/icon-512.png": "087e754da59271f2e34a1d4ac0b6715879aade93f87caa9bd3f71f8000fceb50",
-    "app/web/static/icon-maskable-512.png": "d999491256c3cdd92507c761e8977e4931f9e550008c6b18f7c799255f1ec60b"
+    "app/web/static/icon-maskable-512.png": "d999491256c3cdd92507c761e8977e4931f9e550008c6b18f7c799255f1ec60b",
+    "docs/media/activity-desktop.png": "57119f67543ab8982874b26898ba62d20826108b9249b7ab7872fc7d98eabc14",
+    "docs/media/processing-phone.png": "218a208844020e33bfab203f1b03ed45998d049981760a0b1cf4a20614fd63aa",
+    "docs/media/reconciliation-desktop.png": "9bd5ce6c67f0a343ab38b574a1113117ad3c2de4e335fb30f07e5a7de407f887",
+    "docs/media/household-accounts.png": "95997b9512d5823574902ad81e4c73bc4046809e6f7f24ef4af57b643d0bc541",
+    "docs/media/period-statement.png": "99d21c228cd3066f4c5cd9e403d136cc77c2138e3f591e4ab18206f87d6a9143",
+    "docs/media/planning.png": "e988ae445e20b39ca11f88d05670679913884a9ea059d8440a88a864d095379e"
   },
   "declaration": "Fixture files are deterministic synthetic data; opaque binaries are reviewed public assets.",
   "fixtures": {

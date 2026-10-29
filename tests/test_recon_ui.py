@@ -21,23 +21,28 @@ from app.web.routes import close as close_routes
 from app.web.routes import recon
 
 
-def test_positive_flow_mobile_css_keeps_table_as_the_only_scroller():
+def test_positive_flow_mobile_css_keeps_table_as_the_only_scroller(app_env):
     css = (
-        Path(__file__).parents[1] / "app" / "web" / "static" / "app.css"
+        Path(__file__).parents[1] / "app/web/static/foundation/evidence.css"
     ).read_text()
-
-    assert "#positive-flow-review .coverage-grid {" in css
-    assert "grid-template-columns: minmax(0, 1fr);" in css
-    assert "#positive-flow-review .coverage-grid > *" in css
-    assert "#positive-flow-review .card {" in css
-    assert "overflow-x: visible;" in css
-    assert "#positive-flow-review .table-wrap {" in css
-    assert "overscroll-behavior-inline: contain;" in css
-    assert "#positive-flow-review .action-row form {" in css
-    assert "flex: 1 1 100%;" in css
-    assert "#positive-flow-review .action-row select {" in css
-    assert "width: 100%;" in css
-    assert "min-width: 0;" in css
+    doc = _insert_doc(name="generated-scroll-contract.csv")
+    _insert_line(doc_id=doc, account_id=1, posted_on="2026-01-20",
+                 amount_cents=10000, description="Generated credit", row_hash="scroll-contract")
+    _insert_line(doc_id=doc, account_id=3, posted_on="2026-01-05",
+                 amount_cents=-16243, description="weekly groceries", row_hash="scroll-candidate")
+    response = _client().get("/recon?month=2026-01")
+    assert response.status_code == 200
+    assert '/static/foundation/evidence.css' in response.text
+    assert 'id="positive-flow-review"' in response.text
+    assert 'class="evidence-table-wrap" tabindex="0" role="region"' in response.text
+    assert 'aria-label="Match candidates"' in response.text
+    assert '.evidence-workspace .coverage-grid>* { min-width:0; }' in css
+    assert '.evidence-workspace .coverage-grid { grid-template-columns:minmax(0,1fr); }' in css
+    assert '.evidence-workspace .evidence-table-wrap { position:relative; max-width:100%; overflow-x:auto; overscroll-behavior-inline:contain; }' in css
+    assert '.evidence-workspace #positive-flow-review .fn-actions>form { flex:1 1 100%; }' in css
+    assert '.evidence-workspace .form-control,.evidence-workspace .form-select { width:100%; min-width:0; }' in css
+    # Real phone overflow, labelled controls and native decisions are exercised
+    # by tests/js/design_evidence.test.cjs, not inferred from legacy selectors.
 
 
 def _client() -> TestClient:
@@ -586,7 +591,7 @@ def test_404_on_unknown_line_and_doc_ids(app_env, monkeypatch):
 def test_recon_page_empty_state(app_env):
     r = _client().get("/recon")
     assert r.status_code == 200
-    assert "nothing to reconcile" in r.text
+    assert "No lines need reconciliation." in r.text
 
 
 def test_positive_statement_line_cannot_bypass_review_with_income_or_ignore(
@@ -972,7 +977,7 @@ def test_positive_flow_split_candidate_shows_provenance_and_allocation_effect(
     assert "Projected report effect" in page.text
     assert "neither source amount changes" in page.text
     assert 'name="selected_category_id"' in page.text
-    assert "expense category this credit offsets" in page.text
+    assert "Expense category this credit offsets" in page.text
 
     accepted = client.post(
         f"/recon/positive/{subject_id}/accept-pair",

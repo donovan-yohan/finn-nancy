@@ -1,45 +1,66 @@
 {% if not append %}
 <div class="tx-list" id="tx-list">
   <div class="tx-head" aria-hidden="true">
-    <span>date</span>
-    <span>account</span>
-    <span>description</span>
-    <span>categories</span>
-    <span class="money">amount</span>
-    <span></span>
+    <span>Date</span><span>Description</span><span>Account</span><span>Categories</span><span class="tx-money">Transaction amount</span><span></span>
   </div>
 {% endif %}
   {% for t in transactions %}
+  {% set formatted_amount = t.amount_cents | money %}
   <details class="tx-row" data-why-url="/chat?why={{ t.id }}" id="transaction-{{ t.id }}">
-    <summary class="tx-summary">
+    <summary class="tx-summary{% if formatted_amount|length > 20 %} tx-summary-long{% endif %}">
       <span class="tx-date">{{ t.posted_on }}</span>
-      <span class="tx-account">{{ t.account_name }}</span>
       <strong class="tx-desc">{{ t.description }}</strong>
-      <span class="tx-cats">{{ t.categories }}{% if t.semantic_status != 'complete' %}<span class="tx-review"> · needs review</span>{% endif %}</span>
-      <span class="tx-amount money" data-label="amount">{{ t.amount_cents | money }}{% if t.currency is defined %} {{ t.currency or 'Currency unknown' }}{% endif %}</span>
+      <span class="tx-account">{{ t.account_name }}</span>
+      <span class="tx-cats">{{ t.categories or 'Uncategorized' }}{% if t.semantic_status != 'complete' %}<span class="tx-review">Needs accounting review</span>{% endif %}</span>
+      <span class="tx-amount tx-money" data-label="amount">{% if formatted_amount|length > 20 %}{% for chunk in formatted_amount.split(',') %}<span class="tx-money-chunk">{{ chunk }}{% if not loop.last %},{% endif %}</span>{% if not loop.last %}<wbr>{% endif %}{% endfor %}{% else %}{{ formatted_amount }}{% endif %} {{ t.currency or 'Currency unknown' }}</span>
       <span class="tx-chevron" aria-hidden="true">⌄</span>
     </summary>
     <div class="tx-evidence">
       <dl>
-        <div><dt>Transaction</dt><dd>#{{ t.id }} · {{ t.flow_kind | replace('_', ' ') }}{% if t.semantic_status != 'complete' %} · needs review: {{ t.semantic_reason }}{% endif %}</dd></div>
+        <div><dt>Transaction</dt><dd>#{{ t.id }}</dd></div>
         <div><dt>Counterparty</dt><dd>{{ t.counterparty or '—' }}</dd></div>
         <div><dt>Accounting flow</dt><dd>{{ t.flow_kind | replace('_', ' ') }}</dd></div>
-        {% if t.semantic_status != 'complete' %}<div><dt>Needs review</dt><dd>{{ t.semantic_reason }}</dd></div>{% endif %}
+        <div><dt>Posted date</dt><dd>{{ t.posted_on }}</dd></div>
+        <div><dt>Account</dt><dd>{{ t.account_name }}</dd></div>
+        <div><dt>Currency</dt><dd>{{ t.currency or 'Currency unknown' }}</dd></div>
+        {% if t.semantic_status != 'complete' %}<div><dt>Needs accounting review</dt><dd>{{ t.semantic_reason }}</dd></div>{% endif %}
       </dl>
-      <div class="action-row">
-        <a class="link" href="/txn/{{ t.id }}/edit">edit</a>
-        <a class="link" href="/chat?why={{ t.id }}">why?</a>
+      <div class="tx-originals">
+        <h3>Linked originals</h3>
+        {% if t.originals %}
+        <ul>
+          {% for original in t.originals %}
+          <li><a class="btn btn-link" href="/review/doc/{{ original.id }}/file">{{ original.kind | capitalize }}: {{ original.original_name or 'Unnamed original' }}</a></li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="fn-muted">No linked originals.</p>
+        {% endif %}
+      </div>
+      <div class="fn-actions">
+        <a class="btn btn-link" href="/txn/{{ t.id }}/edit">Edit transaction</a>
+        <a class="btn btn-link" href="/chat?why={{ t.id }}">Why this transaction?</a>
       </div>
     </div>
   </details>
   {% endfor %}
   {% if not transactions and not append %}
-  <p class="tx-empty subtle">no transactions match these filters.</p>
+  <div class="tx-empty">
+    {% if (filters is defined and (filters.q or filters.category_id or filters.account_id or filters.flow_kind or filters.date_from or filters.date_to or filters.semantic_review or filters.report_bucket or filters.category_resolution)) or (selected_month is defined and selected_month) %}
+    <h2>No matching activity.</h2>
+    <p class="fn-muted">Try another merchant or clear your filters.</p>
+    <a class="btn btn-outline-secondary" href="/activity">Clear filters</a>
+    {% else %}
+    <h2>No activity yet.</h2>
+    <p class="fn-muted">Upload a receipt or statement to get started.</p>
+    <a class="btn btn-primary" href="/upload">Upload</a>
+    {% endif %}
+  </div>
   {% endif %}
   {% if next_cursor %}
-  <button class="ghost load-more"
+  <button class="btn btn-outline-secondary load-more"
           hx-get="/transactions?cursor={{ next_cursor | urlencode }}{% if filter_qs %}&{{ filter_qs }}{% endif %}"
-          hx-target="this" hx-swap="outerHTML">load more</button>
+          hx-target="this" hx-swap="outerHTML">Load more</button>
   {% endif %}
 {% if not append %}
 </div>

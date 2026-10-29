@@ -1,0 +1,160 @@
+/* Bank observations and the isolated Sandbox share the existing foundation.
+   Legacy class aliases below style DOM owned by plaid-sandbox.js, not its state. */
+.banking, .sandbox-page, .banking-unavailable { min-width: 0; overflow-wrap: anywhere; }
+.banking-context { margin-bottom: var(--space-6); }
+.banking-feed { border-top: 1px solid var(--line); }
+.banking-row { border-bottom: 1px solid var(--line); }
+.banking-row > summary { display: grid; grid-template-columns: 6rem minmax(0, 1fr) minmax(8rem, auto) 8rem; align-items: center; gap: var(--space-4); padding: var(--space-4); min-height: 88px; cursor: pointer; list-style: none; }
+.banking-row > summary::-webkit-details-marker { display: none; }
+.banking-row > summary:hover, .banking-row[open] > summary { background: var(--hover); }
+.banking-date, .banking-merchant small, .banking-row-state { font-size: var(--small); color: var(--muted); }
+.banking-merchant { font-weight: 600; }
+.banking-merchant small, .banking-row-state small { display: block; font-weight: 400; }
+.banking-amount, .banking-review-amount { font-variant-numeric: tabular-nums lining-nums; }
+.banking-amount { text-align: end; }
+.banking-evidence { display: grid; gap: var(--space-4); padding: var(--space-4); background: var(--surface); }
+.banking-review-summary { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
+.banking-review-amount { font-size: 1.5rem; }
+.banking-facts { display: flex; flex-wrap: wrap; gap: var(--space-4) var(--space-8); margin: 0; }
+.banking-facts dt { font-size: var(--small); color: var(--muted); font-weight: 400; }
+.banking-facts dd { margin: var(--space-1) 0 0; }
+.banking-provider { border-block: 1px solid var(--line); }
+.banking-suggestion { color: var(--nancy); }
+.banking-notice { margin-block: var(--space-4); padding: var(--space-4); background: var(--surface); border: 1px solid var(--line); }
+.banking-decision { margin-top: var(--space-6); }
+.banking-decision fieldset { display: grid; gap: var(--space-3); min-width: 0; }
+.banking-decision legend { font-size: var(--heading); font-weight: 600; margin-bottom: var(--space-3); }
+.banking-new-details { border-top: 1px solid var(--line); padding-top: var(--space-4); }
+.banking-empty { display: grid; gap: var(--space-3); padding-block: var(--space-6); max-width: 65ch; }
+.banking-late-receipts { margin-top: var(--space-8); }
+.banking-receipt { padding-block: var(--space-6); border-bottom: 1px solid var(--line); }
+.sandbox-heading { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); align-items: baseline; }
+.sandbox-badge { display: inline-block; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); font-size: var(--small); }
+.sandbox-nav { display: flex; flex-wrap: wrap; gap: var(--space-2); border-block: 1px solid var(--line); padding-block: var(--space-2); margin-bottom: var(--space-6); }
+.sandbox-nav a[aria-current] { color: var(--ink); text-decoration: underline; }
+.sandbox-feedback { display: grid; gap: var(--space-3); }
+.sandbox-feedback:not(:has(> :not(:empty):not([hidden]))) { display: none; }
+.sandbox-feedback > p:empty { display: none; }
+.sandbox-feedback > :not(:empty) { margin-bottom: var(--space-4); }
+#sandbox-message:not(:empty) { background: var(--surface); border: 1px solid var(--line); padding: var(--space-4); }
+#sandbox-retry { justify-self: start; }
+.sandbox-section { margin-block: var(--space-6); }
+.sandbox-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
+.sandbox-page .subtle { color: var(--muted); font-size: var(--small); }
+.sandbox-page .nancy { color: var(--nancy); }
+.sandbox-page summary { min-height: var(--control); padding-block: var(--space-3); cursor: pointer; }
+.sandbox-page details:not([open]) > :not(summary) { display: none; }
+.sandbox-page .sandbox-connect-panel > details { padding-inline-start: var(--space-4); border-inline-start: 1px solid var(--line); }
+.sandbox-page form { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-4); margin-block: var(--space-4); max-width: 640px; }
+.sandbox-page form > label:not(.sandbox-check) { display: grid; gap: var(--space-2); flex: 1 1 12rem; min-width: 0; font-weight: 500; margin: 0; }
+.sandbox-page form > p, .sandbox-page .sandbox-check { flex-basis: 100%; }
+.sandbox-page .sandbox-check { display: flex; align-items: center; gap: var(--space-3); min-height: var(--control); margin: 0; }
+/* Dynamic controls retain native events and the feature's original class hooks. */
+.sandbox-page :is(.primary, .ghost) { display: inline-flex; align-items: center; justify-content: center; min-height: var(--control); padding: 10px 16px; border: 1px solid var(--control-line); border-radius: var(--radius); font: inherit; font-weight: 500; color: var(--ink); background: transparent; cursor: pointer; }
+.sandbox-page .primary { color: var(--on-finn); background: var(--finn); border-color: var(--finn); }
+.sandbox-page .ghost:hover { background: var(--hover); }
+.sandbox-page :is(.primary, .ghost):disabled { opacity: .65; cursor: default; }
+.sandbox-page :is(.primary, .ghost, .btn) { max-width: 100%; white-space: normal; }
+.sandbox-page .link { display: inline-flex; align-items: center; min-height: var(--control); padding-block: var(--space-2); }
+.sandbox-page form :is(input:not([type=checkbox]), select):not(.form-control):not(.form-select) { width: 100%; min-width: 0; min-height: var(--control); padding: 10px 12px; color: var(--ink); background: var(--canvas); border: 1px solid var(--control-line); border-radius: var(--radius); font: inherit; }
+.sandbox-page form input[type=checkbox]:not(.form-check-input) { width: 20px; height: 20px; flex: none; accent-color: var(--finn); }
+.sandbox-page form :is(input, select):disabled { opacity: .65; }
+.sandbox-page :is(input, select) { max-width: 100%; }
+.sandbox-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
+.sandbox-pagination { justify-content: space-between; padding-block: var(--space-6); }
+.sandbox-account, .sandbox-connection { padding-block: var(--space-6); border-bottom: 1px solid var(--line); }
+.sandbox-connection { display: grid; gap: var(--space-2); }
+.sandbox-account-group + .sandbox-account-group { margin-top: var(--space-8); }
+.sandbox-account-group > h2 { padding-block: var(--space-3); }
+.sandbox-account { display: grid; grid-template-columns: minmax(0, 1fr) minmax(10rem, 1fr) auto; align-items: center; gap: var(--space-3) var(--space-4); }
+.sandbox-account > *, .sandbox-connection > *, .sandbox-page .tx-row > * { min-width: 0; }
+.sandbox-account > form, .sandbox-account-source { grid-column: 1 / -1; }
+.sandbox-account > .sandbox-actions { margin: 0; }
+.sandbox-account-identity { display: grid; gap: var(--space-1); }
+.sandbox-account-mapping { font-size: var(--small); }
+.sandbox-facts { display: grid; grid-template-columns: minmax(8rem, .4fr) minmax(0, 1fr); gap: var(--space-2) var(--space-4); margin-block: var(--space-4); }
+.sandbox-facts dt { color: var(--muted); font-size: var(--small); font-weight: 400; }
+.sandbox-facts dd { margin: 0; min-width: 0; }
+.sandbox-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); padding-block: var(--space-4); border-bottom: 1px solid var(--line); }
+.sandbox-counts .stat-number { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.sandbox-page .tx-row, .sandbox-column-head { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 6rem 7rem minmax(8rem, auto) 1rem; align-items: center; gap: var(--space-4); padding: var(--space-4); min-height: 88px; }
+.sandbox-column-head { min-height: var(--control); font-size: var(--small); color: var(--muted); border-bottom: 1px solid var(--line); }
+.sandbox-column-head .sandbox-merchant { font-weight: 400; }
+.sandbox-merchant { grid-column: 1; grid-row: 1; }
+.sandbox-account-label { grid-column: 2; grid-row: 1; }
+.sandbox-row-meta { display: contents; }
+.sandbox-date { grid-column: 3; grid-row: 1; }
+.sandbox-state { grid-column: 4; grid-row: 1; }
+.sandbox-money { grid-column: 5; grid-row: 1; text-align: end; font-variant-numeric: tabular-nums lining-nums; }
+.sandbox-chevron { grid-column: 6; grid-row: 1; text-align: end; color: var(--muted); }
+.sandbox-transaction { border-bottom: 1px solid var(--line); }
+.sandbox-transaction > summary { list-style: none; }
+.sandbox-transaction > summary::-webkit-details-marker { display: none; }
+.sandbox-transaction[open] > summary, .sandbox-page .tx-row:hover { background: var(--hover); }
+.sandbox-transaction[open] .sandbox-chevron { transform: rotate(90deg); }
+.sandbox-transaction > :not(summary) { margin: 0; padding: var(--space-4); background: var(--surface); }
+.sandbox-recent-row { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); }
+.sandbox-list:empty { display: none; }
+.sandbox-page .tx-empty { padding-block: var(--space-4); }
+.sandbox-filters { max-width: none !important; display: block !important; }
+.sandbox-activity-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--space-3); align-items: center; }
+.sandbox-search { grid-column: 1; grid-row: 1; }
+.sandbox-filter-details { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+.sandbox-filter-details > summary { width: fit-content; border: 1px solid var(--control-line); border-radius: var(--radius); padding-inline: var(--space-4); }
+.sandbox-activity-toolbar > button { grid-column: 2; grid-row: 1; }
+.sandbox-activity-toolbar > a { grid-column: 3; grid-row: 1; }
+.sandbox-filter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); padding-block: var(--space-4); }
+.sandbox-filter-grid > label { min-width: 0; margin: 0; }
+.sandbox-filter-grid :is(input, select) { margin-top: var(--space-2); }
+#sandbox-result-count { padding-block: var(--space-3); }
+@media (min-width: 1100px) {
+  /* One content-sized grid owns header and row tracks, including extreme money.
+     Subgrids preserve native owners. Reserve the inherited end padding as well
+     as the chevron's full track so neither its cell nor its glyph collapses. */
+  .sandbox-activity, .sandbox-recent { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 6rem 7rem minmax(8rem, max-content) calc(1rem + var(--space-4)); column-gap: var(--space-4); }
+  .sandbox-activity > *, .sandbox-recent > *, .sandbox-list > *, .sandbox-transaction > * { grid-column: 1 / -1; }
+  .sandbox-page :is(.sandbox-column-head, .sandbox-list:not(:empty), .sandbox-transaction, .tx-row) { display: grid; grid-template-columns: subgrid; }
+  /* Chromium lays non-summary children inside the native details-content box. */
+  .sandbox-transaction::details-content { grid-column: 1 / -1; }
+}
+@media (max-width: 1099px) {
+  .sandbox-column-head { display: none; }
+  .sandbox-page .tx-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 1rem; row-gap: var(--space-2); padding-inline: 0; }
+  .sandbox-merchant { grid-column: 1; grid-row: 1; }
+  .sandbox-account-label { grid-column: 1; grid-row: 2; }
+  .sandbox-money { grid-column: 2; grid-row: 1; }
+  .sandbox-row-meta { display: flex; flex-wrap: wrap; justify-content: end; gap: var(--space-2); grid-column: 2; grid-row: 2; text-align: end; }
+  .sandbox-chevron { grid-column: 3; grid-row: 1 / 3; }
+  .sandbox-page .sandbox-wide-amount .sandbox-money { grid-column: 1 / 3; grid-row: 3; }
+  .sandbox-page .sandbox-wide-amount .sandbox-merchant { grid-column: 1 / 3; }
+}
+@media (max-width: 767px) {
+  .banking-row > summary { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding-inline: 0; gap: var(--space-2) var(--space-3); }
+  .banking-date { grid-column: 1; grid-row: 1; }
+  .banking-merchant { grid-column: 1 / -1; grid-row: 2; }
+  .banking-amount { grid-column: 2; grid-row: 1; }
+  .banking-row-state { grid-column: 1 / -1; grid-row: 3; }
+  .banking-row-state small { display: inline; margin-inline-start: var(--space-2); }
+  .sandbox-account { grid-template-columns: minmax(0, 1fr); }
+  .sandbox-account > *, .sandbox-account > form, .sandbox-account-source { grid-column: 1; }
+  .sandbox-facts { grid-template-columns: minmax(0, 1fr); }
+  .sandbox-facts dd { margin-bottom: var(--space-3); }
+  .sandbox-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sandbox-activity-toolbar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sandbox-search { grid-column: 1 / -1; }
+  .sandbox-filter-details { grid-row: 3; }
+  .sandbox-activity-toolbar > button { grid-column: 1; grid-row: 2; }
+  .sandbox-activity-toolbar > a { grid-column: 2; grid-row: 2; justify-self: start; }
+  .sandbox-filter-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 359px) {
+  .sandbox-page .tx-row { grid-template-columns: minmax(0, 1fr) 1rem; }
+  .sandbox-account-label { grid-column: 1; grid-row: 2; }
+  .sandbox-row-meta { grid-column: 1; grid-row: 3; justify-content: start; text-align: start; }
+  .sandbox-page .tx-row > .sandbox-money { grid-column: 1; grid-row: 4; }
+  .sandbox-page .tx-row > .sandbox-chevron { grid-column: 2; grid-row: 1 / 5; }
+  .sandbox-filter-grid { grid-template-columns: minmax(0, 1fr); }
+  .banking-row > summary { grid-template-columns: minmax(0, 1fr); }
+  .banking-amount { grid-column: 1; grid-row: 3; }
+  .banking-row-state { grid-row: 4; }
+}

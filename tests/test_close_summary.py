@@ -7,6 +7,7 @@ snapshot historical; re-closing appends a fresh, independently numbered one.
 from __future__ import annotations
 
 import json
+import re
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -295,13 +296,25 @@ def test_closed_month_renders_receipt(app_env):
     )
     page = client.get(f"/close?month={FIXTURE_MONTH}")
     assert page.status_code == 200
-    assert "here's your month" in page.text
-    assert "transactions reviewed" in page.text
-    assert "categories confirmed" in page.text
-    assert "money out" in page.text
-    assert "confirmed category total" in page.text
-    assert "not yet confirmed" in page.text
+    assert "Current immutable report" in page.text
+    assert "Transactions reviewed" in page.text
+    assert "Money out" in page.text
+    assert "Confirmed category total" in page.text
+    assert "Not yet confirmed" in page.text
     assert "Goals funded" in page.text
+    with engine.read_conn(app_env) as conn:
+        snapshot = repo_period_policy.list_snapshot_history(conn, FIXTURE_MONTH)[0]
+    assert f'id="close-current-report-{snapshot["snapshot_id"]}"' in page.text
+    frozen = json.loads(snapshot["snapshot_json"])
+    assert frozen["transactions_reviewed"] == frozen["categories_confirmed"] == 1
+    report = page.text.split('aria-labelledby="close-report-title"', 1)[1].split('</section>', 1)[0]
+    for label, value in (("Money out", "$33.00"), ("Confirmed category total", "$33.00"),
+                         ("Not yet confirmed", "$0.00"), ("Transactions reviewed", "1")):
+        assert re.search(
+            rf'<p class="close-report-label">{re.escape(label)}</p>\s*'
+            rf'<p class="close-report-number">\s*{re.escape(value)}\s*</p>', report,
+        ), label
+    assert 'data-snapshot-current="true"' in report
     # Reopen control still present; sign-off form gone.
     assert 'action="/close/reopen"' in page.text
     assert 'action="/close/signoff"' not in page.text

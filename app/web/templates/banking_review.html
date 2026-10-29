@@ -1,26 +1,47 @@
-{% extends 'base.html' %}
+{% extends 'foundation_base.html' %}
 {% block title %}Review bank transaction · Finn Nancy{% endblock %}
+{% block styles %}{{ super() }}<link rel="stylesheet" href="/static/foundation/banking.css">{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/banking.css">
 <section class="banking" data-banking="review" data-subject="{{ plan.subject.id }}" data-fingerprint="{{ plan.fingerprint }}">
-<header class="banking-header"><h1>{{ plan.subject.merchant or plan.subject.description }}</h1><a href="/bank-feed">Bank feed</a></header>
-<p class="banking-review-amount">{{ plan.subject.amount_cents|money }} {{ plan.subject.currency or 'Unknown currency' }}</p><p>{{ plan.subject.posted_on }} · Ledger {{ plan.binding.account_id if plan.binding else 'unmapped' }}</p>
-<div id="banking-error" role="alert" hidden></div>
-<details><summary>Provider evidence</summary><p>{{ plan.subject.description }}</p><p>Observation {{ plan.subject.observation_id }} · {{ plan.subject.kind }}{% if plan.subject.pending %} · Pending{% endif %}</p><p class="banking-suggestion">Provider category suggestion: {{ plan.subject.suggestion_json }}</p></details>
-{% if plan.blockers %}<p class="banking-notice">{{ plan.blockers|join(' · ')|replace('_',' ') }}</p>{% endif %}
-{% if plan.association %}
-<form id="banking-decision"><input type="hidden" name="action" value="revoke"><label>Reason<textarea name="reason" required maxlength="500"></textarea></label><button type="submit">Revoke association</button></form>
-{% else %}
-<form id="banking-decision">
-<fieldset><legend>Reviewed decision</legend>
-{% if not plan.blockers %}
-{% for t in plan.candidates %}<label class="banking-check"><input type="radio" name="action" value="match:{{ t.id }}" required>Match {{ t.posted_on }} · {{ t.counterparty or t.description }} · {{ t.amount_cents|money }} · {{ t.recon_status }} · {{ t.id }}</label>{% endfor %}
-{% if plan.binding and plan.binding.role=='primary' %}<label class="banking-check"><input type="radio" name="action" value="new" required>Record new uncleared transaction</label>
-<label>Accounting meaning<select name="flow_kind"><option value="unknown">Choose meaning</option>{% if plan.subject.amount_cents < 0 %}<option value="purchase">Purchase</option><option value="fee">Fee</option>{% elif plan.subject.amount_cents > 0 %}<option value="income">Income</option><option value="interest">Interest</option>{% endif %}</select></label>
-{% if plan.candidates %}<label class="banking-check"><input type="checkbox" name="acknowledge_candidates">This is a separate transaction, despite the equal-amount candidates.</label>{% endif %}{% endif %}
-{% endif %}
-<label class="banking-check"><input type="radio" name="action" value="exclude" required>Exclude this observation</label>
-</fieldset><label>Reason<textarea name="reason" required maxlength="500"></textarea></label><button type="submit">Save reviewed decision</button>
-</form>{% endif %}
-</section><script defer src="/static/banking.js"></script>
+  <header class="fn-page-head"><h1>Review bank transaction</h1><a class="btn btn-link" href="/bank-feed">Bank feed</a></header>
+  <div class="banking-review-summary">
+    <h2>{{ plan.subject.merchant or plan.subject.description }}</h2>
+    <p class="banking-review-amount">{{ plan.subject.amount_cents|money }} {{ plan.subject.currency or 'Currency unknown' }}</p>
+    <p class="fn-muted">{{ plan.subject.posted_on }} · Ledger {{ plan.binding.account_id if plan.binding else 'unmapped' }} · {{ 'Associated with ledger transaction ' ~ plan.association.transaction_id if plan.association else 'Not booked' }}</p>
+    <dl class="banking-facts"><div><dt>Household view</dt><dd>{{ 'Included' if plan.binding and plan.binding.included else 'Not included' }}</dd></div><div><dt>Feed role</dt><dd>{{ plan.binding.role if plan.binding else 'Unassigned' }}</dd></div></dl>
+  </div>
+  <div id="banking-error" class="fn-feedback banking-notice" role="alert" hidden></div>
+  <details class="fn-disclosure banking-provider"><summary>Provider evidence</summary><div class="banking-evidence"><p>{{ plan.subject.description }}</p><p class="fn-muted">Observation {{ plan.subject.observation_id }} · {{ plan.subject.kind }}{% if plan.subject.pending %} · Bank pending{% endif %}</p><p class="banking-suggestion">Provider category suggestion: {{ plan.subject.suggestion_json }}</p></div></details>
+  {% if plan.blockers %}<p class="banking-notice">{{ plan.blockers|join(' · ')|replace('_',' ') }}</p>{% endif %}
+  {% if plan.association %}
+  <form id="banking-decision" class="fn-editor banking-decision">
+    <input type="hidden" name="action" value="revoke">
+    <div class="fn-field"><label class="form-label" for="banking-reason">Reason</label><textarea class="form-control" id="banking-reason" name="reason" required maxlength="500" rows="3"></textarea></div>
+    <div class="fn-actions"><button class="btn btn-outline-secondary" type="submit">Revoke association</button></div>
+  </form>
+  {% else %}
+  <form id="banking-decision" class="fn-editor banking-decision">
+    <fieldset>
+      <legend>Reviewed decision</legend>
+      {% if not plan.blockers %}
+      {% for t in plan.candidates %}<label class="banking-check fn-check"><input class="form-check-input" type="radio" name="action" value="match:{{ t.id }}" required><span>Match {{ t.posted_on }} · {{ t.counterparty or t.description }} · {{ t.amount_cents|money }} · {{ t.recon_status }} · {{ t.id }}</span></label>{% endfor %}
+      {% if plan.binding and plan.binding.role=='primary' %}
+      <label class="banking-check fn-check"><input class="form-check-input" type="radio" name="action" value="new" required><span>Record new uncleared transaction</span></label>
+      {% endif %}
+      {% endif %}
+      <label class="banking-check fn-check"><input class="form-check-input" type="radio" name="action" value="exclude" required><span>Exclude this observation</span></label>
+    </fieldset>
+    {% if not plan.blockers and plan.binding and plan.binding.role=='primary' %}
+    <fieldset class="banking-new-details">
+      <legend>For a new transaction</legend>
+      <div class="fn-field"><label class="form-label" for="banking-flow">Accounting meaning</label><select class="form-select" id="banking-flow" name="flow_kind"><option value="unknown">Choose meaning</option>{% if plan.subject.amount_cents < 0 %}<option value="purchase">Purchase</option><option value="fee">Fee</option>{% elif plan.subject.amount_cents > 0 %}<option value="income">Income</option><option value="interest">Interest</option>{% endif %}</select></div>
+      {% if plan.candidates %}<label class="banking-check fn-check"><input class="form-check-input" type="checkbox" name="acknowledge_candidates"><span>This is a separate transaction, despite the equal-amount candidates.</span></label>{% endif %}
+    </fieldset>
+    {% endif %}
+    <div class="fn-field"><label class="form-label" for="banking-reason">Reason</label><textarea class="form-control" id="banking-reason" name="reason" required maxlength="500" rows="3"></textarea></div>
+    <div class="fn-actions"><button class="btn btn-primary" type="submit">Save reviewed decision</button></div>
+  </form>
+  {% endif %}
+</section>
 {% endblock %}
+{% block scripts %}{{ super() }}<script defer src="/static/banking.js"></script>{% endblock %}

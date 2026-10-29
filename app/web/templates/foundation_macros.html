@@ -1,6 +1,6 @@
 {# Shared state-in/native-action-out foundation compositions. No feature I/O. #}
 {% macro page_header(title) -%}
-<header class="fn-page-head"><h1>{{ title }}</h1><div class="fn-actions">{{ caller() }}</div></header>
+<header class="fn-page-head"><h1>{{ title }}</h1>{% if caller is defined %}<div class="fn-actions">{{ caller() }}</div>{% endif %}</header>
 {%- endmacro %}
 
 {% macro name_field(id, value='', disabled=false, help='') -%}
@@ -13,4 +13,13 @@
 
 {% macro feedback(id) -%}
 <p class="fn-feedback" data-feedback id="{{ id }}" role="status" aria-live="polite" tabindex="-1" hidden></p>
+{%- endmacro %}
+
+{# Escaped read state. Recovery is authored native HTML in the optional caller. #}
+{% macro state_message(title, body='', kind='empty') -%}
+<div class="fn-state" data-kind="{{ kind }}"{% if kind == 'error' %} role="alert"{% elif kind == 'loading' %} role="status"{% endif %}>
+  <h2>{{ title }}</h2>
+  {% if body %}<p>{{ body }}</p>{% endif %}
+  {% if caller is defined %}<div class="fn-actions">{{ caller() }}</div>{% endif %}
+</div>
 {%- endmacro %}

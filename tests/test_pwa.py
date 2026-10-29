@@ -106,6 +106,25 @@ def test_static_assets_version_is_stable_and_content_derived(tmp_path):
     assert static_assets_version(tmp_path) != first
 
 
+def test_static_assets_version_tracks_nested_asset_content_and_identity(tmp_path):
+    foundation = tmp_path / "foundation"
+    foundation.mkdir()
+    sheet = foundation / "components.css"
+    sheet.write_bytes(b".fn-shell { max-width: 1200px; }")
+    first = static_assets_version(tmp_path)
+    assert static_assets_version(tmp_path) == first
+
+    sheet.write_bytes(b".fn-shell { max-width: 1100px; }")
+    second = static_assets_version(tmp_path)
+    assert second != first
+
+    sheet.rename(foundation / "activity.css")
+    third = static_assets_version(tmp_path)
+    assert third != second
+    (foundation / "activity.css").unlink()
+    assert static_assets_version(tmp_path) != third
+
+
 def test_service_worker_route(sample_db, monkeypatch):
     client = _client(sample_db, monkeypatch)
     response = client.get("/sw.js")

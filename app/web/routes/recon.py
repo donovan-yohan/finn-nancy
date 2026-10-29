@@ -10,7 +10,7 @@ from __future__ import annotations
 import sqlite3
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from rapidfuzz import fuzz
 
@@ -38,7 +38,14 @@ try:
 except ImportError:  # pragma: no cover — see module docstring
     apply = None  # tests monkeypatch this attribute with a fake exposing the same functions
 
-router = APIRouter()
+
+def _require_writable_reconciliation(request: Request) -> None:
+    """Fence recon commands before write/queue admission; keep reads available."""
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and get_settings().read_only:
+        raise HTTPException(403, "read_only")
+
+
+router = APIRouter(dependencies=[Depends(_require_writable_reconciliation)])
 
 
 def _candidates(conn: sqlite3.Connection, line: sqlite3.Row) -> list[dict]:

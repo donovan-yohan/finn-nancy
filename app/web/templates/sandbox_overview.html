@@ -1,13 +1,13 @@
 {% extends "sandbox_shell.html" %}
 {% set page_title = 'Home' %}
 {% block sandbox_content %}
-<section class="card" aria-label="Account totals">
-  <div id="sandbox-summary" class="stat-strip home-stats" aria-live="polite"><p class="subtle">Loading counts…</p></div>
+<section class="sandbox-section" aria-label="Account totals">
+  <div id="sandbox-summary" class="sandbox-counts" aria-live="polite"><p class="fn-muted">Loading counts…</p></div>
 
 </section>
-<section class="card home-recent" aria-labelledby="recent-heading">
-  <div class="card-head"><h2 id="recent-heading">Recent activity</h2><a class="link" href="/activity">View all activity</a></div>
+<section class="sandbox-section sandbox-recent" aria-labelledby="recent-heading">
+  <div class="sandbox-section-head"><h2 id="recent-heading">Recent activity</h2><a class="btn btn-link" href="/activity">View all activity</a></div>
   <div class="sandbox-column-head" aria-hidden="true"><span class="sandbox-merchant">Merchant</span><span class="sandbox-account-label">Account</span><span class="sandbox-date">Date</span><span class="sandbox-state">Status</span><span class="sandbox-money">Signed amount</span><span class="sandbox-chevron"></span></div>
-  <div id="sandbox-recent" class="tx-list" aria-live="polite"><p class="subtle">Loading activity…</p></div>
+  <div id="sandbox-recent" class="sandbox-list" aria-live="polite"><p class="fn-muted">Loading activity…</p></div>
 </section>
 {% endblock %}

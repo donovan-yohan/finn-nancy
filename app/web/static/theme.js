@@ -5,6 +5,7 @@
   var root = document.documentElement;
   var system = window.matchMedia("(prefers-color-scheme: dark)");
   var preference = "system";
+  var connectedSelects = new WeakSet();
 
   // Only exact allowlisted values are accepted; duplicate/path-conflicting
   // preferences and malformed values fall back to the operating system.
@@ -52,16 +53,22 @@
     var select = document.querySelector("[data-theme-select]");
     if (select) {
       select.value = preference;
-      select.addEventListener("change", choose);
+      if (!connectedSelects.has(select)) {
+        select.addEventListener("change", choose);
+        connectedSelects.add(select);
+      }
     }
     var control = document.querySelector(".theme-control");
     var host = document.querySelector("[data-theme-host]") || document.querySelector(".hero, .chat-head")
       || document.querySelector(".app-main");
     if (control && host) {
-      host.appendChild(control);
+      if (control.parentNode !== host) host.appendChild(control);
       control.hidden = false;
     }
   }
+
+  // Reconnect a replaced control, but never attach duplicate change handlers.
+  document.addEventListener("htmx:afterSwap", connect);
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", connect, { once: true });

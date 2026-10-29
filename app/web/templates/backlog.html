@@ -1,75 +1,73 @@
-{% extends "base.html" %}
-{% block title %}backlog · finn-nancy{% endblock %}
+{% extends "foundation_base.html" %}
+{% block title %}Uncategorized · Finn Nancy{% endblock %}
+{% block styles %}{{ super() }}<link rel="stylesheet" href="/static/foundation/manage.css">{% endblock %}
 {% block content %}
-<header class="hero compact">
+<header class="fn-page-head">
   <div>
-    <p class="eyebrow finn">expense review</p>
     <h1>Confirm expense categories</h1>
-    <p class="subtle">
-      {{ rows | length }} actionable transaction{{ '' if rows | length == 1 else 's' }}
+    <p class="fn-muted">
+      {{ rows | length }} unresolved expense split{{ '' if rows | length == 1 else 's' }}
       shown · {{ metrics.uncategorized_count }} of {{ metrics.total }} expense splits
       are still Uncategorized
     </p>
   </div>
-  <div class="action-row">
-    <a class="link" href="/actions">approval queue{% if pending_action_count() %} · {{ pending_action_count() }}{% endif %}</a>
-    <button class="ghost compact-action" hx-get="/backlog/status" hx-target="#backlog-job" hx-swap="innerHTML">refresh jobs</button>
+  <div class="fn-actions">
+    <a href="/actions">Approval queue{% if pending_action_count() %} · {{ pending_action_count() }}{% endif %}</a>
+    <button class="btn btn-outline-secondary" hx-get="/backlog/status" hx-target="#backlog-job" hx-swap="innerHTML">Refresh jobs</button>
   </div>
 </header>
 
-<div class="grid single">
-  <section class="card span-2 finn-card">
-    <div class="card-head">
+<div class="manage-review">
+  <section class="manage-section">
+    <div class="manage-proposal-head">
       <div>
-        <p class="eyebrow finn">suggestions</p>
-        <h2>queue proposals</h2>
+        <h2>Suggest categories</h2>
       </div>
     </div>
-    <div class="action-row">
-      <form hx-post="/backlog/suggest" hx-target="#backlog-job" hx-swap="innerHTML">
-        <input type="number" name="limit" min="1" max="100000" value="{{ default_limit }}" aria-label="suggestion limit">
-        <label class="ack-row"><input type="checkbox" name="include_closed" value="1"> include closed months</label>
-        <button class="ghost compact-action" type="submit">suggest N</button>
+    <div class="fn-actions">
+      <form class="fn-editor manage-editor" hx-post="/backlog/suggest" hx-target="#backlog-job" hx-swap="innerHTML">
+        <div class="fn-field"><label class="form-label" for="suggestion-limit">Suggestion limit</label><input class="form-control" id="suggestion-limit" type="number" name="limit" min="1" max="100000" value="{{ default_limit }}" aria-label="suggestion limit"></div>
+        <label class="fn-check" for="suggestion-closed"><input class="form-check-input" id="suggestion-closed" type="checkbox" name="include_closed" value="1"> Include closed months</label>
+        <button class="btn btn-outline-secondary" type="submit">Queue suggestions</button>
       </form>
-      <form hx-post="/backlog/suggest" hx-target="#backlog-job" hx-swap="innerHTML">
+      <form class="fn-editor manage-editor" hx-post="/backlog/suggest" hx-target="#backlog-job" hx-swap="innerHTML">
         <input type="hidden" name="limit" value="all">
-        <label class="ack-row"><input type="checkbox" name="include_closed" value="1"> include closed months</label>
-        <button class="ghost compact-action" type="submit">suggest all</button>
+        <label class="fn-check" for="suggestion-all-closed"><input class="form-check-input" id="suggestion-all-closed" type="checkbox" name="include_closed" value="1"> Include closed months</label>
+        <button class="btn btn-outline-secondary" type="submit">Queue all suggestions</button>
       </form>
     </div>
-    <p class="subtle">
+    <p class="fn-muted">
       Proposal sweeps stay conservative around reconciled and closed periods.
       Reconciliation settles the amount, not its category evidence.
     </p>
-    <div id="backlog-job" style="margin-top:.8rem;">
+    <div id="backlog-job" role="status" aria-live="polite">
       {% include "_backlog_job.html" %}
     </div>
   </section>
 
-  <section class="card span-2">
-    <div class="card-head">
+  <section class="manage-section">
+    <div class="manage-proposal-head">
       <div>
-        <p class="eyebrow finn">review</p>
-        <h2>largest unresolved expense categories</h2>
-        <p class="subtle">
-          showing up to {{ list_limit }} transactions · cleared reconciled rows
+        <h2>Unresolved expense categories</h2>
+        <p class="fn-muted">
+          Showing up to {{ list_limit }} expense splits · cleared reconciled rows
           remain visible until their active category evidence is accepted
         </p>
       </div>
     </div>
 
     {% if not rows %}
-    <p class="subtle">No purchase or fee transactions need category evidence.</p>
+    <p class="fn-muted">No purchase or fee transactions need category evidence.</p>
     {% else %}
-    <div class="table-wrap">
-      <table>
+    <div class="table-responsive manage-table-wrap" role="region" tabindex="0" aria-label="Unresolved expense categories">
+      <table class="table manage-table manage-backlog-table">
         <thead>
           <tr>
-            <th>transaction</th>
-            <th class="money">amount</th>
-            <th>active backlog suggestion</th>
-            <th>neighbors</th>
-            <th>confirm</th>
+            <th scope="col">Transaction</th>
+            <th class="money" scope="col">Split amount</th>
+            <th scope="col">Suggested category</th>
+            <th scope="col">Neighbor evidence</th>
+            <th scope="col">Confirm</th>
           </tr>
         </thead>
         <tbody>
@@ -83,64 +81,64 @@
             data-resolution-status="{{ row.resolution_status }}"
             data-mutation-supported="{{ 'true' if mutation_supported else 'false' }}"
           >
-            <td>
-              <a class="link" href="/txn/{{ row.id }}/edit">#{{ row.id }}</a>
-              <span class="block">{{ row.merchant }}</span>
-              <span class="subtle block">{{ row.posted_on }} · {{ row.description }}</span>
-              <span class="subtle block">
-                current category: {{ row.category_name }}
+            <td class="manage-transaction" data-label="Transaction">
+              <a href="/txn/{{ row.id }}/edit">#{{ row.id }}</a>
+              <span class="manage-block">{{ row.merchant }}</span>
+              <span class="fn-muted manage-block">{{ row.posted_on }} · {{ row.description }}</span>
+              <span class="fn-muted manage-block">
+                Current category: {{ row.category_name }}
                 {% if row.recon_status == 'cleared' %} · reconciled{% endif %}
               </span>
               {% if not mutation_supported %}
-              <span class="subtle block">
+              <span class="fn-muted manage-block">
                 split #{{ row.transaction_split_id }} of {{ row.split_count }} ·
                 review the full split transaction
               </span>
               {% endif %}
             </td>
-            <td class="money negative">{{ (row.split_amount_cents if row.split_amount_cents is defined else row.amount_cents) | money }}</td>
-            <td>
+            <td class="money" data-label="Split amount">{{ (row.split_amount_cents if row.split_amount_cents is defined else row.amount_cents) | money }}</td>
+            <td class="manage-evidence" data-label="Suggested category">
               {% if proposal %}
-              <span class="db-pill">{{ proposal.to_category_name or proposal.payload.to_category_id }}</span>
-              <span class="subtle block">{{ '%.0f'|format(proposal.confidence * 100) }}% · {{ proposal.evidence.method or proposal.kind }}</span>
-              <span class="subtle block">{{ proposal.rationale }}</span>
+              <span class="manage-suggested">Suggested: {{ proposal.to_category_name or proposal.payload.to_category_id }}</span>
+              <span class="fn-muted manage-block">{{ '%.0f'|format(proposal.confidence * 100) }}% · {{ proposal.evidence.method or proposal.kind }}</span>
+              <span class="fn-muted manage-block">{{ proposal.rationale }}</span>
               {% else %}
-              <span class="subtle">No active backlog proposal</span>
+              <span class="fn-muted">No active backlog proposal</span>
               {% endif %}
             </td>
-            <td>
+            <td class="manage-evidence" data-label="Neighbor evidence">
               {% if proposal and proposal.evidence.neighbors %}
-              <div class="action-row">
+              <div class="fn-actions">
                 {% for neighbor in proposal.evidence.neighbors %}
-                <span class="db-pill evidence-pill">
+                <span class="manage-evidence">
                   <a href="/txn/{{ neighbor.transaction_id }}/edit">#{{ neighbor.transaction_id }}</a>
                   <span>{{ neighbor.merchant }}</span>
-                  <span class="subtle">{{ neighbor.category }}</span>
+                  <span class="fn-muted">{{ neighbor.category }}</span>
                 </span>
                 {% endfor %}
               </div>
               {% elif proposal and proposal.evidence.similar_transaction_ids %}
-              <div class="action-row">
+              <div class="fn-actions">
                 {% for txn_id in proposal.evidence.similar_transaction_ids %}
-                <a class="db-pill" href="/txn/{{ txn_id }}/edit">#{{ txn_id }}</a>
+                <a class="manage-suggested" href="/txn/{{ txn_id }}/edit">#{{ txn_id }}</a>
                 {% endfor %}
               </div>
               {% else %}
-              <span class="subtle">No neighbor evidence yet</span>
+              <span class="fn-muted">No neighbor evidence yet</span>
               {% endif %}
             </td>
-            <td>
+            <td class="manage-confirm" data-label="Confirm">
               {% if not mutation_supported %}
               <button
-                class="ghost compact-action"
+                class="btn btn-outline-secondary"
                 type="button"
                 disabled
                 aria-label="Batch approval unavailable for multi-split transaction {{ row.id }}"
-              >batch unavailable</button>
-              <a class="link block" href="/txn/{{ row.id }}/edit">review splits</a>
+              >Batch unavailable</button>
+              <a class="manage-block" href="/txn/{{ row.id }}/edit">Review splits</a>
               {% elif proposal %}
               <form method="post" action="/actions/{{ proposal.id }}/approve">
-                <button class="ghost compact-action" type="submit">approve</button>
+                <button class="btn btn-outline-secondary" type="submit">Approve</button>
               </form>
               {% endif %}
             </td>

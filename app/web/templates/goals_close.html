@@ -1,15 +1,17 @@
-{% extends "base.html" %}
-{% block title %}goals close · finn-nancy{% endblock %}
+{% extends "foundation_base.html" %}
+{% block styles %}{{ super() }}<link rel="stylesheet" href="/static/foundation/nancy.css">{% endblock %}
+{% block title %}Goal close · Finn Nancy{% endblock %}
 {% block content %}
-<header class="hero compact">
+<div class="fn-nancy">
+<header class="fn-page-head">
   <div>
-    <p class="eyebrow nancy">monthly close</p>
     <h1>Goal close</h1>
-    <p class="subtle">review underspend allocations and payoff drift for each auto-funded goal.</p>
+    <p class="subtle">Apply available underspend to auto-funded goals.</p>
   </div>
-  <div class="action-row">
-    <form class="inline-form" method="get" action="/goals/close">
-      <select name="month" onchange="this.form.submit()">
+  <div class="fn-actions">
+    <form class="fn-field nancy-period" method="get" action="/goals/close">
+      <label class="form-label" for="nancy-month">Month</label>
+      <select class="form-select" id="nancy-month" name="month" onchange="this.form.submit()">
         {% for m in months %}
         <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
         {% endfor %}
@@ -17,31 +19,31 @@
     </form>
     <form method="post" action="/goals/close">
       <input type="hidden" name="month" value="{{ selected_month }}">
-      <button class="ghost" type="submit">run close</button>
+      <button class="btn btn-primary" type="submit">Apply underspend</button>
     </form>
-    <a class="link nancy-link" href="/goals?month={{ selected_month }}">goals</a>
+    <a class="nancy-link" href="/goals?month={{ selected_month }}">Goals</a>
   </div>
 </header>
 
-<div class="grid single">
-  <section class="card span-2 nancy-card">
-    <div class="card-head">
+<div class="nancy-sections">
+  <section class="nancy-section">
+    <div class="nancy-section-head">
       <div>
-        <p class="eyebrow nancy">review</p>
-        <h2>{{ selected_month }}</h2>
+
+        <h2>Allocations · {{ selected_month }}</h2>
       </div>
     </div>
     {% if review_rows %}
-    <div class="table-wrap">
-      <table>
+    <div class="table-responsive" role="region" aria-label="Goal allocations" tabindex="0">
+      <table class="table nancy-table">
         <thead>
           <tr>
-            <th>goal</th>
-            <th>pace</th>
-            <th class="money">planned</th>
-            <th class="money">applied</th>
-            <th>sources</th>
-            <th>actions</th>
+            <th scope="col">Goal</th>
+            <th scope="col">Pace</th>
+            <th scope="col" class="money">Planned</th>
+            <th scope="col" class="money">Applied</th>
+            <th scope="col">Sources</th>
+            <th scope="col">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -53,11 +55,11 @@
             </td>
             <td>
               <span class="db-pill">{{ row.payoff.state }}</span>
-              <span class="subtle block">behind/ahead {{ row.payoff.ahead_behind_cents | money }}</span>
-              <span class="subtle block">required {{ row.payoff.required_monthly_cents | money }}/mo</span>
+              <span class="subtle block">behind/ahead {{ row.payoff.ahead_behind_cents | money | replace(',', ',<wbr>') | safe }}</span>
+              <span class="subtle block">required {{ row.payoff.required_monthly_cents | money | replace(',', ',<wbr>') | safe }}/mo</span>
             </td>
-            <td class="money">{{ row.planned_cents | money }}</td>
-            <td class="money">{{ row.actual_cents | money }}</td>
+            <td class="money">{{ row.planned_cents | money | replace(',', ',<wbr>') | safe }}</td>
+            <td class="money">{{ row.actual_cents | money | replace(',', ',<wbr>') | safe }}</td>
             <td>
               {% if row.note_json.sources %}
               <div class="source-list">
@@ -65,25 +67,25 @@
                 <span class="db-pill evidence-pill">
                   <span>#{{ source.category_id }}</span>
                   <span>{{ source.category_name }}</span>
-                  <b>{{ source.cents | money }}</b>
+                  <b>{{ source.cents | money | replace(',', ',<wbr>') | safe }}</b>
                 </span>
                 {% endfor %}
               </div>
-              <span class="subtle block">pool before {{ row.note_json.pool_before_cents | money }}</span>
+              <span class="subtle block">Pool before {{ row.note_json.pool_before_cents | money | replace(',', ',<wbr>') | safe }}</span>
               {% else %}
               <span class="subtle">No allocation yet.</span>
               {% endif %}
             </td>
             <td>
-              <div class="action-row">
+              <div class="fn-actions">
                 {% if row.status == 'active' and row.payoff.state == 'behind' %}
                 <form method="post" action="/goals/{{ row.id }}/catch-up">
                   <input type="hidden" name="month" value="{{ selected_month }}">
-                  <button class="ghost compact-action" type="submit">catch up</button>
+                  <button class="btn btn-outline-secondary" type="submit">Catch up</button>
                 </form>
                 <form method="post" action="/goals/{{ row.id }}/extend">
                   <input type="hidden" name="month" value="{{ selected_month }}">
-                  <button class="ghost compact-action" type="submit">extend</button>
+                  <button class="btn btn-outline-secondary" type="submit">Extend</button>
                 </form>
                 {% endif %}
               </div>
@@ -97,5 +99,6 @@
     <p class="subtle">No active auto-funded goals for {{ selected_month }}.</p>
     {% endif %}
   </section>
+</div>
 </div>
 {% endblock %}

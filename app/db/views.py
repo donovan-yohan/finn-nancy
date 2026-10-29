@@ -181,6 +181,37 @@ def activity_results(
         last = rows[-1]
         next_cursor = f"{last['posted_on']}:{last['id']}"
 
+    # Resolve originals only for the returned page (not the look-ahead row).
+    # UNION deduplicates a document reached by more than one canonical edge.
+    sources: dict[int, list[dict]] = {row["id"]: [] for row in rows}
+    if sources:
+        placeholders = ",".join("?" for _ in sources)
+        originals = conn.execute(
+            f"""
+            WITH returned(id) AS (VALUES {','.join('(?)' for _ in sources)}),
+            linked(transaction_id, document_id) AS (
+                SELECT txn.id, txn.source_document_id
+                FROM returned JOIN transactions txn ON txn.id=returned.id
+                WHERE txn.source_document_id IS NOT NULL
+                UNION
+                SELECT line.matched_transaction_id, line.source_document_id
+                FROM statement_lines line
+                WHERE line.matched_transaction_id IN ({placeholders})
+                  AND line.review_disposition='active'
+                  AND line.match_status IN ('matched', 'promoted')
+            )
+            SELECT linked.transaction_id, doc.id, doc.kind, doc.original_name
+            FROM linked JOIN source_documents doc ON doc.id=linked.document_id
+            ORDER BY linked.transaction_id, doc.id
+            """,
+            (*sources, *sources),
+        )
+        for original in originals:
+            source = dict(original)
+            sources[source.pop("transaction_id")].append(source)
+    for row in rows:
+        row["originals"] = sources[row["id"]]
+
     return {"transactions": rows, "next_cursor": next_cursor}
 
 

@@ -1,44 +1,45 @@
-{% extends "base.html" %}
-{% block title %}upload · finn-nancy{% endblock %}
+{% extends "foundation_base.html" %}
+{% block styles %}{{ super() }}
+<link rel="stylesheet" href="/static/foundation/capture.css">
+{% endblock %}
+{% block title %}Upload · Finn Nancy{% endblock %}
 {% block content %}
-<header class="hero compact">
-  <div>
-    <h1>{% if capture_intent == "income" %}Upload income{% elif capture_intent == "expense" %}Upload an expense{% else %}Upload files{% endif %}</h1>
-  </div>
-  <a class="link" href="/processing">Processing</a>
+<header class="fn-page-head">
+  <h1>{% if capture_intent == "income" %}Upload income{% elif capture_intent == "expense" %}Upload an expense{% else %}Upload files{% endif %}</h1>
+  <a class="btn btn-outline-secondary" href="/processing">Processing</a>
 </header>
 
-<div class="grid single">
-  <section class="card span-2">
-    <form
-      class="capture-page-form"
-      action="/upload"
-      method="post"
-      enctype="multipart/form-data"
-      data-capture-form
-      data-source="{{ capture_mode }}"
-      data-intent="{{ capture_intent }}"
-      data-proof-run-id="{{ proof_run_id }}"
-      data-device-cohort-id="{{ device_cohort_id }}"
-    >
-      <label for="capture-page-files">
-        <span>Receipt, invoice, or statement</span>
-        <input
-          id="capture-page-files"
-          type="file"
-          name="files"
-          accept="image/*,application/pdf"
-          {% if capture_mode == "camera" %}capture="environment"{% else %}multiple{% endif %}
-          required
-        >
-      </label>
-      <button class="primary" type="submit">Upload</button>
-    </form>
-    <p class="capture-page-help">Keep your originals until Saved confirms the server has a copy. Offline uploads wait on this device.</p>
-    <div id="results"></div>
-    {% for capture_id in server_capture_ids %}
-      <span hidden data-server-capture-id="{{ capture_id }}"></span>
-    {% endfor %}
-  </section>
-</div>
+<section class="fn-capture-upload" aria-label="Upload files">
+  <form
+    class="capture-page-form"
+    action="/upload"
+    method="post"
+    enctype="multipart/form-data"
+    data-capture-form
+    data-source="{{ capture_mode }}"
+    data-intent="{{ capture_intent }}"
+    data-proof-run-id="{{ proof_run_id }}"
+    data-device-cohort-id="{{ device_cohort_id }}"
+  >
+    <div class="fn-field">
+      <label class="form-label" for="capture-page-files">Receipt, invoice, or statement</label>
+      <input
+        class="form-control"
+        id="capture-page-files"
+        type="file"
+        name="files"
+        accept="image/*,application/pdf"
+        {% if capture_mode == "camera" %}capture="environment"{% else %}multiple{% endif %}
+        aria-describedby="capture-page-help"
+        required
+      >
+    </div>
+    <div class="fn-actions"><button class="btn btn-primary" type="submit">Upload</button></div>
+    <p class="capture-page-help form-text" id="capture-page-help">Keep your originals until Saved confirms the server has a copy. Offline uploads wait on this device.</p>
+  </form>
+  <div id="results" class="fn-capture-results" aria-live="polite"></div>
+  {% for capture_id in server_capture_ids %}
+    <span hidden data-server-capture-id="{{ capture_id }}"></span>
+  {% endfor %}
+</section>
 {% endblock %}

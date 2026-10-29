@@ -103,6 +103,40 @@ def test_public_release_audit_rejects_untracked_files_in_git_checkout(tmp_path):
     assert any("non-placeholder email" in item for item in MODULE.audit(tmp_path))
 
 
+def test_public_release_audit_accepts_deleted_unmanifested_tracked_file(tmp_path):
+    _write_manifest(tmp_path)
+    old = tmp_path / "retired.css"
+    old.write_text("body { color: black; }\n")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "PUBLIC_RELEASE_MANIFEST.json", "retired.css"], check=True)
+    old.unlink()
+
+    assert MODULE.audit(tmp_path) == []
+
+
+def test_public_release_audit_still_rejects_missing_manifested_tracked_fixture(tmp_path):
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    fixture = fixtures / "ledger.json"
+    fixture.write_text('{"merchant": "Synthetic Shop"}\n')
+    _write_manifest(tmp_path, fixtures={"fixtures/ledger.json": hashlib.sha256(fixture.read_bytes()).hexdigest()})
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "PUBLIC_RELEASE_MANIFEST.json", "fixtures/ledger.json"], check=True)
+    fixture.unlink()
+
+    assert any("fixtures path is not in the candidate" in item for item in MODULE.audit(tmp_path))
+
+
+def test_public_release_audit_still_rejects_broken_tracked_symlink(tmp_path):
+    _write_manifest(tmp_path)
+    target = tmp_path / "broken.txt"
+    target.symlink_to("missing.txt")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "PUBLIC_RELEASE_MANIFEST.json", "broken.txt"], check=True)
+
+    assert any("broken.txt: candidate path is not a regular file" in item for item in MODULE.audit(tmp_path))
+
+
 def test_public_release_audit_rejects_partial_redactions_and_private_topology(tmp_path):
     _write_manifest(tmp_path)
     (tmp_path / "README.md").write_text(

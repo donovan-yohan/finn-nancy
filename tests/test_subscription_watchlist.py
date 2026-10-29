@@ -192,12 +192,13 @@ def test_insights_page_renders_watchlist_and_persists_actions(app_env):
     page = client.get("/insights?month=2026-06")
     assert page.status_code == 200
     body = page.text
-    assert "new recurring watchlist" in body
+    assert "<h2>New recurring charges</h2>" in body
     assert "Fresh Stream" in body
     assert "$12.99" in body
     assert "2026-07-15" in body
-    assert "One Off Shop" not in body.split("new recurring watchlist", 1)[1].split("recurring changes", 1)[0]
-    assert "Known Cloud" not in body.split("new recurring watchlist", 1)[1].split("recurring changes", 1)[0]
+    watchlist = body.split('aria-label="Recurring charge candidates"', 1)[1].split("</section>", 1)[0]
+    assert "One Off Shop" not in watchlist
+    assert "Known Cloud" not in watchlist
     assert "marked subscription" in body
     assert "not a subscription" in body
     assert "already known" in body

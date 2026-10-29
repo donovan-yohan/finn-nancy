@@ -399,7 +399,9 @@ def test_rendered_rows_toolbar_and_expanded_evidence_fit_phone_and_desktop(tmp_p
                 html = client.get("/activity").text
             html = re.sub(r"<script\b[^>]*>[\s\S]*?</script>", "", html)
             html = re.sub(r"<link\b[^>]*>", "", html)
-            styles = (STATIC / "app.css").read_text() + (STATIC / "plaid-sandbox.css").read_text()
+            styles = "\n".join((STATIC / "foundation" / name).read_text() for name in (
+                "vendor/bootstrap.min.css", "tokens.css", "components.css", "banking.css",
+            ))
             html = html.replace("</head>", f"<style>{styles}</style></head>")
             call("Page.enable")
             frame = call("Page.getFrameTree")["frameTree"]["frame"]["id"]
@@ -425,30 +427,47 @@ return !row.open && suggestion.getClientRects().length===0
 && row.querySelector('.sandbox-merchant').textContent==='Normalized grocer'
 && !row.querySelector('summary').textContent.includes('Suggested by Plaid')
 && document.querySelectorAll('#sandbox-staged img,#sandbox-staged script,#sandbox-staged a,#sandbox-staged iframe').length===0;})()""")
+            assert evaluate("JSON.stringify([...document.querySelectorAll('.sandbox-transaction > summary .sandbox-money')].map(n=>n.textContent))===JSON.stringify(['−12.34 CAD','−12.34 CAD','−89,999,999,999,999.99 CAD'])")
+            assert evaluate("document.querySelector('.sandbox-badge').textContent==='Sandbox · test data'&&document.querySelector('.sandbox-caption').textContent==='Not booked'")
             for width in (320, 390, 768, 1440):
                 call("Emulation.setDeviceMetricsOverride", {"width": width, "height": 900, "deviceScaleFactor": 1, "mobile": width < 500})
                 geometry = evaluate("""(()=>{const rows=[...document.querySelectorAll('.sandbox-transaction > summary')];
 const rect=n=>({height:n.getBoundingClientRect().height, top:n.getBoundingClientRect().top});
 return {rows:rows.map(rect), overflow:document.documentElement.scrollWidth>innerWidth,
 clipped:[...document.querySelectorAll('.sandbox-money')].some(n=>n.scrollWidth>n.clientWidth+1),
-controls:[...document.querySelectorAll('#sandbox-filters input,#sandbox-filters select,#sandbox-filters summary,#sandbox-filters button,#sandbox-filters a')].filter(n=>n.getClientRects().length).map(n=>({name:n.tagName, ...rect(n)}))};})()""")
+controls:[...document.querySelectorAll('#sandbox-filters input,#sandbox-filters select,#sandbox-filters summary,#sandbox-filters button,#sandbox-filters a')].filter(n=>n.checkVisibility()).map(n=>({name:n.tagName, ...rect(n)}))};})()""")
                 assert not geometry["overflow"], (width, geometry)
                 assert not geometry["clipped"], (width, geometry)
                 print(json.dumps({"width": width, "rows": geometry["rows"], "toolbar_rows": len({round(c["top"]) for c in geometry["controls"]})}))
-                assert all(row["height"] >= 44 for row in geometry["rows"]), (width, geometry)
-                assert geometry["rows"][0]["height"] <= (84 if width <= 850 else 60), (width, geometry)
-                assert geometry["rows"][0]["top"] < 300, (width, geometry)
-                assert all(control["height"] >= 44 for control in geometry["controls"]), (width, geometry)
-                assert len({round(c["top"]) for c in geometry["controls"]}) <= (2 if width < 500 else 1), (width, geometry)
-                if width <= 850:
-                    assert evaluate("(()=>{const r=document.querySelector('.sandbox-transaction > summary');return Math.abs(r.querySelector('.sandbox-account-label').getBoundingClientRect().top-r.querySelector('.sandbox-row-meta').getBoundingClientRect().top)<1;})()"), (width, "identity and metadata share the second compact band")
-                else:
-                    assert evaluate("""(()=>{const head=document.querySelector('.sandbox-column-head');return ['sandbox-account-label','sandbox-date','sandbox-state','sandbox-money','sandbox-chevron'].every(name=>[...document.querySelectorAll('.sandbox-transaction > summary')].every(row=>Math.abs(row.querySelector('.'+name).getBoundingClientRect().left-head.querySelector('.'+name).getBoundingClientRect().left)<1));})()"""), (width, "all rows align with the header, including extreme amounts")
+                assert all(row["height"] >= 88 for row in geometry["rows"]), (width, geometry)
+                assert all(control["height"] >= 48 for control in geometry["controls"]), (width, geometry)
+                assert evaluate("document.querySelector('.sandbox-transaction > summary').getBoundingClientRect().top >= document.querySelector('#sandbox-filters').getBoundingClientRect().bottom"), (width, "rows follow the task toolbar")
+                assert evaluate("[...document.querySelectorAll('#sandbox-filters input,#sandbox-filters select,#sandbox-filters button')].filter(n=>n.checkVisibility()).every(n=>{const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth})"), (width, "toolbar controls stay inside the viewport")
+                if 360 <= width < 1100:
+                    assert evaluate("(()=>{const r=document.querySelector('.sandbox-transaction > summary');return getComputedStyle(r.querySelector('.sandbox-account-label')).gridRowStart==='2'&&getComputedStyle(r.querySelector('.sandbox-row-meta')).gridRowStart==='2';})()"), (width, "identity and wrapped metadata share the second grid band")
+                elif width >= 1100:
+                    columns = evaluate("""(()=>{
+const bounds=n=>{const r=n.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width}};
+const cells=row=>Object.fromEntries(['sandbox-merchant','sandbox-account-label','sandbox-date','sandbox-state','sandbox-money','sandbox-chevron'].map(name=>[name,bounds(row.querySelector('.'+name))]));
+const head=document.querySelector('.sandbox-column-head');
+return {head:cells(head),headTracks:getComputedStyle(head).gridTemplateColumns,
+rows:[...document.querySelectorAll('.sandbox-transaction > summary')].map(row=>({cells:cells(row),tracks:getComputedStyle(row).gridTemplateColumns,money:row.querySelector('.sandbox-money').textContent}))};})()""")
+                    print(json.dumps({"width": width, "columns": columns}))
+                    evidence = os.environ.get("BANKING_DESIGN_EVIDENCE")
+                    if evidence:
+                        directory = Path(evidence)
+                        directory.mkdir(parents=True, exist_ok=True)
+                        (directory / "legacy-desktop-columns.json").write_text(json.dumps(columns, indent=2))
+                    for row in columns["rows"]:
+                        for name, cell in row["cells"].items():
+                            # Money is end-aligned; compare its end edge, not text start.
+                            edge = "right" if name in {"sandbox-money", "sandbox-chevron"} else "left"
+                            assert abs(cell[edge] - columns["head"][name][edge]) < 1, (width, name, edge, columns)
                 evaluate("document.querySelectorAll('.sandbox-page details').forEach(d=>d.open=true)")
                 assert evaluate("document.documentElement.scrollWidth<=innerWidth"), width
                 assert evaluate("[...document.querySelectorAll('.sandbox-filter-grid input,.sandbox-filter-grid select')].every(n=>n.getBoundingClientRect().height>=44)"), width
                 for theme in ("light", "dark"):
-                    evaluate(f"document.documentElement.dataset.theme='{theme}'")
+                    evaluate(f"document.documentElement.dataset.theme='{theme}';document.documentElement.dataset.bsTheme='{theme}'")
                     assert evaluate("""(()=>{const row=document.querySelector('.sandbox-transaction'), suggestion=row.querySelector('.nancy');
 const probe=document.createElement('span');probe.style.color='var(--nancy)';document.body.append(probe);
 const orange=getComputedStyle(probe).color;probe.remove();
@@ -504,49 +523,41 @@ owner_id:'alpha', date:'2026-01-03', state:'posted', selected:true, amount_cents
 document.querySelector('#sandbox-result-count').textContent='1–1 of 1 transactions';
 })()""")
                 for theme in ("light", "dark"):
-                    evaluate(f"document.documentElement.dataset.theme='{theme}'")
+                    evaluate(f"document.documentElement.dataset.theme='{theme}';document.documentElement.dataset.bsTheme='{theme}'")
                     for width in (320, 390):
                         call("Emulation.setDeviceMetricsOverride", {"width": width, "height": 900, "deviceScaleFactor": 1, "mobile": True})
                         shell = evaluate("""(()=>{const rect=n=>{const r=n.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height}};
-const header=document.querySelector('.hero'), label=header.querySelector('.theme-label'), select=header.querySelector('[data-theme-select]');
-return {title:header.querySelector('h1').textContent, header:rect(header), label:rect(label), select:rect(select),
-caption:rect(header.querySelector('.sandbox-caption')), badge:rect(header.querySelector('.sandbox-badge')),
-titleRect:rect(header.querySelector('h1')), firstRow:document.querySelector('.sandbox-transaction > summary')?.getBoundingClientRect().top,
-overflow:document.documentElement.scrollWidth>innerWidth, nav:[...document.querySelectorAll('.tabbar .tab')].map(rect),
+const header=document.querySelector('.fn-header'), pageHead=document.querySelector('.fn-page-head'), label=header.querySelector('label[for="appearance"]'), select=header.querySelector('[data-theme-select]');
+return {title:pageHead.querySelector('h1').textContent, header:rect(header), label:rect(label), select:rect(select),
+caption:rect(pageHead.querySelector('.sandbox-caption')), badge:rect(pageHead.querySelector('.sandbox-badge')),
+titleRect:rect(pageHead.querySelector('h1')), firstRow:document.querySelector('.sandbox-transaction > summary')?.getBoundingClientRect().top,
+overflow:document.documentElement.scrollWidth>innerWidth, nav:[...document.querySelectorAll('.fn-nav > a')].map(rect),
 labelText:label.textContent, labelFor:label.htmlFor, selectID:select.id};})()""")
                         print(json.dumps({"route": route, "theme": theme, "width": width, "shell": shell}))
                         assert not shell["overflow"], (route, width, theme, shell)
                         assert shell["labelText"] == "Appearance" and shell["labelFor"] == shell["selectID"]
-                        assert shell["label"]["width"] <= 1 and shell["label"]["height"] <= 1, "mobile Appearance remains accessible but visually hidden"
-                        assert shell["select"]["height"] >= 44 and shell["select"]["width"] >= 44
-                        assert all(tab["height"] >= 44 and tab["width"] >= 44 for tab in shell["nav"])
-                        assert shell["badge"]["right"] + 4 <= shell["select"]["left"], shell
-                        assert shell["titleRect"]["right"] + 4 <= shell["select"]["left"], shell
-                        assert shell["header"]["height"] <= (104 if width == 320 else 80), shell
-                        if route == "/activity" and width == 390:
-                            assert 195 <= shell["firstRow"] <= 216, shell
-                    evaluate("window.originalTabs=[...document.querySelectorAll('.tabbar > a')]")
+                        assert shell["label"]["width"] > 1 and shell["label"]["height"] > 1, "Appearance has a persistent visible label"
+                        assert shell["select"]["height"] >= 48 and shell["select"]["width"] >= 48
+                        assert all(tab["height"] >= 48 and tab["width"] >= 44 for tab in shell["nav"])
+                        assert shell["titleRect"]["top"] >= shell["header"]["bottom"], shell
+                        assert shell["caption"]["left"] >= 16 and shell["badge"]["right"] <= width - 16, shell
+                        if route == "/activity":
+                            assert shell["firstRow"] >= shell["titleRect"]["bottom"], shell
+                    evaluate("window.originalTabs=[...document.querySelectorAll('.fn-nav > a')]")
                     for width in (1023, 1024, 1440):
                         call("Emulation.setDeviceMetricsOverride", {"width": width, "height": 900, "deviceScaleFactor": 1, "mobile": False})
-                        nav = evaluate("""(()=>{const bar=document.querySelector('.tabbar'), r=bar.getBoundingClientRect(),
-tabs=[...bar.children], main=document.querySelector('.app-main'), header=document.querySelector('.hero');
+                        nav = evaluate("""(()=>{const bar=document.querySelector('.fn-nav'), r=bar.getBoundingClientRect(),
+tabs=[...bar.children], main=document.querySelector('.app-main'), header=document.querySelector('.fn-header');
 return {count:tabs.length,same:tabs.every((n,i)=>n===window.originalTabs[i]), display:getComputedStyle(bar).display,
-top:r.top,bottom:r.bottom,height:r.height,headerTop:header.getBoundingClientRect().top,
-clearance:parseFloat(getComputedStyle(main).paddingBottom),overflow:document.documentElement.scrollWidth>innerWidth,
+top:r.top,bottom:r.bottom,height:r.height,mainTop:main.getBoundingClientRect().top,headerBottom:header.getBoundingClientRect().bottom,position:getComputedStyle(header).position,
+overflow:document.documentElement.scrollWidth>innerWidth,
 active:tabs.filter(n=>n.getAttribute('aria-current')==='page').map(n=>n.getAttribute('href')),
-tabs:tabs.map(n=>({height:n.getBoundingClientRect().height,width:n.getBoundingClientRect().width,
-direction:getComputedStyle(n).flexDirection,icon:n.querySelector('svg').getBoundingClientRect().right,label:n.querySelector('span').getBoundingClientRect().left}))};})()""")
+tabs:tabs.map(n=>({height:n.getBoundingClientRect().height,width:n.getBoundingClientRect().width}))};})()""")
                         print(json.dumps({"route": route, "theme": theme, "width": width, "nav": nav}))
-                        assert nav["count"] == 4 and nav["same"] and nav["display"] == "grid", nav
+                        assert nav["count"] == 4 and nav["same"] and nav["display"] == "flex", nav
                         assert nav["active"] == [route] and not nav["overflow"], nav
-                        assert all(tab["height"] >= 44 and tab["width"] >= 44 for tab in nav["tabs"]), nav
-                        if width >= 1024:
-                            assert nav["top"] == 0 and nav["headerTop"] >= nav["bottom"], nav
-                            assert nav["clearance"] == 0, nav
-                            assert all(tab["direction"] == "row" and tab["icon"] + 4 <= tab["label"] for tab in nav["tabs"]), nav
-                        else:
-                            assert nav["bottom"] == 900 and nav["clearance"] >= 104, nav
-                            assert all(tab["direction"] == "column" for tab in nav["tabs"]), nav
+                        assert all(tab["height"] >= 48 and tab["width"] >= 44 for tab in nav["tabs"]), nav
+                        assert nav["position"] == "static" and nav["mainTop"] >= nav["headerBottom"] >= nav["bottom"], nav
     finally:
         process.terminate()
         process.wait(timeout=10)

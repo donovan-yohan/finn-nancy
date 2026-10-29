@@ -222,7 +222,7 @@ def test_review_queue_renders_statement_card(app_env):
     assert "$100.00" in r.text and "$87.50" in r.text
     assert "account unresolved" in r.text
     assert "Review source, metadata, and rows" in r.text
-    assert "set account, then review" in r.text
+    assert "Set account, then review" in r.text
     assert "extracted: <strong>?" not in r.text
     assert f'action="/review/doc/{doc_id}/delete"' not in r.text
 
@@ -258,7 +258,7 @@ def test_review_queue_renders_similar_transaction_anchors(app_env, make_jpeg, fa
     r = _client().get("/review")
 
     assert r.status_code == 200
-    assert "similar past transactions" in r.text
+    assert "Similar past transactions" in r.text
     assert "Synthetic Market" in r.text
     assert "#17" in r.text or "#11" in r.text or "#3" in r.text
 

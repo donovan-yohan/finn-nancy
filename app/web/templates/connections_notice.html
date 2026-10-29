@@ -1,8 +1,12 @@
-{% extends "base.html" %}
+{% extends "foundation_base.html" %}
 {% block title %}Connections · Finn Nancy{% endblock %}
+{% block styles %}{{ super() }}<link rel="stylesheet" href="/static/foundation/banking.css">{% endblock %}
 {% block content %}
-<header class="hero compact"><h1>Connections</h1></header>
-<div class="grid single"><section class="card"><h2>Bank connections are disabled in this app</h2>
-<p>The Plaid Sandbox prototype runs as a separate isolated candidate on loopback with its own private synthetic data. Launch it using <code>scripts/plaid-sandbox</code>, then open its reported loopback port.</p>
-<p>No Sandbox setup, Link script, bank tokens or network-enablement routes are available in the normal app. No production connections are supported.</p></section></div>
+<section class="banking-unavailable">
+  <header class="fn-page-head"><h1>Connections</h1></header>
+  <div class="banking-empty"><h2>Sandbox is a separate workspace</h2>
+    <p>The Plaid Sandbox prototype runs as a separate isolated candidate on loopback with its own synthetic data. Launch it using <code>scripts/plaid-sandbox</code>, then open its reported loopback port.</p>
+    <p>Sandbox setup, test tokens and network access stay in that candidate. The normal app uses its own Connections setup and consent. Sandbox data does not become recorded activity.</p>
+  </div>
+</section>
 {% endblock %}

@@ -11,7 +11,7 @@ This map points contributors to the executable contracts before they change beha
 - `app/web/app.py` and `app/web/routes/` — FastAPI application assembly and HTTP/UI routes.
 - `app/workers/` — durable background-job execution.
 - `app/config.py` — environment-backed configuration and local/egress controls.
-- `docs/UI_DESIGN.md` — navigation, Finn/Nancy colors, and durable upload presentation.
+- `docs/UI_DESIGN.md` and `DESIGN.md` — application-wide component, layout, copy, accessibility and capture contracts. `app/web/static/foundation/tokens.json` owns runtime values; `tokens.css` is generated, `components.css` adapts vendored Bootstrap 5.3.8, and `foundation_base.html` owns shared asset order. Root `tokens.json`/`tailwind.theme.json` are portable spec exports, not runtime inputs. Page sheets compose this foundation; `base.html` is compatibility inheritance, not a legacy palette.
 - `docs/HERMES_CHAT.md` and `app/hermes_chat/` — native Hermes chat bridge, authority and recovery contract.
 - `docs/NAMAKO_FINANCE.md` and `app/api/finance.py` — machine inspection and split-category proposals shared by HTTP, local CLI and MCP; keyed clients may also drive the existing decision/undo workflows.
 - `docs/BANKING.md` and `app/banking/` — opt-in Production Plaid transport, per-member consent, account bindings and immutable provider observations.
@@ -45,6 +45,8 @@ This map points contributors to the executable contracts before they change beha
 - `scripts/agentic-harness` — repository contract checks.
 - `scripts/public-release-audit` — public-source privacy and fixture gate.
 - `scripts/lint`, `scripts/test`, `scripts/build`, and `scripts/smoke` — canonical deterministic gates.
+- `tests/test_design_adoption.py` — explicit 41-template ownership/inheritance and real route-family foundation asset contracts; structural coverage is not all-state acceptance.
+- `tests/test_design_tokens.py`, `tests/test_ui_theme.py` and `tests/test_ui_theme_browser.py` — canonical token/export/provenance consistency, both-theme contrast and real visible keyboard focus. Feature `test_design_*` and companion browser regressions own composed states, financial actions and geometry.
 - `docs/EVALS.md` and `docs/FN149_PRECISION_HARNESS.md` — controlled reconciliation evaluations.
 
 Repository fixtures are synthetic by contract. See `docs/FIXTURE_CONVENTION.md` and `PUBLIC_RELEASE_MANIFEST.json`. Environment-specific paths, identities, service topology, financial records, and rollout instructions do not belong in this repository.

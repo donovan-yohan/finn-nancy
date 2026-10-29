@@ -69,7 +69,7 @@ def test_shared_shell_marks_current_navigation_and_scopes_density(app_env):
 
 def test_home_distinguishes_recorded_history_from_latest_period(app_env):
     html = TestClient(create_app()).get('/').text
-    assert 'name="month"' in html and 'class="inline-form home-month"' in html
+    assert 'name="month"' in html and 'class="home-month" action="/" method="get"' in html
     assert '/activity?date_from=' in html
     assert 'Latest period' in html
     assert re.search(r'Latest period[^<]*|Latest period</span>', html)
@@ -79,7 +79,8 @@ def test_home_distinguishes_recorded_history_from_latest_period(app_env):
 
 def test_home_does_not_repeat_latest_net_as_a_fourth_metric(app_env):
     html = TestClient(create_app()).get('/').text
-    assert html.count('class="stat-card') == 3
+    assert 'class="home-stats"' in html
+    assert html.count('class="stat-number"') == 3
     assert 'Latest period' in html
 
 
@@ -88,7 +89,7 @@ def test_main_landmark_is_shared_for_processing_and_chat(app_env):
     for route in ('/processing', '/chat', '/activity', '/txn/new'):
         html = client.get(route).text
         assert html.count('<main') == 1
-        assert '<main class="app-main" id="workspace-content"' in html
+        assert '<main class="fn-shell app-main" id="workspace-content"' in html
 
 
 def test_category_resolution_is_visible_when_no_accepted_categories(app_env):
@@ -103,7 +104,7 @@ def test_category_resolution_is_visible_when_no_accepted_categories(app_env):
                    categories=[], transactions=[], cashflow=[], months=[],
                    selected_month='', semantic_review_count=0)
     html = templates.env.get_template('dashboard.html').render(context)
-    assert 'Unresolved categories' in html and '$5.00' in html and '2 split(s)' in html
+    assert 'Unresolved categories' in html and '$5.00' in html and '2 splits' in html
 
 
 def test_transaction_form_has_a_scoped_compact_layout(app_env):

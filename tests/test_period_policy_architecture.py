@@ -327,7 +327,9 @@ EXPECTED_DYNAMIC_SQL_SITES = {
     "app/db/repo_statement_expectations.py::_update_expectation": 1,
     "app/db/repo_statement_reviews.py::update_metadata": 1,
     "app/db/repo_statements.py::lines_for_document": 1,
-    "app/db/views.py::activity_results": 1,
+    # Fixed read-only original-document CTE; interpolation creates only bind
+    # placeholders for the returned page. Canonical IDs remain bound values.
+    "app/db/views.py::activity_results": 2,
     "app/db/views.py::dashboard_context": 2,
     "app/db/views.py::filter_options": 2,
     "app/evals/recon_insight.py::_existing_ids": 1,

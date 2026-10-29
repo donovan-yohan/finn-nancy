@@ -496,7 +496,7 @@ def test_statement_review_page_connects_source_metadata_rows_and_gate(app_env):
     assert "Actual closing date" in response.text
     assert "2026-06-30" in response.text
     assert "Synthetic shop" in response.text
-    assert "source evidence" in response.text
+    assert "Source evidence" in response.text
     assert "Source and rows are complete" in response.text
     assert f'action="/review/statement/{doc_id}/approve"' in response.text
 
@@ -505,7 +505,7 @@ def test_statement_review_has_accessible_responsive_browser_contract(app_env):
     doc_id, _ = _review(app_env, _parsed())
     response = _client().get(f"/review/statement/{doc_id}")
     css = (
-        Path(__file__).parents[1] / "app" / "web" / "static" / "app.css"
+        Path(__file__).parents[1] / "app/web/static/foundation/evidence.css"
     ).read_text()
 
     assert 'aria-labelledby="statement-gate-title"' in response.text
@@ -514,11 +514,16 @@ def test_statement_review_has_accessible_responsive_browser_contract(app_env):
     assert 'target="statement-source"' in response.text
     assert "#page=1" in response.text
     assert "statement-workspace" in response.text
-    assert "@media (max-width: 900px)" in css
-    assert "@media (max-width: 620px)" in css
-    assert ".statement-workspace" in css
-    assert "grid-template-columns: 1fr;" in css
-    assert ".statement-source-frame" in css
+    assert '/static/foundation/evidence.css' in response.text
+    assert '@media (max-width:1000px)' in css
+    assert '.evidence-workspace .statement-workspace,.evidence-workspace .lens { grid-template-columns:minmax(0,1fr); }' in css
+    assert '@media (max-width:520px)' in css
+    assert '.evidence-workspace .statement-source-frame { display:block; width:100%; height:36rem;' in css
+    assert 'class="statement-source-frame"' in response.text
+    assert 'id="statement-source-title"' in response.text
+    assert 'name="expected_revision" value="1"' in response.text
+    # The companion evidence browser regression checks phone reflow and actual
+    # source geometry; this route contract retains names and revision authority.
 
 
 def test_statement_review_routes_audit_metadata_and_row_corrections(app_env):

@@ -25,7 +25,56 @@ class Cdp {
   async call(method,params={}) {await this.ready;const id=++this.id;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.pending.delete(id);reject(Error('CDP timeout '+method+' '+JSON.stringify(params)));},8000);this.pending.set(id,{resolve:r=>{clearTimeout(timer);resolve(r);},reject:e=>{clearTimeout(timer);reject(e);}});this.ws.send(JSON.stringify({id,method,params}));});}
   async eval(expression) {const r=await this.call('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;}
   async until(expression) {for(let i=0;i<100;i++){if(await this.eval(expression))return;await pause(40);}throw Error(expression+' '+await this.eval('JSON.stringify({body:document.body.innerText.slice(0,2400),focus:document.activeElement.outerHTML.slice(0,300),keys:window.generatedKeys})'));}
-  async click(selector) {const p=await this.eval(`(()=>{const n=document.querySelector(${JSON.stringify(selector)});if(!n||!n.getClientRects().length)throw Error('Not visible: '+${JSON.stringify(selector)});n.scrollIntoView({block:'center'});const r=n.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);await this.call('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...p});await this.call('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...p});}
+  async pointer(selector) {
+    // Keep native smooth scrolling. A layout box immediately after scrollIntoView
+    // is the departure point, not a safe pointer destination.
+    return this.eval(`new Promise((resolve,reject)=>{
+      const selector=${JSON.stringify(selector)},n=document.querySelector(selector);
+      const visible=()=>{
+        if(!n?.isConnected||!n.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}))return false;
+        for(let p=n.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS'&&!p.open&&!p.querySelector(':scope > summary')?.contains(n))return false;
+        return true;
+      };
+      if(!visible()){reject(Error('Not visible: '+selector));return;}
+      n.scrollIntoView({block:'center'});
+      const start=performance.now();let changed=start,previous,rearmed=false;
+      function frame(){
+        if(document.querySelector(selector)!==n||!visible()){reject(Error('Pointer target changed or hidden: '+selector));return;}
+        const r=n.getBoundingClientRect(),position=[r.x,r.y,r.width,r.height,scrollX,scrollY,innerWidth,innerHeight];
+        for(let p=n.parentElement;p;p=p.parentElement)position.push(p.scrollLeft,p.scrollTop);
+        const now=performance.now();
+        if(now-start>=4000){reject(Error('Pointer target did not settle in viewport: '+selector));return;}
+        if(!previous||position.some((v,i)=>Math.abs(v-previous[i])>.1))changed=now;
+        previous=position;
+        const inViewport=r.width>0&&r.height>0&&r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;
+        if(now-changed>=120){
+          if(inViewport){resolve({x:r.x+r.width/2,y:r.y+r.height/2});return;}
+          // A competing native scroll can cancel the initial smooth request.
+          // Offscreen quiescence is not arrival: re-arm once, never click/retry
+          // or extend the original deadline. Persistent nonarrival still fails.
+          if(!rearmed){rearmed=true;changed=now;n.scrollIntoView({block:'center'});}
+        }
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    })`);
+  }
+  async verifyPointer(selector,point) {
+    return this.eval(`(()=>{
+      const selector=${JSON.stringify(selector)},n=document.querySelector(selector),p=${JSON.stringify(point)};
+      if(!n?.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}))throw Error('Not visible: '+selector);
+      const r=n.getBoundingClientRect();
+      if(r.width<=0||r.height<=0||r.left<0||r.top<0||r.right>innerWidth||r.bottom>innerHeight)throw Error('Pointer target outside viewport: '+selector+' '+JSON.stringify({point:p,rect:r.toJSON(),width:innerWidth,height:innerHeight}));
+      if(Math.abs(p.x-(r.x+r.width/2))>.5||Math.abs(p.y-(r.y+r.height/2))>.5)throw Error('Wrong or moving pointer target: '+selector+' '+JSON.stringify({point:p,rect:r.toJSON(),focus:document.activeElement.outerHTML.slice(0,200)}));
+      if(!n.contains(document.elementFromPoint(p.x,p.y)))throw Error('Pointer target covered: '+selector);
+      return p;
+    })()`);
+  }
+  async click(selector) {
+    const p=await this.verifyPointer(selector,await this.pointer(selector));
+    await this.call('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...p});
+    await this.call('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...p});
+  }
   // Printable Space needs the same native keyDown/text envelope as Enter;
   // rawKeyDown alone stalls macOS headless Chromium even on a bare checkbox.
   async key(key,code,vk,native=vk) {const text=key==='Enter'?'\r':key===' '?' ':null;await this.call('Input.dispatchKeyEvent',{type:text===null?'rawKeyDown':'keyDown',key,code,windowsVirtualKeyCode:vk,nativeVirtualKeyCode:native,...(text===null?{}:{text,unmodifiedText:text})});await this.call('Input.dispatchKeyEvent',{type:'keyUp',key,code,windowsVirtualKeyCode:vk,nativeVirtualKeyCode:native});}
@@ -319,9 +368,7 @@ async function revocationJourney(c,base,control) {
   assert.equal(await c.eval("document.querySelectorAll('.sandbox-connection')[1].querySelector('p').textContent.startsWith('Access invalid')"),true);
   assert.equal(await c.eval("[...document.querySelectorAll('[data-action=sync],[data-action=repair]')].every(n=>n.disabled)"),true);
   c.listeners.push(m=>{if(m.method==='Page.javascriptDialogOpening')c.call('Page.handleJavaScriptDialog',{accept:true});});
-  const p=await c.eval("(()=>{const n=document.querySelector('[data-action=disconnect]');n.scrollIntoView({block:'center'});const r=n.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()");
-  await c.call('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...p});
-  await c.call('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...p});
+  await c.click('.sandbox-connection:first-child [data-action=disconnect]');
   await c.until("!document.querySelector('.sandbox-page').hasAttribute('aria-busy') && document.querySelector('.sandbox-connection > p').textContent.startsWith('Disconnected')");
   assert.deepEqual((await control()).counts,{disconnect:1});
 }

@@ -1,0 +1,125 @@
+/* Nancy composition. Shared controls and palette come from the foundation. */
+.fn-nancy { min-width:0; }
+.fn-nancy h1,.fn-nancy .nancy-category { color:var(--nancy); }
+.fn-nancy .subtle,.fn-nancy .nancy-label,.fn-nancy .eyebrow { color:var(--muted); font-size:var(--small); }
+.fn-nancy .block { display:block; }
+.fn-nancy .money,.fn-nancy .money-input { text-align:end; font-variant-numeric:tabular-nums lining-nums; }
+.fn-nancy .money { color:var(--ink); overflow-wrap:normal; }
+.fn-nancy .nancy-link { display:inline-flex; align-items:center; min-height:var(--control); }
+.fn-nancy .nancy-sections { display:grid; gap:var(--space-6); }
+.fn-nancy .nancy-section { min-width:0; padding-block:var(--space-6); border-top:1px solid var(--line); }
+.fn-nancy .nancy-section-head { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:var(--space-3); margin-bottom:var(--space-4); }
+.fn-nancy .nancy-section-head h2 { color:var(--nancy); }
+.fn-nancy .nancy-inline { align-items:end; max-width:640px; }
+.fn-nancy .nancy-period { display:grid; gap:var(--space-2); }
+.fn-nancy .nancy-period .form-label { margin:0; }
+.fn-nancy .nancy-inline .form-label { margin-bottom:0; }
+.fn-nancy .nancy-inline .fn-field .form-label { margin-bottom:var(--space-2); }
+.fn-nancy .nancy-inline .form-select { width:auto; max-width:100%; }
+.fn-nancy .nancy-inline .money-input { max-width:16rem; }
+.fn-nancy .nancy-summary { padding-top:0; }
+.fn-nancy .nancy-summary>summary { color:var(--nancy); font-weight:600; }
+.fn-nancy .prose-body { white-space:pre-wrap; max-width:65ch; overflow-wrap:anywhere; }
+.fn-nancy .compact-head { margin-top:var(--space-3); }
+.fn-nancy .nancy-totals { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--space-4); }
+.fn-nancy .nancy-total { min-width:0; }
+.fn-nancy .stat-number,.fn-nancy .big-number { font-size:var(--heading); font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums lining-nums; overflow-wrap:normal; }
+.fn-nancy .budget-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(4rem,1fr) auto; align-items:center; gap:var(--space-4); padding-block:var(--space-4); border-bottom:1px solid var(--line); }
+.fn-nancy .budget-meter,.fn-nancy .goal-meter { background:var(--hover); height:8px; overflow:hidden; }
+.fn-nancy .budget-meter i,.fn-nancy .goal-meter i { display:block; height:100%; background:var(--nancy); }
+.fn-nancy .budget-row .money { font-weight:500; }
+.fn-nancy .stacked-bar { display:flex; height:8px; background:var(--hover); margin-block:var(--space-4); }
+.fn-nancy .stacked-bar i { display:block; height:100%; }
+.fn-nancy .leisure { background:var(--nancy); }
+.fn-nancy .bigticket { background:var(--muted); }
+.fn-nancy .everyday { background:var(--control-line); }
+.fn-nancy .legend { display:flex; flex-wrap:wrap; gap:var(--space-3) var(--space-6); font-variant-numeric:tabular-nums; }
+.fn-nancy .legend-dot { display:inline-block; width:8px; height:8px; margin-right:var(--space-2); }
+.fn-nancy .nancy-table { --bs-table-bg:transparent; --bs-table-color:var(--ink); --bs-table-border-color:var(--line); margin-bottom:0; }
+.fn-nancy .nancy-table :is(th,td) { vertical-align:top; padding:var(--space-4) var(--space-3); }
+.fn-nancy .nancy-table tr>:first-child { padding-left:0; }
+.fn-nancy .nancy-table tr>:last-child { padding-right:0; }
+.fn-nancy .nancy-table thead th { color:var(--muted); font-size:var(--small); font-weight:500; }
+.fn-nancy .nancy-table td:not(.money),.fn-nancy .nancy-table th { overflow-wrap:anywhere; }
+.fn-nancy .table-responsive { min-width:0; max-width:100%; }
+.fn-nancy .nancy-budget-table { min-width:48rem; }
+.fn-nancy .nancy-budget-table .form-select { min-width:10rem; }
+.fn-nancy .nancy-budget-table .money-input { min-width:9rem; }
+.fn-nancy .db-pill { display:inline-flex; align-items:baseline; flex-wrap:wrap; gap:var(--space-2); padding:var(--space-1) var(--space-2); border:1px solid var(--line); font-size:var(--small); overflow-wrap:anywhere; }
+.fn-nancy .member-list { display:flex; flex-wrap:wrap; gap:var(--space-2); margin-bottom:var(--space-4); }
+.fn-nancy .insight-card-list,.fn-nancy .goal-grid { display:grid; }
+.fn-nancy .insight-card,.fn-nancy .goal-card { min-width:0; padding-block:var(--space-6); border-bottom:1px solid var(--line); }
+.fn-nancy :is(.insight-card,.goal-card):first-child { padding-top:0; }
+.fn-nancy .insight-card-copy { display:grid; gap:var(--space-2); max-width:65ch; overflow-wrap:anywhere; }
+.fn-nancy .insight-card-copy h3 { color:var(--nancy); }
+.fn-nancy .insight-evidence,.fn-nancy .source-list { display:flex; flex-wrap:wrap; align-items:start; gap:var(--space-2); margin-block:var(--space-3); }
+.fn-nancy .evidence-group { display:inline-flex; flex-wrap:wrap; gap:var(--space-2); }
+.fn-nancy .evidence-pill a { display:inline-flex; align-items:center; min-height:var(--control); }
+.fn-nancy .goal-card { display:grid; gap:var(--space-3); }
+.fn-nancy .goal-card-head { display:flex; flex-wrap:wrap; align-items:start; justify-content:space-between; gap:var(--space-3); }
+.fn-nancy .goal-card-head h3 { color:var(--nancy); overflow-wrap:anywhere; }
+.fn-nancy .goal-card-head>div { min-width:0; }
+.fn-nancy .goal-money-row { display:flex; flex-wrap:wrap; gap:var(--space-3) var(--space-6); font-variant-numeric:tabular-nums; }
+.fn-nancy .goal-form { max-width:640px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-4); }
+.fn-nancy .goal-form .form-label { display:grid; align-content:start; gap:var(--space-2); min-width:0; margin:0; }
+.fn-nancy .nancy-goal-group { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-4); min-width:0; padding:0; border:0; }
+.fn-nancy .nancy-goal-group legend { float:none; width:auto; font-size:inherit; font-weight:600; margin-bottom:var(--space-3); color:var(--nancy); }
+.fn-nancy .nancy-goal-group .form-label:has([name="name"], [name="linked_transaction_id"]) { grid-column:1 / -1; }
+.fn-nancy .goal-form .span-form { grid-column:1 / -1; }
+.fn-nancy .goal-check { align-self:end; }
+.fn-nancy .goal-form .form-select { width:100%; }
+
+/* Preserve the native chat renderer's hooks, including generated requests. */
+.fn-nancy .hermes-chat { min-width:0; }
+.fn-nancy .chat-head p { margin-top:var(--space-2); }
+.fn-nancy .chat-connection { display:grid; justify-items:start; gap:var(--space-2); margin-bottom:var(--space-4); }
+.fn-nancy #chat-status { color:var(--muted); }
+.fn-nancy .chat-error { color:var(--danger); }
+.fn-nancy .chat-notice { color:var(--ink); font-weight:500; }
+.fn-nancy .chat-connection p { overflow-wrap:anywhere; }
+.fn-nancy .chat-conversation { min-width:0; }
+.fn-nancy #chat-empty { padding-block:var(--space-4); }
+.fn-nancy .chat-list { max-height:60vh; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+.fn-nancy .chat-message { padding-block:var(--space-4); border-bottom:1px solid var(--line); }
+.fn-nancy .chat-bubble { min-width:0; max-width:65ch; }
+.fn-nancy .chat-message.user { background:var(--surface); padding-inline:var(--space-3); }
+.fn-nancy .chat-speaker { color:var(--nancy); font-size:var(--small); font-weight:600; margin-bottom:var(--space-2); }
+.fn-nancy .chat-message.user .chat-speaker { color:var(--muted); }
+.fn-nancy .chat-text { white-space:pre-wrap; overflow-wrap:anywhere; }
+.fn-nancy .chat-outcome { color:var(--ink); margin-top:var(--space-3); overflow-wrap:anywhere; }
+.fn-nancy .chat-outcome:empty { display:none; }
+.fn-nancy .chat-steps>summary { display:flex; align-items:center; min-height:var(--control); color:var(--finn); cursor:pointer; }
+.fn-nancy .chat-step { padding:var(--space-3); margin-top:var(--space-2); background:var(--surface); border:1px solid var(--line); }
+.fn-nancy .chat-step-title { font-weight:600; color:var(--finn); }
+.fn-nancy :is(.chat-step pre,.chat-command) { white-space:pre-wrap; overflow-wrap:anywhere; margin-block:var(--space-2); font-size:var(--small); color:var(--ink); }
+.fn-nancy .chat-requests { display:grid; gap:var(--space-4); }
+.fn-nancy .chat-requests:empty { display:none; }
+.fn-nancy .chat-request { border:1px solid var(--control-line); padding:var(--space-4); margin-block:var(--space-4); min-width:0; }
+.fn-nancy .chat-request h2 { color:var(--nancy); margin-bottom:var(--space-3); }
+.fn-nancy .chat-request-note { color:var(--muted); font-size:var(--small); margin-top:var(--space-3); }
+.fn-nancy .chat-command { background:var(--surface); padding:var(--space-3); }
+.fn-nancy .chat-question { min-width:0; margin-block:var(--space-4); padding:var(--space-3); border:1px solid var(--line); }
+.fn-nancy .chat-question legend { float:none; width:auto; max-width:100%; font-size:inherit; font-weight:500; overflow-wrap:anywhere; }
+.fn-nancy .chat-choice { display:flex; align-items:center; gap:var(--space-3); min-height:var(--control); }
+.fn-nancy .chat-choice input { width:20px; height:20px; flex:none; accent-color:var(--finn); }
+.fn-nancy .chat-choice span { min-width:0; overflow-wrap:anywhere; }
+.fn-nancy .chat-answer-text { display:grid; gap:var(--space-2); margin-top:var(--space-3); }
+.fn-nancy .chat-answer-text textarea { width:100%; min-height:var(--control); color:var(--ink); background:var(--canvas); border:1px solid var(--control-line); border-radius:var(--radius); padding:var(--space-3); }
+.fn-nancy .chat-form { display:grid; gap:var(--space-3); padding-block:var(--space-6); border-top:1px solid var(--line); margin-top:var(--space-4); }
+.fn-nancy .chat-form .form-label { margin:0; }
+.fn-nancy .chat-form textarea { resize:vertical; }
+.fn-nancy .chat-actions { display:flex; flex-wrap:wrap; gap:var(--space-2); }
+.fn-nancy #chat-input-help { font-size:var(--small); }
+.fn-nancy #chat-input-help a { display:inline-flex; min-height:var(--control); align-items:center; }
+.fn-nancy .chat-request .ghost { display:inline-flex; justify-content:center; align-items:center; min-height:var(--control); padding:10px 16px; font:inherit; font-weight:500; color:var(--ink); background:var(--canvas); border:1px solid var(--control-line); border-radius:var(--radius); }
+.fn-nancy .chat-request .ghost:hover:not(:disabled) { background:var(--hover); }
+.fn-nancy .chat-request .ghost:disabled { color:var(--muted); border-color:var(--line); cursor:default; }
+@media (max-width:767px) {
+  .fn-nancy .nancy-totals { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .fn-nancy .budget-row { grid-template-columns:minmax(0,1fr) auto; gap:var(--space-3); }
+  .fn-nancy .budget-meter { grid-column:1 / -1; grid-row:2; }
+  .fn-nancy .goal-form,.fn-nancy .nancy-goal-group { grid-template-columns:minmax(0,1fr); }
+  .fn-nancy .nancy-table { min-width:36rem; }
+  .fn-nancy .nancy-budget-table { min-width:48rem; }
+  .fn-nancy .chat-request { padding:var(--space-3); }
+}

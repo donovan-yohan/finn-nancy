@@ -79,9 +79,26 @@ def _git_candidate_files(root: Path) -> list[Path] | None:
             capture_output=True,
             text=False,
         )
+        deleted = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "--deleted", "-z"],
+            check=True,
+            capture_output=True,
+            text=False,
+        )
     except (OSError, subprocess.CalledProcessError):
         return None
-    return [root / item.decode() for item in result.stdout.split(b"\0") if item]
+    deleted_names = set(deleted.stdout.split(b"\0"))
+    paths = []
+    for item in result.stdout.split(b"\0"):
+        if not item:
+            continue
+        path = root / item.decode()
+        # A tracked deletion is absent from this working-tree candidate. Keep
+        # broken symlinks and nonregular replacements for explicit rejection.
+        if item in deleted_names and not path.exists() and not path.is_symlink():
+            continue
+        paths.append(path)
+    return paths
 
 
 def _candidate_files(root: Path) -> list[Path]:

@@ -82,7 +82,7 @@ if (options.changeSystem !== undefined) {
   media.listener({ matches: media.matches });
 }
 console.log(JSON.stringify({
-  initial, selected, theme: root.dataset.theme, color: meta.content,
+  initial, selected, theme: root.dataset.theme, bootstrapTheme: root.dataset.bsTheme, color: meta.content,
   value: select.value, writes, mounted: control.parentNode === host
 }));
 """
@@ -97,7 +97,9 @@ def run_theme(**options):
         capture_output=True, text=True, check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    return json.loads(result.stdout)
+    output = json.loads(result.stdout)
+    assert output["bootstrapTheme"] == output["theme"], "The selected mode must drive the deployed Bootstrap/foundation selector"
+    return output
 
 
 def test_default_theme_follows_system_before_dom_ready():
@@ -212,7 +214,7 @@ def test_all_shells_load_early_csp_compatible_theme_and_one_labelled_control(can
     theme = next((script for script in scripts if script.get("src") == "/static/theme.js"), None)
     assert theme is not None, "All pages need the shared theme script"
     assert not {"defer", "async", "type"}.intersection(theme), "Set theme before styles/paint"
-    assert html.index('/static/theme.js') < html.index('/static/app.css')
+    assert html.index('/static/theme.js') < html.index('/static/foundation/vendor/bootstrap.min.css')
     select = [attributes for tag, attributes in elements if tag == "select" and "data-theme-select" in attributes]
     assert len(select) == 1
     identifier = select[0]["id"]
@@ -236,15 +238,15 @@ def test_all_shells_load_early_csp_compatible_theme_and_one_labelled_control(can
 
 
 def theme_tokens(mode):
-    css = (ROOT / "app/web/static/app.css").read_text()
-    rule = re.search(r':root\[data-theme="' + mode + r'"\]\s*\{([^}]+)\}', css)
+    css = (ROOT / "app/web/static/foundation/tokens.css").read_text()
+    rule = re.search(r'\[data-bs-theme="' + mode + r'"\]\s*\{([^}]+)\}', css)
     assert rule is not None, f"Missing explicit {mode} palette"
     return dict(re.findall(r"(--[\w-]+):\s*([^;]+);", rule[1]))
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("light", {"--bg": "#ffffff", "--panel": "#fafafa", "--panel-2": "#f5f5f5", "--finn": "#0064d9", "--nancy": "#bc4700"}),
-    ("dark", {"--bg": "#000000", "--panel": "#0a0a0a", "--panel-2": "#141414", "--finn": "#52a8ff", "--nancy": "#ff8a3d"}),
+    ("light", {"--canvas": "#ffffff", "--surface": "#fafafa", "--hover": "#f2f2f2", "--finn": "#0064d9", "--nancy": "#bc4700"}),
+    ("dark", {"--canvas": "#000000", "--surface": "#0a0a0a", "--hover": "#1a1a1a", "--finn": "#52a8ff", "--nancy": "#ff8a3d"}),
 ])
 def test_palettes_keep_neutral_surfaces_and_readable_semantics(mode, expected):
     tokens = theme_tokens(mode)
@@ -255,66 +257,73 @@ def test_palettes_keep_neutral_surfaces_and_readable_semantics(mode, expected):
         linear = [value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4 for value in values]
         return sum(value * weight for value, weight in zip(linear, (.2126, .7152, .0722)))
 
-    for foreground in ("--text", "--muted", "--finn", "--nancy", "--green", "--red"):
-        for surface in ("--bg", "--panel", "--panel-2"):
+    for foreground in ("--ink", "--muted", "--finn", "--nancy", "--danger"):
+        for surface in ("--canvas", "--surface", "--hover"):
             levels = sorted((luminance(tokens[foreground]), luminance(tokens[surface])))
             assert (levels[1] + .05) / (levels[0] + .05) >= 4.5, (mode, foreground, surface)
-    for accent in ("finn", "nancy"):
-        levels = sorted((luminance(tokens["--" + accent]), luminance(tokens["--on-" + accent])))
-        assert (levels[1] + .05) / (levels[0] + .05) >= 4.5
+    levels = sorted((luminance(tokens["--finn"]), luminance(tokens["--on-finn"])))
+    assert (levels[1] + .05) / (levels[0] + .05) >= 4.5
 
 
 def test_shared_foundation_has_spacing_flat_surfaces_and_accessible_controls():
-    css = (ROOT / "app/web/static/app.css").read_text()
-    for token in ("--space-1", "--space-2", "--space-3", "--space-4", "--space-6", "--gutter", "--radius-sm", "--radius", "--on-accent"):
-        assert token + ":" in css
-    for navy in ("#090d14", "#111827", "#0f1724", "#05121f", "rgba(9, 13, 20", "rgba(17, 24, 39"):
-        assert navy not in css
-    assert "gradient(" not in css
-    assert "blur(" not in css
-    assert re.search(r"input, select, textarea\s*\{[^}]*min-height:\s*(?:44px|var\(--control-size\))", css)
-    assert ':focus-visible' in css
-    assert '.theme-control' in css and '.theme-control[hidden]' in css
-    # Evidence target rings remain meaningful highlights, not floating shadows.
-    assert re.search(r"\.period-report-row:target\s*\{[^}]*border-color:\s*var\(--finn\)", css)
-    assert re.search(r"\.region\.is-active\s*\{[^}]*background:\s*var\(--finn-soft\)", css)
+    foundation = ROOT / "app/web/static/foundation"
+    tokens = (foundation / "tokens.css").read_text()
+    css = (foundation / "components.css").read_text()
+    for token in ("--space-1", "--space-2", "--space-3", "--space-4", "--space-6", "--space-8", "--space-12", "--radius", "--control", "--content"):
+        assert token + ":" in tokens
+    for sheet in foundation.glob("*.css"):
+        text = sheet.read_text()
+        assert "gradient(" not in text and "blur(" not in text, sheet
+    assert re.search(r"\.btn,\.form-control,\.form-select\s*\{[^}]*min-height:\s*var\(--control\)", css)
+    assert '--control: 48px;' in tokens
+    assert ':focus-visible { outline:3px solid var(--focus) !important; outline-offset:3px;' in css
+    assert '[hidden] { display:none !important; }' in css
+    assert '.theme-control' in css
+    reports = (foundation / "close-report.css").read_text()
+    assert re.search(r"\.period-statement-workspace :target\s*\{[^}]*outline:2px solid var\(--finn\)", reports)
+    evidence = (foundation / "evidence.css").read_text()
+    assert '.region:where(:hover,:target,.is-active)' in evidence
+    assert 'background:color-mix(in srgb,var(--finn) 16%,transparent)' in evidence
+    # Source overlays use normalized parser coordinates, never pixel guesses.
+    for declaration in ('left:calc(var(--x0) * 100%)', 'top:calc(var(--y0) * 100%)',
+                        'width:calc((var(--x1) - var(--x0)) * 100%)',
+                        'height:calc((var(--y1) - var(--y0)) * 100%)'):
+        assert declaration in evidence
+    assert 'aspect-ratio:1 / var(--aspect)' in evidence
 
 
 @pytest.mark.parametrize("mode", ["light", "dark"])
-def test_role_text_keeps_contrast_on_shared_tinted_surfaces(mode):
+def test_role_text_keeps_contrast_on_shared_hover_surfaces(mode):
     tokens = theme_tokens(mode)
+    css = (ROOT / "app/web/static/foundation/components.css").read_text()
+    assert '.fn-nav a:hover,.fn-nav summary:hover { background:var(--hover); }' in css
+    assert '--bs-btn-hover-bg:var(--hover)' in css
 
-    def luminance(channels):
+    def luminance(color):
+        channels = [int(color[index:index + 2], 16) / 255 for index in (1, 3, 5)]
         linear = [value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4 for value in channels]
         return sum(value * weight for value, weight in zip(linear, (.2126, .7152, .0722)))
 
-    def channels(color):
-        return [int(color[index:index + 2], 16) / 255 for index in (1, 3, 5)]
-
-    for accent in ("finn", "nancy"):
-        foreground = channels(tokens["--" + accent])
-        rgba = re.fullmatch(r"rgba\((\d+), (\d+), (\d+), ([.\d]+)\)", tokens["--" + accent + "-soft"])
-        assert rgba is not None
-        alpha = float(rgba[4])
-        tint = [int(value) / 255 for value in rgba.groups()[:3]]
-        for surface in ("--bg", "--panel", "--panel-2"):
-            background = [a * alpha + b * (1 - alpha) for a, b in zip(tint, channels(tokens[surface]))]
-            levels = sorted((luminance(foreground), luminance(background)))
-            assert (levels[1] + .05) / (levels[0] + .05) >= 4.5, (mode, accent, surface)
+    # Legacy role-tint fills are gone. Check role text on the deployed shared
+    # hover background rather than preserving assertions over unused RGBA tokens.
+    for role in ("--finn", "--nancy", "--ink", "--muted", "--danger"):
+        levels = sorted((luminance(tokens[role]), luminance(tokens["--hover"])))
+        assert (levels[1] + .05) / (levels[0] + .05) >= 4.5, (mode, role)
 
 
 @pytest.mark.parametrize("mode", ["light", "dark"])
-def test_control_boundaries_are_distinguishable_from_panels(mode):
+def test_control_boundaries_and_visible_focus_are_distinguishable_from_panels(mode):
     tokens = theme_tokens(mode)
-    assert "--control-line" in tokens, "Controls need stronger boundaries than row separators"
 
     def luminance(color):
         values = [int(color[index:index + 2], 16) / 255 for index in (1, 3, 5)]
         linear = [value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4 for value in values]
         return sum(value * weight for value, weight in zip(linear, (.2126, .7152, .0722)))
 
-    for surface in ("--bg", "--panel", "--panel-2"):
-        levels = sorted((luminance(tokens["--control-line"]), luminance(tokens[surface])))
-        assert (levels[1] + .05) / (levels[0] + .05) >= 3
-    css = (ROOT / "app/web/static/app.css").read_text()
-    assert re.search(r"input, select, textarea\s*\{[^}]*border:\s*1px solid var\(--control-line\)", css)
+    for boundary in ("--control-line", "--focus"):
+        for surface in ("--canvas", "--surface", "--hover"):
+            levels = sorted((luminance(tokens[boundary]), luminance(tokens[surface])))
+            assert (levels[1] + .05) / (levels[0] + .05) >= 3, (mode, boundary, surface)
+    css = (ROOT / "app/web/static/foundation/components.css").read_text()
+    assert re.search(r"\.form-control,\.form-select\s*\{[^}]*border-color:var\(--control-line\)", css)
+    assert ':focus-visible { outline:3px solid var(--focus) !important; outline-offset:3px;' in css

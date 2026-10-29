@@ -1,79 +1,141 @@
-{% extends "base.html" %}
-{% block title %}activity · finn-nancy{% endblock %}
+{% extends "foundation_base.html" %}
+{% block styles %}{{ super() }}<link rel="stylesheet" href="/static/foundation/activity.css">{% endblock %}
+{% block title %}Activity · Finn Nancy{% endblock %}
 {% block content %}
-<header class="hero compact">
-  <div>
-
-    <h1>Activity</h1>
-  </div>
+<header class="fn-page-head">
+  <h1>Activity</h1>
+  <a class="btn btn-primary" href="/txn/new">Add transaction</a>
 </header>
 
-<div class="grid single">
-  {% if pending_flow_review_count %}
-  <details class="activity-review span-2">
-    <summary class="nancy">{{ pending_flow_review_count }} transaction(s) need accounting review</summary>
-    <p class="subtle">
-      Unknown flows and movements without required provenance stay out of income,
-      spending, and category totals. Review these before month-end close.
-    </p>
-    <a class="link nancy-link" href="/activity?semantic_review=1">review excluded movements</a>
+<form class="tx-filters" action="/activity" method="get"
+      hx-get="/transactions" hx-target="#tx" hx-swap="innerHTML"
+      hx-trigger="submit, change[event.target.type != 'search'] delay:150ms, input[event.target.type == 'search'] changed delay:400ms">
+  <div class="tx-toolbar">
+    <div class="tx-search-field">
+      <label class="visually-hidden" for="activity-search">Search transactions</label>
+      <span class="tx-search-icon" aria-hidden="true"></span>
+      <input class="form-control tx-search" id="activity-search" type="search" name="q" value="{{ filters.q }}"
+             placeholder="Search description or merchant">
+    </div>
+    <button class="btn btn-outline-secondary" type="submit">Apply filters</button>
+    <a class="btn btn-link" href="/activity">Clear filters</a>
+  </div>
+  <details class="tx-filter-details"{% if filters.category_id or filters.account_id or filters.flow_kind or filters.date_from or filters.date_to or filters.semantic_review %} open{% endif %}>
+    <summary>Filters</summary>
+    <div class="tx-filter-fields">
+      <div class="fn-field">
+        <label class="form-label" for="filter-category_id">Category</label>
+        <select class="form-select" id="filter-category_id" name="category_id">
+          <option value="">All categories</option>
+          {% for c in filter_categories %}<option value="{{ c.id }}"{% if filters.category_id == c.id|string %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="fn-field">
+        <label class="form-label" for="filter-account_id">Account</label>
+        <select class="form-select" id="filter-account_id" name="account_id">
+          <option value="">All accounts</option>
+          {% for a in accounts %}<option value="{{ a.id }}"{% if filters.account_id == a.id|string %} selected{% endif %}>{{ a.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="fn-field">
+        <label class="form-label" for="filter-flow_kind">Accounting flow</label>
+        <select class="form-select" id="filter-flow_kind" name="flow_kind">
+          <option value="">All accounting flows</option>
+          {% for flow in flow_kinds %}<option value="{{ flow }}"{% if filters.flow_kind == flow %} selected{% endif %}>{{ flow | replace('_', ' ') }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="fn-field">
+        <label class="form-label" for="filter-date_from">From</label>
+        <input class="form-control" id="filter-date_from" type="date" name="date_from" value="{{ filters.date_from }}">
+      </div>
+      <div class="fn-field">
+        <label class="form-label" for="filter-date_to">To</label>
+        <input class="form-control" id="filter-date_to" type="date" name="date_to" value="{{ filters.date_to }}" aria-describedby="activity-date-error">
+        <p class="fn-feedback" id="activity-date-error" hidden>From must be on or before To.</p>
+      </div>
+      <label class="fn-check tx-filter-wide" for="filter-semantic-review">
+        <input class="form-check-input" id="filter-semantic-review" type="checkbox" name="semantic_review" value="1"{% if filters.semantic_review %} checked{% endif %}>
+        Needs accounting review
+      </label>
+    </div>
   </details>
+  {% if filters.report_bucket %}<input type="hidden" name="report_bucket" value="{{ filters.report_bucket }}">{% endif %}
+  {% if filters.category_resolution %}<input type="hidden" name="category_resolution" value="accepted">{% endif %}
+  {% if filters.report_bucket or filters.category_resolution %}
+  <p class="tx-scope">{% if filters.category_resolution %}Accepted category contributions{% else %}{{ 'Income' if filters.report_bucket == 'income' else 'Money out' }} contributors{% endif %} · <a href="/activity">Clear scope</a></p>
   {% endif %}
-  <section class="card span-2">
-    <div class="card-head">
-      <div></div>
-      <div>
-        <a class="link" href="/txn/new">+ add transaction</a>
-      </div>
-    </div>
+</form>
 
-    <form class="tx-filters" action="/activity" method="get"
-          hx-get="/transactions"
-          hx-target="#tx"
-          hx-swap="innerHTML"
-          hx-trigger="submit, change delay:150ms, keyup changed delay:400ms">
-      <input class="tx-search" type="search" name="q" value="{{ filters.q }}"
-             placeholder="search description or merchant" aria-label="search transactions">
-      <details class="tx-filter-details"{% if filters.category_id or filters.account_id or filters.flow_kind or filters.date_from or filters.date_to %} open{% endif %}>
-      <summary>Filters</summary>
-      <div class="tx-filter-fields">
-      <select name="category_id" aria-label="filter by category">
-        <option value="">all categories</option>
-        {% for c in filter_categories %}
-        <option value="{{ c.id }}" {% if filters.category_id == c.id|string %}selected{% endif %}>{{ c.name }}</option>
-        {% endfor %}
-      </select>
-      <select name="account_id" aria-label="filter by account">
-        <option value="">all accounts</option>
-        {% for a in accounts %}
-        <option value="{{ a.id }}" {% if filters.account_id == a.id|string %}selected{% endif %}>{{ a.name }}</option>
-        {% endfor %}
-      </select>
-      <select name="flow_kind" aria-label="filter by accounting flow">
-        <option value="">all accounting flows</option>
-        {% for flow in flow_kinds %}
-        <option value="{{ flow }}" {% if filters.flow_kind == flow %}selected{% endif %}>{{ flow | replace('_', ' ') }}</option>
-        {% endfor %}
-      </select>
-      <input type="date" name="date_from" value="{{ filters.date_from }}" aria-label="from date">
-      <input type="date" name="date_to" value="{{ filters.date_to }}" aria-label="to date">
-      </div>
-      </details>
-      {% if filters.semantic_review %}
-      <input type="hidden" name="semantic_review" value="1">
-      {% endif %}
-      {% if filters.report_bucket %}<input type="hidden" name="report_bucket" value="{{ filters.report_bucket }}">{% endif %}
-      {% if filters.category_resolution %}
-      <input type="hidden" name="category_resolution" value="accepted">
-      <span class="nancy">Accepted category contributions</span>
-      {% endif %}
-      <button class="ghost" type="submit">filter</button>
-      <a class="link" href="/activity">clear</a>
-    </form>
-
-    <div id="tx" class="table-wrap">
-      {% include "transactions_partial.html" %}
-    </div>
-  </section>
+{% if pending_flow_review_count %}
+<details class="fn-disclosure activity-review">
+  <summary>{{ pending_flow_review_count }} {{ 'transaction needs' if pending_flow_review_count == 1 else 'transactions need' }} accounting review</summary>
+  <p class="fn-muted">Unknown flows and movements without required provenance stay out of income, spending, and category totals.</p>
+  <a class="btn btn-link" href="/activity?semantic_review=1">Review excluded movements</a>
+</details>
+{% endif %}
+<p class="tx-loading fn-muted" id="activity-loading" role="status" hidden>Loading activity…</p>
+<div class="tx-read-error" id="activity-read-error" role="alert" hidden>
+  <h2>Activity could not load.</h2>
+  <p>Your saved records have not changed. Check your connection, then retry.</p>
+  <button class="btn btn-outline-secondary" id="activity-retry" type="button">Retry</button>
 </div>
+<div id="tx" aria-label="Recorded transactions">
+  {% include "transactions_partial.html" %}
+</div>
+{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script>
+(function () {
+  var form = document.querySelector('.tx-filters');
+  var error = document.getElementById('activity-read-error');
+  var loading = document.getElementById('activity-loading');
+  var target = document.getElementById('tx');
+  var failedControl = null;
+  var appendAnchor = null;
+  var activeRead = null;
+  function owned(event) { return event.detail && (event.detail.target === target || target.contains(event.detail.target)); }
+  function validateDates() {
+    var from = form.elements.date_from, to = form.elements.date_to;
+    var invalid = Boolean(from.value && to.value && from.value > to.value);
+    document.getElementById('activity-date-error').hidden = !invalid;
+    to.setCustomValidity(invalid ? 'From must be on or before To.' : '');
+    to.setAttribute('aria-invalid', String(invalid));
+    return !invalid;
+  }
+  form.addEventListener('input', validateDates);
+  form.addEventListener('change', validateDates);
+  form.addEventListener('submit', function (event) { if (!validateDates()) { event.preventDefault(); form.reportValidity(); } });
+  document.body.addEventListener('htmx:beforeRequest', function (event) {
+    if (!owned(event)) return;
+    if (!validateDates()) { event.preventDefault(); form.reportValidity(); return; }
+    failedControl = event.detail.elt;
+    activeRead = event.detail.xhr;
+    appendAnchor = failedControl.matches('.load-more') ? failedControl.previousElementSibling : null;
+    error.hidden = true; loading.hidden = false;
+    target.setAttribute('aria-busy', 'true');
+  });
+  document.body.addEventListener('htmx:afterRequest', function (event) {
+    if (event.detail.xhr !== activeRead) return;
+    loading.hidden = true; target.removeAttribute('aria-busy');
+    error.hidden = Boolean(event.detail.successful);
+    if (!error.hidden) {
+      error.scrollIntoView({block:'nearest', behavior:'instant'});
+      document.getElementById('activity-retry').focus({preventScroll:true});
+      appendAnchor = null;
+    }
+  });
+  document.body.addEventListener('htmx:afterSettle', function () {
+    if (!appendAnchor || !appendAnchor.isConnected) return;
+    var added = appendAnchor.nextElementSibling;
+    if (added && added.matches('.tx-row')) added.querySelector('summary').focus({preventScroll:true});
+    appendAnchor = null;
+  });
+  document.getElementById('activity-retry').addEventListener('click', function () {
+    if (failedControl && failedControl.matches('.load-more') && failedControl.isConnected) failedControl.click();
+    else form.requestSubmit();
+  });
+  validateDates();
+})();
+</script>
 {% endblock %}

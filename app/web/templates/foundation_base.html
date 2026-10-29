@@ -18,36 +18,40 @@
   <script defer src="/static/capture-outbox.js"></script>
   {% endif %}
 </head>
-<body class="fn-app">
+<body class="fn-app app brand-{{ brand | default('shared') }}{% if sandbox_candidate %} sandbox-candidate{% else %} workspace-ui{% endif %}">
   <a class="skip-link" href="#workspace-content">Skip to content</a>
   <header class="fn-header">
     <div class="fn-shell fn-header-inner">
       <a class="fn-wordmark" href="/" aria-label="Finn Nancy home"><span>Finn</span><span>Nancy</span></a>
-      <nav class="fn-nav" aria-label="Primary">
-        {% for label, href in [('Home','/'),('Activity','/activity'),('Upload','/upload'),('Insights','/insights')] %}
-        <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ label }}</a>
-        {% endfor %}
-        <details class="fn-more">
-          <summary aria-label="More navigation">More</summary>
-          <nav aria-label="More destinations">
-            {% for label, href in [('Connections','/connections'),('Bank feed','/bank-feed'),('Goals','/goals'),('Ask Nancy','/chat'),('Processing','/processing'),('Statements','/statements'),('Approvals','/actions'),('Monthly close','/close'),('Reconcile','/recon'),('Review inbox','/review'),('Uncategorized','/backlog'),('Budget','/categories'),('Manage','/manage')] %}
-            <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ label }}{% if href == '/processing' %}<span id="processing-nav-count" hidden></span>{% endif %}</a>
-            {% endfor %}
-          </nav>
-        </details>
-      </nav>
-      <div class="fn-appearance" data-theme-host></div>
+      {% include '_tabbar.html' %}
+      <div class="fn-appearance" data-theme-host>
+        <div class="theme-control">
+          <label class="form-label" for="appearance">Appearance</label>
+          <select class="form-select" id="appearance" data-theme-select>
+            <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
+          </select>
+        </div>
+      </div>
     </div>
   </header>
-  <span class="theme-control" hidden>
-    <label class="form-label" for="appearance">Appearance</label>
-    <select class="form-select" id="appearance" data-theme-select>
-      <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
-    </select>
-  </span>
-  <main class="fn-shell" id="workspace-content" tabindex="-1">{% block content %}{% endblock %}</main>
+  <main class="fn-shell app-main" id="workspace-content" tabindex="-1">{% block content %}{% endblock %}</main>
+  <!-- Transient feedback only. Durable capture status belongs to Processing. -->
   <div id="toast" aria-live="polite"></div>
   <div id="capture-announcer" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+  <script>
+    document.body.addEventListener('htmx:afterOnLoad', function () {
+      var open = document.querySelector('details.fab[open]');
+      if (open) open.open = false;
+    });
+    document.querySelectorAll('details[name="nav-sheet"]').forEach(function (details) {
+      details.addEventListener('toggle', function () {
+        if (!details.open) return;
+        document.querySelectorAll('details[name="nav-sheet"]').forEach(function (other) {
+          if (other !== details) other.open = false;
+        });
+      });
+    });
+  </script>
   {% if not sandbox_candidate %}<script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js', {scope:'/'}).catch(function () {});
