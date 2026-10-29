@@ -78,7 +78,7 @@ if name == 'gh':
         result = {'id': 7, 'run_number': 3, 'run_attempt': 1, 'workflow_id': 6,
                   'head_sha': s.get('ci_sha', s['sha']), 'head_branch': 'main', 'event': s.get('ci_event', 'push'),
                   'status': s.get('ci_status', 'completed'), 'conclusion': s.get('ci_conclusion', 'success'),
-                  'path': '.github/workflows/ci.yml', 'head_repository': {'full_name': 'example/finance'}}
+                  'path': s.get('ci_path', '.github/workflows/ci.yml'), 'head_repository': {'full_name': 'example/finance'}}
         if endpoint.endswith('/actions/runs/5'):
             result.update(id=5, run_number=2, status='completed', conclusion='success')
     elif endpoint.endswith('/actions/workflows/ci.yml'):
@@ -174,20 +174,21 @@ with open(os.environ['FAKE_EVENTS'], 'a') as f: f.write(json.dumps(e) + '\\n')
     return run, recorded, tmp_path, env, git
 
 
-def test_automatic_owner_merge_qualifies_and_publishes_without_manual_receipt(publication):
+@pytest.mark.parametrize('ci_path', ['.github/workflows/ci.yml', '.github/workflows/ci.yml@main'])
+def test_automatic_owner_merge_qualifies_and_publishes_without_manual_receipt(publication, ci_path):
     run, _, root, env, _ = publication
     env['GITHUB_EVENT_NAME'] = 'workflow_run'
     event = {'workflow_run': {'id': 7, 'head_sha': env['GITHUB_SHA'], 'head_branch': 'main',
              'event': 'push', 'status': 'completed', 'conclusion': 'success',
-             'path': '.github/workflows/ci.yml', 'head_repository': {'full_name': 'example/finance'}}}
+             'head_repository': {'full_name': 'example/finance'}}}
     path = root / 'event.json'
     path.write_text(json.dumps(event))
     env['GITHUB_EVENT_PATH'] = str(path)
     for key in ('REVIEW_RECEIPT_SHA256', 'REVIEWED_PR_HEAD', 'REVIEWED_PR_TREE'):
         env.pop(key)
-    result = run()
+    result = run(ci_path=ci_path)
     assert result.returncode == 0, result.stderr
-    assert run('publish').returncode == 0
+    assert run('publish', ci_path=ci_path).returncode == 0
     receipt = json.loads((root / 'artifacts/publication.json').read_text())
     assert receipt['review_attestation']['trust'] == 'owner_merge_and_successful_main_ci'
 

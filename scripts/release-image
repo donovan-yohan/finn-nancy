@@ -166,7 +166,7 @@ def gates(repo, revision):
     selected = max(runs, key=lambda r: (r["run_number"], r["run_attempt"]))
     ci = api(repository, f"actions/runs/{selected['id']}")
     require(ci["head_sha"] == revision and ci["head_branch"] == "main" and ci["event"] == "push"
-            and ci["workflow_id"] == workflow["id"] and ci["path"] == workflow["path"]
+            and ci["workflow_id"] == workflow["id"] and ci["path"] in (workflow["path"], workflow["path"] + "@main")
             and ci["head_repository"]["full_name"] == repository
             and ci["status"] == "completed" and ci["conclusion"] == "success"
             and ci["run_attempt"] == selected["run_attempt"], "ci_not_latest_success")

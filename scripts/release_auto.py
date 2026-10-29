@@ -5,16 +5,18 @@ import re
 
 
 def owner_merge_evidence(event, repository, revision, tree, candidates, api):
-    def check_run(run):
+    def check_run(run, require_path=True):
         if not (type(run.get('id')) is int and run['id'] > 0
                 and run.get('head_sha') == revision and run.get('head_branch') == 'main'
                 and run.get('event') == 'push' and run.get('status') == 'completed'
                 and run.get('conclusion') == 'success'
-                and run.get('path') == '.github/workflows/ci.yml'
+                and ((not require_path and 'path' not in run) or run.get('path') in
+                     ('.github/workflows/ci.yml', '.github/workflows/ci.yml@main'))
                 and run.get('head_repository', {}).get('full_name') == repository):
             raise ValueError('untrusted main CI')
     run = event['workflow_run']
-    check_run(run)
+    # Webhook payloads omit path; independently fetched REST evidence supplies it.
+    check_run(run, require_path=False)
     check_run(api('actions/runs/' + str(run['id'])))
     matches = []
     for candidate in candidates:
