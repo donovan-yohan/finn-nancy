@@ -16,6 +16,11 @@ INPUTS = (
     "Dockerfile", ".dockerignore", "pyproject.toml", "uv.lock", "LICENSE", "NOTICE",
     "THIRD_PARTY_NOTICES.md", "app", "migrations", "deploy/container_entrypoint.py",
 )
+FOUNDATION_INPUTS = {
+    "app/web/static/foundation/SOURCE.json",
+    "app/web/static/foundation/tokens.json",
+    "app/web/static/foundation/vendor/LICENSE.bootstrap",
+}
 
 
 def git(repo: Path, *args: str) -> bytes:
@@ -55,7 +60,7 @@ def main() -> int:
                 raise ValueError("unsupported archive member")
             allowed = name in INPUTS
             if path.parts[0] == "app":
-                allowed = path.suffix in {".py", ".html", ".css", ".js", ".png", ".webmanifest"}
+                allowed = name in FOUNDATION_INPUTS or path.suffix in {".py", ".html", ".css", ".js", ".png", ".webmanifest"}
             elif path.parts[0] == "migrations":
                 allowed = len(path.parts) == 2 and bool(re.fullmatch(r"[0-9]{3}_[a-z0-9_]+\.sql", path.name))
             forbidden = {"data", "private", "credentials", "secrets", "__pycache__", ".venv", ".git"}
