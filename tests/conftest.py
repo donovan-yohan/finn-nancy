@@ -50,6 +50,22 @@ def empty_db(tmp_path):
 
 
 @pytest.fixture
+def household_db(empty_db):
+    """Explicit generated identities for bank/consent tests, not production init."""
+    from app.db import engine
+
+    with engine.write_tx(empty_db) as conn:
+        # Deliberately opt into fixed synthetic IDs used by existing lifecycle proofs.
+        conn.executemany(
+            """INSERT INTO household_members(id,name,slug,source,is_active,name_required)
+               VALUES (?,?,?,'manual',1,0) ON CONFLICT(id) DO UPDATE SET
+               name=excluded.name,slug=excluded.slug,source='manual',is_active=1,name_required=0""",
+            [(1, "Generated Alex", "generated-alex"), (2, "Generated Jo", "generated-jo")],
+        )
+    return empty_db
+
+
+@pytest.fixture
 def app_env(tmp_path, sample_db, monkeypatch):
     """Point config at a temp sample DB + temp data dir, isolated per test."""
     monkeypatch.setenv("DB_PATH", sample_db)

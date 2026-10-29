@@ -1,6 +1,7 @@
 """Trusted household browser UI; no access/public token is accepted from a browser."""
 from __future__ import annotations
 
+import ipaddress
 import secrets
 import sqlite3
 import threading
@@ -22,7 +23,7 @@ class StrictBody(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
 
 class Member(StrictBody):
-    name: str = Field(min_length=1,max_length=100)
+    name: str
 
 class Consent(StrictBody):
     member_id: int
@@ -91,13 +92,13 @@ def build_router(service):
                     samesite='lax',max_age=3600,path='/')
             return sid,sessions[sid]['csrf']
 
-    def browser_write(request: Request):
+    def validate_browser_write(request, origin):
         if is_api_request(request):
             # Direct callers use the same workflows; Link still retains its
             # own server-minted session binding and provider verification.
             return api_session_binding(request)
         # Never derive trust from forwarded headers, Host or a caller's Referer.
-        if not service.origin or request.headers.get('origin')!=service.origin:
+        if not origin or request.headers.get('origin')!=origin:
             raise HTTPException(403,'trusted_origin_required')
         sid=request.cookies.get(cookie,'')
         with lock:
@@ -106,6 +107,27 @@ def build_router(service):
                 request.headers.get('x-banking-csrf',''),session['csrf']):
                 raise HTTPException(403,'browser_session_required')
         return sid
+
+    def browser_write(request: Request):
+        # Provider operations still require the explicitly configured origin.
+        return validate_browser_write(request, service.origin)
+
+    def local_write(request: Request):
+        origin = service.origin
+        if not origin and not is_api_request(request) and request.scope.get('scheme') == 'http':
+            # Only server-supplied local socket metadata can establish fallback
+            # authority. request.url, Host and forwarding headers are untrusted.
+            server = request.scope.get('server')
+            if isinstance(server, (tuple, list)) and len(server) == 2:
+                host, port = server
+                try:
+                    address = ipaddress.ip_address(host) if isinstance(host, str) and '%' not in host else None
+                except ValueError:
+                    address = None
+                if address is not None and address.is_loopback and type(port) is int and 1 <= port <= 65535:
+                    literal = f'[{address}]' if address.version == 6 else str(address)
+                    origin = f'http://{literal}' + (f':{port}' if port != 80 else '')
+        return validate_browser_write(request, origin)
 
     def safe(call):
         try:
@@ -161,8 +183,12 @@ def build_router(service):
         return JSONResponse(safe(lambda:service.review_plan(subject_id)),headers={'Cache-Control':'no-store'})
 
     @router.post('/connections/data/member')
-    def member(body:Member,_=Depends(browser_write)):
+    def member(body:Member,_=Depends(local_write)):
         return safe(lambda:service.add_member(body.name))
+
+    @router.post('/connections/data/member/{member_id}')
+    def rename_member(member_id:int,body:Member,_=Depends(local_write)):
+        return safe(lambda:service.rename_member(member_id,body.name))
 
     @router.post('/connections/data/consent')
     def consent(body:Consent,_=Depends(browser_write)):
@@ -177,7 +203,7 @@ def build_router(service):
         return safe(lambda:service.finish_link(body.session_id,browser=browser))
 
     @router.post('/connections/data/bind')
-    def bind(body:Binding,_=Depends(browser_write)):
+    def bind(body:Binding,_=Depends(local_write)):
         return safe(lambda:service.bind(**body.model_dump()))
 
     @router.post('/connections/data/accounts')

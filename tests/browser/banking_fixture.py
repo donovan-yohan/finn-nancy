@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import asyncio
 import json
 import os
 import secrets
@@ -11,6 +12,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 
 
 def generated_banking(root: Path, origin: str):
@@ -27,11 +29,31 @@ def generated_banking(root: Path, origin: str):
     get_settings.cache_clear()
     from app.db import engine,migrate
     migrate.init_db(root/'banking.sqlite')
-    with engine.write_tx(root/'banking.sqlite') as conn:
-        conn.execute('DELETE FROM household_members')
+    with engine.read_conn(root/'banking.sqlite') as conn:
+        assert conn.execute('SELECT COUNT(*) FROM household_members WHERE is_active=1').fetchone()[0] == 0
     from app.web.app import create_app
     app=create_app()
     service=app.state.banking_service
+    mode = {'value': 'ready'}
+    failures = {'read': 0, 'bind': 0, 'hold_read': False, 'read_waiting': False}
+    @app.middleware('http')
+    async def controlled_response(request, call_next):
+        if request.method == 'GET' and request.url.path == '/connections':
+            if failures['hold_read']:
+                failures['read_waiting'] = True
+                while failures['hold_read']:
+                    await asyncio.sleep(0.01)
+                failures['read_waiting'] = False
+            if failures['read']:
+                failures['read'] -= 1
+                return JSONResponse({'detail': 'generated_read_refusal'}, status_code=503)
+        if request.method == 'POST' and request.url.path == '/connections/data/bind' and failures['bind']:
+            failures['bind'] -= 1
+            return JSONResponse({'detail': 'generated_binding_refusal'}, status_code=409)
+        return await call_next(request)
+    service.enabled = lambda: mode['value'] not in {'disabled', 'local_only'}
+    service.strict_local = lambda: mode['value'] in {'strict_local', 'local_only'}
+    service.read_only = lambda: mode['value'] == 'read_only'
     links={}
     dispatched=[]
     def provider(request):
@@ -76,10 +98,33 @@ def generated_banking(root: Path, origin: str):
     @app.get('/__banking_fixture')
     def manifest():
         with engine.read_conn(service.db_path) as conn:
-            return {'members':conn.execute('SELECT COUNT(*) FROM household_members').fetchone()[0],
+            return {'members':conn.execute('SELECT COUNT(*) FROM household_members WHERE is_active=1').fetchone()[0],
+                'people': [dict(row) for row in conn.execute('SELECT id,name FROM household_members WHERE is_active=1 ORDER BY id')],
+                'bindings': [dict(row) for row in conn.execute('SELECT account_id,included,ownership,owner_member_id,role,revision FROM v_bank_bindings ORDER BY bank_account_id')],
                 'transactions':conn.execute('SELECT COUNT(*) FROM transactions').fetchone()[0],
                 'associations':conn.execute('SELECT COUNT(*) FROM bank_associations').fetchone()[0],
-                'dispatched':dispatched,'fixture_only':True}
+                'dispatched':dispatched,'failures':dict(failures),'fixture_only':True}
+    @app.post('/__banking_fixture/failure/{phase}')
+    def failure(phase: str):
+        if phase in {'read', 'bind'}:
+            failures[phase] += 1
+        elif phase == 'hold_read':
+            failures['hold_read'] = True
+        elif phase == 'release_read':
+            failures['hold_read'] = False
+        else:
+            raise HTTPException(400, 'Unknown generated response boundary')
+        return {'phase': phase, 'fixture_only': True}
+    @app.post('/__banking_fixture/setup/{state}')
+    def setup(state: str):
+        if state not in {'ready', 'disabled', 'strict_local', 'read_only', 'unconfigured', 'local_only'}:
+            raise HTTPException(400, 'Unknown generated setup state')
+        mode['value'] = state
+        service.credentials_file = None if state in {'unconfigured', 'local_only'} else credential
+        service.private_dir = None if state == 'local_only' else root / 'private'
+        service.origin = '' if state == 'local_only' else origin
+        service.completion_uri = '' if state == 'local_only' else origin + '/connections'
+        return {'state': state, 'fixture_only': True}
     original_connect=socket.socket.connect
     def local_connect(sock,address):
         if sock.family in (socket.AF_INET,socket.AF_INET6):

@@ -53,13 +53,13 @@ test('hosted fixture intercepts documents only and fences teardown', () => {
 
 test('member-save polling waits for the reloaded banking document and handlers', async () => {
   const start = source.indexOf("for(const name of ['Generated Alex'");
-  const end = source.indexOf('\n  assert.equal', start);
+  const end = source.indexOf('\n  const household=', start);
   assert.ok(start > 0 && end > start);
   let inspected = 0;
   const states = name => [
     {readyState: 'loading', body: {innerText: name}, querySelector: () => null},
-    {readyState: 'complete', body: {innerText: name}, querySelector: selector => selector.includes('banking-ready') ? null : {value: ''}},
-    {readyState: 'complete', body: {innerText: name}, querySelector: () => ({value: ''})},
+    {readyState: 'complete', body: {innerText: name}, querySelector: selector => selector.includes('onboarding-ready') ? null : {value: '', dataset: {lastOperation: 'settled'}}},
+    {readyState: 'complete', body: {innerText: name}, querySelector: () => ({value: '', dataset: {lastOperation: 'settled'}})},
   ];
   let member = 0;
   await vm.runInNewContext(`(async()=>{${source.slice(start, end)}})()`, {

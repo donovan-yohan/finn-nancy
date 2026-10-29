@@ -10,7 +10,7 @@ from app.db import engine, repo_ledger
 
 
 @pytest.fixture
-def banking(empty_db, tmp_path):
+def banking(household_db, tmp_path):
     from app.banking.service import BankingService, CONSENT_VERSION
     credentials = tmp_path / 'credentials.json'
     credentials.write_text(json.dumps({'client_id': secrets.token_hex(12), 'secret': secrets.token_hex(24)}))
@@ -23,13 +23,13 @@ def banking(empty_db, tmp_path):
         if request.url.path == '/transactions/sync':
             return httpx.Response(200, json=pages.pop(0))
         raise AssertionError(request.url.path)
-    service = BankingService(db_path=empty_db, private_dir=tmp_path / 'private',
+    service = BankingService(db_path=household_db, private_dir=tmp_path / 'private',
         credentials_file=credentials, origin='http://banking.example.invalid', completion_uri='http://banking.example.invalid/connections',
         enabled=lambda: True, strict_local=lambda: False, read_only=lambda: False,
         home_currency='CAD', transport=httpx.MockTransport(provider))
     service.consent(1, granted=True, version=CONSENT_VERSION)
     token_ref = service.store.put('generated-access-' + secrets.token_hex(12))
-    with engine.write_tx(empty_db) as conn:
+    with engine.write_tx(household_db) as conn:
         account = conn.execute("INSERT INTO accounts(name,kind,currency) VALUES ('Generated chequing','chequing','CAD')").lastrowid
         connection = conn.execute("INSERT INTO bank_connections(member_id,item_id,token_ref,consent_version,state) VALUES (1,'generated-item',?,?,'active')", (token_ref, CONSENT_VERSION)).lastrowid
         conn.execute("INSERT INTO bank_accounts(connection_id,provider_account_id,name,currency,kind) VALUES (?,'generated-account','Chequing','CAD','chequing')", (connection,))

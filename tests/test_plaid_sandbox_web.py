@@ -48,10 +48,10 @@ def test_normal_app_connections_uses_disabled_production_banking_without_sandbox
     client = TestClient(application, base_url=origin)
     response = client.get('/connections')
     assert response.status_code == 200
-    assert 'data-banking="connections"' in response.text
-    assert 'Bank connections are disabled.' in response.text
-    assert 'Enable approved Production access outside strict-local mode' in response.text
-    assert '/static/banking.js' in response.text
+    assert 'data-household-onboarding' in response.text
+    assert 'Add household members locally' in response.text
+    assert 'Enable Plaid in server settings' in response.text
+    assert '/static/household-onboarding.js' in response.text
     assert 'sandbox-setup' not in response.text
     assert 'plaid-sandbox.js' not in response.text
     assert client.post('/api/sandbox/setup', json={}).status_code in (401,403,404,405,503)

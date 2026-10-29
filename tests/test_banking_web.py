@@ -15,7 +15,10 @@ def test_disabled_pages_are_read_only_and_browser_commands_require_origin_sessio
         page=client.get('/connections')
         assert page.status_code==200
         assert 'Connections' in page.text
-        assert 'Bank connections are disabled' in page.text
+        assert 'Add household members locally' in page.text
+        assert 'Enable Plaid in server settings' in page.text
+        assert 'Add yourself' in page.text
+        assert 'Sample Member' not in page.text
         assert client.get('/bank-feed').status_code==200
         assert not (tmp_path/'private').exists()
         assert client.post('/connections/data/member',json={'name':'Generated Member'}).status_code==403

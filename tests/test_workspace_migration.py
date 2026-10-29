@@ -26,7 +26,7 @@ def test_category_and_banking_upgrade_preserve_copied_ledger(tmp_path, monkeypat
     with sqlite3.connect(source) as source_conn, sqlite3.connect(proof) as proof_conn:
         source_conn.backup(proof_conn)
     monkeypatch.setattr(migrate, 'MIGRATIONS_DIR', canonical)
-    assert migrate.init_db(proof) == ['040_category_operations.sql', '041_bank_feed.sql']
+    assert migrate.init_db(proof) == ['040_category_operations.sql', '041_bank_feed.sql', '042_household_onboarding.sql']
     assert migrate.init_db(proof) == []
     with engine.read_conn(proof) as conn:
         observed = {

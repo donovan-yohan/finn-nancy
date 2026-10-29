@@ -1,0 +1,16 @@
+{# Shared state-in/native-action-out foundation compositions. No feature I/O. #}
+{% macro page_header(title) -%}
+<header class="fn-page-head"><h1>{{ title }}</h1><div class="fn-actions">{{ caller() }}</div></header>
+{%- endmacro %}
+
+{% macro name_field(id, value='', disabled=false, help='') -%}
+<div class="fn-field">
+  <label class="form-label" for="{{ id }}">Name</label>
+  <input class="form-control" id="{{ id }}" name="name" value="{{ value }}" maxlength="100" required autocomplete="off"{% if help %} aria-describedby="{{ id }}-help"{% endif %}{% if disabled %} disabled{% endif %}>
+  {% if help %}<p class="form-text" id="{{ id }}-help">{{ help }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro feedback(id) -%}
+<p class="fn-feedback" data-feedback id="{{ id }}" role="status" aria-live="polite" tabindex="-1" hidden></p>
+{%- endmacro %}

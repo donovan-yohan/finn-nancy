@@ -55,6 +55,7 @@ def test_migration_036_imports_legacy_close_as_unverified_exception(tmp_path, mo
         "039_month_spine_budgets.sql",
         "040_category_operations.sql",
         "041_bank_feed.sql",
+        "042_household_onboarding.sql",
     ]
     assert migrate.init_db(path) == []
 
@@ -111,6 +112,7 @@ def test_migration_036_upgrades_consistent_database_copy(tmp_path, monkeypatch):
         "039_month_spine_budgets.sql",
         "040_category_operations.sql",
         "041_bank_feed.sql",
+        "042_household_onboarding.sql",
     ]
     with engine.read_conn(copy_path) as conn:
         assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"

@@ -109,11 +109,68 @@ class BankingService:
 
     def add_member(self, name):
         self.writable()
-        if not isinstance(name, str) or len(name.strip())>100:
-            raise BankingError('invalid_member_name')
-        with engine.write_tx(self.db_path) as conn:
-            member_id = repo_budgets.create_household_member(conn, name=name)
+        try:
+            with engine.write_tx(self.db_path) as conn:
+                member_id = repo_budgets.create_household_member(conn, name=name)
+        except repo_budgets.MemberError as exc:
+            raise BankingError(str(exc)) from None
         return {'member_id': member_id}
+
+    def rename_member(self, member_id, name):
+        self.writable()
+        try:
+            with engine.write_tx(self.db_path) as conn:
+                repo_budgets.rename_household_member(conn, member_id=member_id, name=name)
+        except repo_budgets.MemberError as exc:
+            raise BankingError(str(exc)) from None
+        return {'member_id': member_id}
+
+    def _check_link_configuration(self):
+        """Validate configured values only; file/provider checks belong to dispatch."""
+        if self.private_dir is None or self.credentials_file is None:
+            raise BankingError('banking_not_configured')
+        if not self.private_dir.is_absolute() or not self.credentials_file.is_absolute():
+            raise BankingError('unsafe_private_path')
+        try:
+            if any(ord(c) < 32 or ord(c) == 127 for c in self.origin + self.completion_uri):
+                raise ValueError()
+            origin = urlsplit(self.origin)
+            completion = urlsplit(self.completion_uri)
+            # Accessing port also rejects malformed configured ports.
+            origin.port
+            completion.port
+            if (not origin.hostname or origin.username is not None or origin.password is not None
+                    or origin.path or origin.query or origin.fragment
+                    or (completion.scheme, completion.netloc) != (origin.scheme, origin.netloc)
+                    or not completion.path.startswith('/') or completion.path.startswith('//')
+                    or completion.query or completion.fragment):
+                raise ValueError()
+        except ValueError:
+            raise BankingError('invalid_completion_uri') from None
+        if completion.scheme != 'https' and not (
+                completion.scheme == 'http' and isinstance(self.transport, httpx.MockTransport)
+                and completion.hostname in {'banking.example.invalid', '127.0.0.1', 'localhost'}):
+            raise BankingError('https_completion_required')
+
+    def setup(self):
+        """Deterministic public configuration/permission snapshot, not a provider probe."""
+        if self.read_only():
+            state, message = 'read_only', 'Open a writable instance to edit members or connect banks.'
+        elif not self.enabled():
+            state, message = 'disabled', 'Add household members locally. Enable Plaid in server settings to connect banks.'
+        elif self.strict_local():
+            state, message = 'strict_local', 'Add household members locally. Turn off strict-local mode to allow Plaid connections.'
+        elif (self.private_dir is None or self.credentials_file is None
+              or not self.origin or not self.completion_uri):
+            state, message = 'unconfigured', 'Configure private Plaid storage, credentials, trusted origin and completion URL on the server.'
+        else:
+            try:
+                self._check_link_configuration()
+            except BankingError:
+                state, message = 'invalid_configuration', 'Correct the server’s private paths and matching HTTPS origin/completion URL.'
+            else:
+                state, message = 'ready', 'Choose a named member and grant consent to connect a bank. Private credentials are checked when connecting.'
+        return {'state': state, 'ready': state == 'ready', 'message': message}
 
     def overview(self):
         with engine.read_conn(self.db_path) as conn:
@@ -128,8 +185,9 @@ class BankingService:
                     b.account_id,b.included,b.ownership,b.owner_member_id,b.role,COALESCE(b.revision,0) AS revision
                     FROM bank_accounts a LEFT JOIN v_bank_bindings b ON b.bank_account_id=a.id WHERE a.connection_id=? ORDER BY a.id''', (c['id'],))]
             accounts = [dict(r) for r in conn.execute('SELECT id,name,kind,currency FROM accounts WHERE is_active=1 ORDER BY id')]
+        setup = self.setup()
         return {'members': members, 'connections': connections, 'accounts': accounts, 'consent_version': CONSENT_VERSION,
-            'consent_text': CONSENT_TEXT, 'network_allowed': bool(self.enabled() and not self.strict_local() and not self.read_only()),
+            'consent_text': CONSENT_TEXT, 'setup': setup, 'network_allowed': setup['ready'],
             'read_only': self.read_only()}
 
     def bind(self, connection_id, provider_account_id, *, account_id=None, included,
@@ -172,14 +230,22 @@ class BankingService:
                 raise BankingError('connection_not_found')
             return dict(row)
 
+    def _check_unresolved_link(self, conn, member_id):
+        # Pending sessions may expire before exchange; exchange uncertainty is
+        # durable and never becomes retry-safe merely because the clock moved.
+        if conn.execute('''SELECT 1 FROM bank_link_sessions WHERE member_id=? AND
+                (state IN ('exchanging','uncertain') OR (state='pending' AND expires_at>=?)) LIMIT 1''',
+                (member_id, time.time())).fetchone():
+            raise BankingError('member_link_unresolved_check_existing_session')
+
     def start_link(self, *, member_id, browser, connection_id=None):
         self._policy(member_id)
-        completion = urlsplit(self.completion_uri)
-        origin = urlsplit(self.origin)
-        if (completion.scheme, completion.netloc)!=(origin.scheme,origin.netloc) or completion.query or completion.fragment:
-            raise BankingError('invalid_completion_uri')
-        if completion.scheme!='https' and not (isinstance(self.transport,httpx.MockTransport) and completion.hostname in {'banking.example.invalid','127.0.0.1','localhost'}):
-            raise BankingError('https_completion_required')
+        with engine.read_conn(self.db_path) as conn:
+            member = conn.execute('SELECT name_required FROM household_members WHERE id=?', (member_id,)).fetchone()
+            if member and member['name_required']:
+                raise BankingError('member_name_required')
+            self._check_unresolved_link(conn, member_id)
+        self._check_link_configuration()
         payload = {'client_name':'Finn Nancy','language':'en','country_codes':['CA'],
             'user':{'client_user_id':''},'hosted_link':{'completion_redirect_uri':self.completion_uri}}
         with engine.read_conn(self.db_path) as conn:
@@ -209,6 +275,7 @@ class BankingService:
         ref=self.store.put(link)
         with engine.write_tx(self.db_path) as conn:
             self._check_consent(conn, member_id, consent['id'])
+            self._check_unresolved_link(conn, member_id)
             if c is not None:
                 self._check_connection(conn, c)
             conn.execute('''INSERT INTO bank_link_sessions(id,browser_hash,member_id,token_ref,consent_id,connection_id,state,expires_at)
@@ -302,9 +369,10 @@ class BankingService:
         with engine.read_conn(self.db_path) as conn:
             return [dict(r) for r in conn.execute('''SELECT s.id AS session_id,s.member_id,m.name AS member_name,s.state
                 FROM bank_link_sessions s JOIN household_members m ON m.id=s.member_id
-                WHERE browser_hash=? AND state IN ('pending','exchanging','uncertain') AND expires_at>?
+                WHERE browser_hash=? AND
+                    (state IN ('exchanging','uncertain') OR (state='pending' AND expires_at>=?))
                 ORDER BY s.created_at DESC LIMIT 20''',
-                (hashlib.sha256(browser.encode()).hexdigest(),int(time.time())))]
+                (hashlib.sha256(browser.encode()).hexdigest(),time.time()))]
 
     def discover_accounts(self, connection_id):
         c=self._connection(connection_id)
