@@ -112,7 +112,8 @@ def gates(repo, revision):
     repository = os.environ["GITHUB_REPOSITORY"]
     require(re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository), "invalid_repository")
     require(re.fullmatch(r"[0-9a-f]{40}", revision), "invalid_revision")
-    require(os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+    automatic = os.environ.get("GITHUB_EVENT_NAME") == "workflow_run"
+    require(os.environ.get("GITHUB_EVENT_NAME") in {"workflow_dispatch", "workflow_run"}
             and os.environ.get("GITHUB_REF") == "refs/heads/main"
             and os.environ.get("GITHUB_SHA") == revision
             and os.environ.get("RELEASE_WORKFLOW_SHA") == revision
@@ -121,9 +122,10 @@ def gates(repo, revision):
     receipt_sha = os.environ.get("REVIEW_RECEIPT_SHA256", "")
     reviewed_head = os.environ.get("REVIEWED_PR_HEAD", "")
     reviewed_tree = os.environ.get("REVIEWED_PR_TREE", "")
-    require(re.fullmatch(r"[0-9a-f]{64}", receipt_sha)
-            and re.fullmatch(r"[0-9a-f]{40}", reviewed_head)
-            and re.fullmatch(r"[0-9a-f]{40}", reviewed_tree), "invalid_review_attestation")
+    if not automatic:
+        require(re.fullmatch(r"[0-9a-f]{64}", receipt_sha)
+                and re.fullmatch(r"[0-9a-f]{40}", reviewed_head)
+                and re.fullmatch(r"[0-9a-f]{40}", reviewed_tree), "invalid_review_attestation")
     actor = os.environ.get("GITHUB_ACTOR", "")
     run_id, attempt = os.environ.get("GITHUB_RUN_ID", ""), os.environ.get("GITHUB_RUN_ATTEMPT", "")
     require(re.fullmatch(r"[A-Za-z0-9_-]{1,100}", actor)
@@ -134,6 +136,12 @@ def gates(repo, revision):
     tree = run("git", "-C", str(repo), "rev-parse", revision + "^{tree}").strip()
     require(api(repository, "git/ref/heads/main")["object"]["sha"] == revision, "remote_main_advanced")
 
+    if automatic:
+        from release_auto import owner_merge_evidence
+        evidence = owner_merge_evidence(
+            json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text()), repository, revision, tree,
+            pages(repository, f'commits/{revision}/pulls'), lambda endpoint: api(repository, endpoint))
+        receipt_sha, reviewed_head, reviewed_tree = (evidence[k] for k in ('receipt_sha256', 'head', 'tree'))
     require(reviewed_tree == tree, "reviewed_tree_mismatch")
     reviewed_pr = None
     for candidate in pages(repository, f"commits/{revision}/pulls"):
@@ -149,7 +157,7 @@ def gates(repo, revision):
     # authenticate a reviewer. Source review/merge policy owns outstanding review findings.
     attestation = {"receipt_sha256": receipt_sha, "pr": reviewed_pr, "head": reviewed_head,
                    "tree": tree, "actor": actor, "run_id": run_id, "run_attempt": attempt,
-                   "trust": "authorized_dispatcher_verification"}
+                   "trust": "owner_merge_and_successful_main_ci" if automatic else "authorized_dispatcher_verification"}
 
     workflow = api(repository, "actions/workflows/ci.yml")
     require(workflow["path"] == ".github/workflows/ci.yml" and workflow["state"] == "active", "unexpected_ci_workflow")

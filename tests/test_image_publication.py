@@ -91,7 +91,8 @@ if name == 'gh':
         if s.get('changes_requested'): result.append({'id': 3, 'user': {'login': 'reviewer'}, 'state': 'CHANGES_REQUESTED', 'commit_id': s['pr_head']})
     elif endpoint.endswith('/pulls/4'):
         result = {'number': 4, 'merged': True, 'merge_commit_sha': s['sha'], 'base': {'ref': 'main', 'repo': {'full_name': 'example/finance'}},
-                  'head': {'sha': s['pr_head']}, 'user': {'login': 'author'}}
+                  'head': {'sha': s['pr_head']}, 'user': {'login': 'author'},
+                  'merged_by': {'login': s.get('merged_by', 'example')}}
     elif endpoint.endswith('/git/commits/' + s['pr_head']):
         result = {'sha': s['pr_head'], 'tree': {'sha': s.get('pr_tree', s['tree'])}}
     elif endpoint.endswith('/pulls?per_page=100&page=1'):
@@ -171,6 +172,24 @@ with open(os.environ['FAKE_EVENTS'], 'a') as f: f.write(json.dumps(e) + '\\n')
         return [json.loads(line) for line in events.read_text().splitlines()] if events.exists() else []
 
     return run, recorded, tmp_path, env, git
+
+
+def test_automatic_owner_merge_qualifies_and_publishes_without_manual_receipt(publication):
+    run, _, root, env, _ = publication
+    env['GITHUB_EVENT_NAME'] = 'workflow_run'
+    event = {'workflow_run': {'id': 7, 'head_sha': env['GITHUB_SHA'], 'head_branch': 'main',
+             'event': 'push', 'status': 'completed', 'conclusion': 'success',
+             'path': '.github/workflows/ci.yml', 'head_repository': {'full_name': 'example/finance'}}}
+    path = root / 'event.json'
+    path.write_text(json.dumps(event))
+    env['GITHUB_EVENT_PATH'] = str(path)
+    for key in ('REVIEW_RECEIPT_SHA256', 'REVIEWED_PR_HEAD', 'REVIEWED_PR_TREE'):
+        env.pop(key)
+    result = run()
+    assert result.returncode == 0, result.stderr
+    assert run('publish').returncode == 0
+    receipt = json.loads((root / 'artifacts/publication.json').read_text())
+    assert receipt['review_attestation']['trust'] == 'owner_merge_and_successful_main_ci'
 
 
 def test_local_review_attestation_accepts_squash_tree_without_github_approval(publication):
@@ -614,21 +633,25 @@ def test_workflow_command_bodies_compose_with_real_release_entrypoint(publicatio
     _, events, root, env, _ = publication
     workflow = (ROOT / ".github/workflows/release-image.yml").read_text()
     bodies = re.findall(r"^        run: \|\n((?:          [^\n]*\n)+)", workflow, re.MULTILINE)
-    assert len(bodies) == 2
+    assert len(bodies) == 3
     assert "  workflow_dispatch:" in workflow and "  push:" not in workflow and "  pull_request:" not in workflow
-    qualify_job, publish_job = workflow.split("\n  publish:\n")
+    assert '  workflow_run:' in workflow and 'workflows: [ci]' in workflow
+    qualify_job, remainder = workflow.split("\n  publish:\n")
+    publish_job, announce_job = remainder.split("\n  announce:\n")
+    assert 'contents: write' not in qualify_job + publish_job
+    assert 'contents: write' in announce_job and 'needs: publish' in announce_job
     assert "packages: write" not in qualify_job and "packages: write" in publish_job
     assert "needs: qualify" in publish_job and "persist-credentials: false" in qualify_job
     # Admit a typo in source_sha to the helper's receipt-producing refusal, but
     # never execute a branch-dispatched helper or a different workflow revision.
-    assert "    if: github.ref == 'refs/heads/main' && github.workflow_sha == github.sha\n" in qualify_job
-    assert "github.sha == inputs.source_sha" not in qualify_job
-    assert "github.sha == inputs.source_sha" in publish_job
+    assert "github.ref == 'refs/heads/main' && github.workflow_sha == github.sha" in qualify_job
+    assert "github.event.workflow_run.conclusion == 'success'" in qualify_job
+    assert "github.sha == (github.event.workflow_run.head_sha || inputs.source_sha)" in publish_job
     # Model only the host-architecture boundary; never claim this local test ran native Linux Docker.
     (root / "bin/uname").write_text("#!/bin/sh\nprintf 'x86_64\\n'\n")
     (root / "bin/uname").chmod(0o755)
     env.update(RUNNER_TEMP=str(root), SOURCE_SHA=env["GITHUB_SHA"], GITHUB_RUN_ID="42", GITHUB_RUN_ATTEMPT="1")
-    for index, body in enumerate(bodies):
+    for index, body in enumerate(bodies[:2]):
         if index:
             env["GHCR_TOKEN"] = "generated-publication-token"
         shell = "set -eu\n" + "\n".join(line[10:] for line in body.splitlines())

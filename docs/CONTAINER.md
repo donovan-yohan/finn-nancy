@@ -141,10 +141,17 @@ states and use an approved compatible rollback/forward repair. Packaging proof
 does not authorize real data access, credentials, migration, VM setup, SSH,
 cutover, registry publication or live deployment.
 
-## Manual GHCR distribution (no deployment)
+## GHCR distribution (no deployment)
+
+Automatic publication after owner-merged, green main CI is defined in
+[AUTOMATIC_RELEASE.md](AUTOMATIC_RELEASE.md). The manual-dispatch path below
+remains available with its original independent-review requirements; only the
+automatic path emits the public guest-consumer receipt.
+
+### Manual dispatch
 
 Merge/review the release workflow through a PR first; do not dispatch a branch
-version. The `release image` Actions workflow is **workflow_dispatch only**.
+version. The manual `release image` path uses **workflow_dispatch**.
 Select `main` and supply `source_sha` as its full lowercase 40-character SHA.
 A branch dispatch or different workflow revision is skipped before helper execution;
 no skipped run qualifies a release. A mismatched source on a trusted main dispatch

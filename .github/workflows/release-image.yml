@@ -1,6 +1,10 @@
 name: release image
 
 on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       review_receipt_sha256:
@@ -28,7 +32,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SOURCE_SHA: ${{ inputs.source_sha }}
+  SOURCE_SHA: ${{ github.event.workflow_run.head_sha || inputs.source_sha }}
   REVIEW_RECEIPT_SHA256: ${{ inputs.review_receipt_sha256 }}
   REVIEWED_PR_HEAD: ${{ inputs.reviewed_pr_head }}
   REVIEWED_PR_TREE: ${{ inputs.reviewed_pr_tree }}
@@ -37,7 +41,13 @@ env:
 
 jobs:
   qualify:
-    if: github.ref == 'refs/heads/main' && github.workflow_sha == github.sha
+    if: >-
+      github.ref == 'refs/heads/main' && github.workflow_sha == github.sha &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_sha == github.sha &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
@@ -80,7 +90,7 @@ jobs:
 
   publish:
     needs: qualify
-    if: github.ref == 'refs/heads/main' && github.sha == inputs.source_sha && github.workflow_sha == github.sha
+    if: github.ref == 'refs/heads/main' && github.sha == (github.event.workflow_run.head_sha || inputs.source_sha) && github.workflow_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -119,3 +129,30 @@ jobs:
             ${{ runner.temp }}/qualified-image/smoke/
           if-no-files-found: warn
           retention-days: 14
+
+  announce:
+    needs: publish
+    if: github.event_name == 'workflow_run'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: image-publication-receipts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/receipts
+      - name: Publish environment-neutral release identity only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/release_auto.py "$RUNNER_TEMP/receipts/publication.json" "$RUNNER_TEMP/public-receipt.json"
+          gh release create "deploy-$SOURCE_SHA" --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" --title "Qualified image $SOURCE_SHA" \
+            --notes-file "$RUNNER_TEMP/public-receipt.json" --latest \
+            "$RUNNER_TEMP/public-receipt.json#release.json"
