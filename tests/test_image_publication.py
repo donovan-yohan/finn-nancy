@@ -633,7 +633,7 @@ def test_workflow_command_bodies_compose_with_real_release_entrypoint(publicatio
     _, events, root, env, _ = publication
     workflow = (ROOT / ".github/workflows/release-image.yml").read_text()
     bodies = re.findall(r"^        run: \|\n((?:          [^\n]*\n)+)", workflow, re.MULTILINE)
-    assert len(bodies) == 3
+    assert len(bodies) == 4
     assert "  workflow_dispatch:" in workflow and "  push:" not in workflow and "  pull_request:" not in workflow
     assert '  workflow_run:' in workflow and 'workflows: [ci]' in workflow
     qualify_job, remainder = workflow.split("\n  publish:\n")

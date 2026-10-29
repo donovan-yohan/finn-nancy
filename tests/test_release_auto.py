@@ -36,7 +36,7 @@ class AutomaticReleaseTests(unittest.TestCase):
         import subprocess
         import tempfile
         workflow = (ROOT/'.github/workflows/release-image.yml').read_text()
-        body = re.findall(r'^        run: \|\n((?:          [^\n]*\n)+)', workflow, re.MULTILINE)[-1]
+        body = ''.join(re.findall(r'^        run: \|\n((?:          [^\n]*\n)+)', workflow, re.MULTILINE)[-2:])
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); (root/'receipts').mkdir(); (root/'bin').mkdir()
             publication = {'success': True, 'readback_verified': True, 'logout_verified': True,
@@ -48,9 +48,11 @@ class AutomaticReleaseTests(unittest.TestCase):
                                                   'trust': 'owner_merge_and_successful_main_ci'}}
             (root/'receipts/publication.json').write_text(json.dumps(publication))
             shim = root/'bin/gh'
-            shim.write_text('#!/usr/bin/env python3\nimport sys,pathlib,json\na=sys.argv[1:]\nassert a[:2]==["release","create"]\np=pathlib.Path(a[-1])\nassert p.name=="release.json" and p.is_file()\nd=json.loads(p.read_text())\nassert d["source_commit"]=="a"*40\nprint("generated announcement accepted")\n')
+            shim.write_text('#!/usr/bin/env python3\nimport sys,pathlib,json\na=sys.argv[1:]\nassert a[:2]==["release","create"]\np=pathlib.Path(a[-2])\nassert pathlib.Path(a[-1]).name=="release.sigstore.json"\nassert p.name=="release.json" and p.is_file()\nd=json.loads(p.read_text())\nassert d["source_commit"]=="a"*40\nprint("generated announcement accepted")\n')
             shim.chmod(0o700)
+            (root/'generated-bundle.json').write_text('{}')  # Signature action is a substituted boundary here.
             env = dict(os.environ, PATH=str(root/'bin')+os.pathsep+os.environ['PATH'],
+                       BUNDLE_PATH=str(root/'generated-bundle.json'),
                        RUNNER_TEMP=str(root), GITHUB_REPOSITORY='example/finance', SOURCE_SHA='a'*40,
                        GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='1')
             shell = 'set -eu\n'+'\n'.join(line[10:] for line in body.splitlines())

@@ -138,6 +138,8 @@ jobs:
     permissions:
       contents: write
       actions: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -147,12 +149,21 @@ jobs:
         with:
           name: image-publication-receipts-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/receipts
-      - name: Publish environment-neutral release identity only
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Project environment-neutral release identity
         run: |
           python3 scripts/release_auto.py "$RUNNER_TEMP/receipts/publication.json" "$RUNNER_TEMP/release.json"
+      - name: Sign exact release identity with workflow provenance
+        id: attest
+        uses: actions/attest-build-provenance@9d57eef8c06cd9d6b433effeeb7a6a77b3ff94ad
+        with:
+          subject-path: ${{ runner.temp }}/release.json
+      - name: Publish identity and signature bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE_PATH" "$RUNNER_TEMP/release.sigstore.json"
           gh release create "deploy-$SOURCE_SHA" --repo "$GITHUB_REPOSITORY" \
             --target "$SOURCE_SHA" --title "Qualified image $SOURCE_SHA" \
             --notes-file "$RUNNER_TEMP/release.json" --latest \
-            "$RUNNER_TEMP/release.json"
+            "$RUNNER_TEMP/release.json" "$RUNNER_TEMP/release.sigstore.json"
