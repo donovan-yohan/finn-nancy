@@ -49,8 +49,8 @@ jobs:
 
       - name: Test
         run: |
-          ./scripts/test --ignore=tests/test_ui_theme_browser.py
-          # Scope packaged Chrome to the three theme scenarios; retain other browser opt-ins.
+          ./scripts/test --ignore=tests/test_ui_theme_browser.py --ignore=tests/test_design_banking.py --ignore=tests/test_design_shell.py
+          # Scope packaged Chrome to mandatory theme, banking and shell proofs; retain other browser opt-ins.
           # Its installed path has Ubuntu's sandbox policy, unlike the unpacked Chromium snapshot.
           export CHROMIUM_BIN=/usr/bin/google-chrome
           test -x "$CHROMIUM_BIN"
@@ -60,12 +60,12 @@ jobs:
           import pathlib
           import shutil
           binary = os.environ.get("CHROMIUM_BIN") or shutil.which("chromium")
-          print("Theme browser:", binary, "resolved:", os.path.realpath(binary) if binary else None, flush=True)
+          print("Proof browser:", binary, "resolved:", os.path.realpath(binary) if binary else None, flush=True)
           print("Kernel:", os.uname().release, flush=True)
           policy = pathlib.Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")
           print("AppArmor unprivileged-userns restriction:", policy.read_text().strip() if policy.exists() else "unavailable", flush=True)
           PY
-          ./scripts/test tests/test_ui_theme_browser.py
+          ./scripts/test tests/test_ui_theme_browser.py tests/test_design_banking.py tests/test_design_shell.py
 
       - name: FN-149 deterministic precision contract
         run: ./scripts/reconciliation-eval
