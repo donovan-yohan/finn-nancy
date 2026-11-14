@@ -309,15 +309,26 @@ class BankingService:
                             connection=repair_connection, consent_id=session['consent_id'])
         if response.get('link_token')!=link or not isinstance(response.get('link_sessions'),list):
             raise BankingError('server_link_verification_unavailable')
-        finished=[s for s in response['link_sessions'] if s.get('finished_at') and s.get('on_success') is not None]
+        def completion_tokens(s):
+            # Current integrations receive results.item_add_results; on_success is
+            # returned only for legacy integrations. Accept either, ignore malformed rows.
+            results=s.get('results')
+            items=results.get('item_add_results') if isinstance(results,dict) else None
+            found={r['public_token'] for r in items if isinstance(r,dict) and isinstance(r.get('public_token'),str)
+                   and r['public_token']} if isinstance(items,list) else set()
+            legacy=s.get('on_success')
+            if isinstance(legacy,dict) and isinstance(legacy.get('public_token'),str) and legacy['public_token']:
+                found.add(legacy['public_token'])
+            return found
+        finished=[(s,completion_tokens(s)) for s in response['link_sessions']
+                  if isinstance(s,dict) and isinstance(s.get('finished_at'),str) and s['finished_at']]
+        # Repair (update mode) success may carry no new token; keep the legacy callback signal.
+        finished=[(s,t) for s,t in finished if t or isinstance(s.get('on_success'),dict)]
         if not finished:
             return {'status':'pending'}
         if len(finished)!=1:
             raise BankingError('ambiguous_link_completion')
-        completed=finished[0]
-        tokens={r.get('public_token') for r in completed.get('results',{}).get('item_add_results',[]) if r.get('public_token')}
-        if completed.get('on_success',{}).get('public_token'):
-            tokens.add(completed['on_success']['public_token'])
+        tokens=finished[0][1]
         repair=session['connection_id'] is not None
         if not repair and len(tokens)!=1:
             raise BankingError('server_link_verification_unavailable')
