@@ -202,8 +202,11 @@ def test_browser_and_server_racing_exchange_exactly_once(banking):
     threads = [threading.Thread(target=browser), threading.Thread(target=server)]
     for t in threads: t.start()
     for t in threads: t.join()
-    assert sorted(outcomes) == ['connected', 'connected']
+    # The server may select the session before or after the browser claims it; either
+    # way every reported outcome is 'connected' and the token is exchanged once.
+    assert 'connected' in outcomes and set(outcomes) == {'connected'}
     assert provider.calls.count('/item/public_token/exchange') == 1
+    assert state(service) == 'complete'
 
 
 def test_provider_error_code_is_recorded_but_not_exposed(banking):
@@ -257,3 +260,35 @@ def test_completion_loop_survives_failures_and_stops():
         await asyncio.wait_for(task, timeout=1)
     asyncio.run(scenario())
     assert len(calls) >= 2
+
+
+def _repair_pair(service):
+    ref = service.store.put(ACCESS)
+    with engine.write_tx(service.db_path) as conn:
+        conn.execute("UPDATE bank_link_sessions SET state='exited'")
+        ident = conn.execute('''INSERT INTO bank_connections(member_id,item_id,token_ref,consent_version,state)
+            VALUES (1,'generated-item',?,?,'needs_repair')''', (ref, CONSENT_VERSION)).lastrowid
+    first = service.start_link(member_id=1, browser='generated-browser', connection_id=ident)['session_id']
+    with engine.write_tx(service.db_path) as conn:
+        conn.execute("UPDATE bank_link_sessions SET state='exited' WHERE id=?", (first,))
+    second = service.start_link(member_id=1, browser='generated-browser', connection_id=ident)['session_id']
+    return ident, first, second
+
+
+@pytest.mark.parametrize('settled,expected', [('active', 'complete'), ('removed', 'exited')])
+def test_superseded_repair_session_leaves_pending(banking, settled, expected):
+    service, provider, _, _ = banking
+    ident, first, second = _repair_pair(service)
+    with engine.write_tx(service.db_path) as conn:
+        conn.execute('UPDATE bank_connections SET state=? WHERE id=?', (settled, ident))
+    provider.calls.clear()
+    if settled == 'active':
+        assert service.finish_link(second, browser='generated-browser')['status'] == 'connected'
+    else:
+        with pytest.raises(BankingError, match='connection_not_repairable'):
+            service.finish_link(second, browser='generated-browser')
+    assert provider.calls == []
+    with engine.read_conn(service.db_path) as conn:
+        assert conn.execute('SELECT state FROM bank_link_sessions WHERE id=?', (second,)).fetchone()[0] == expected
+    # A settled attempt no longer blocks a new link for the member.
+    service.start_link(member_id=1, browser='generated-browser')

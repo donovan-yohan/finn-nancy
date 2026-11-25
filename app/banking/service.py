@@ -403,9 +403,12 @@ class BankingService:
             last = conn.execute('SELECT outcome,detail FROM bank_link_checks WHERE session_id=? ORDER BY id DESC LIMIT 1',
                                 (session_id,)).fetchone()
             # Repeated identical polls add no information; keep the first of each run.
-            if last is None or (last['outcome'], last['detail']) != (outcome, detail):
+            changed = last is None or (last['outcome'], last['detail']) != (outcome, detail)
+            if changed:
                 conn.execute('INSERT INTO bank_link_checks(session_id,source,outcome,detail) VALUES (?,?,?,?)',
                              (session_id, source, outcome, detail))
+        if not changed:
+            return
         logger.info(json.dumps({'event': 'bank_link_check', 'session': hashlib.sha256(session_id.encode()).hexdigest()[:12],
                                 'source': source, 'outcome': outcome, 'detail': json.loads(detail)}, separators=(',', ':')))
 
@@ -438,6 +441,14 @@ class BankingService:
         if session['connection_id'] is not None:
             repair_connection = self._connection(session['connection_id'])
             if repair_connection['state'] != 'needs_repair':
+                # Another session already settled this connection. Leave pending so this
+                # superseded attempt cannot block new links until it expires.
+                settled = 'complete' if repair_connection['state'] == 'active' else 'exited'
+                with engine.write_tx(self.db_path) as conn:
+                    conn.execute("UPDATE bank_link_sessions SET state=? WHERE id=? AND state IN ('pending','exited')",
+                                 (settled, session_id))
+                if settled == 'complete':
+                    return self._link_result(repair_connection['id']), {'superseded': True}
                 raise BankingError('connection_not_repairable')
         repair = repair_connection is not None
         link=self.store.get(session['token_ref'])

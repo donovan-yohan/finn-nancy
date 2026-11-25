@@ -206,7 +206,7 @@ test('failed readback never restores stale mutation controls; retry performs a r
   assert.equal(owner.blocked, false);
 });
 
-function autoCheckHarness({hidden = false, finish = {status:'connected'}} = {}) {
+function autoCheckHarness({hidden = false, finish = {status:'connected'}, finishOk = true} = {}) {
   const {mount} = require(source);
   const requests = [], timers = [], intervals = [], listeners = {};
   const finishButton = {dataset:{action:'finish', sessionId:'synthetic-session'},
@@ -220,7 +220,7 @@ function autoCheckHarness({hidden = false, finish = {status:'connected'}} = {}) 
     fetch:async (url, options) => {
       requests.push([url, options]);
       if (url === '/connections/data/overview') return {ok:true, json:async () => ({csrf:'synthetic-csrf'})};
-      if (url === '/connections/data/link/finish') return {ok:true, json:async () => finish};
+      if (url === '/connections/data/link/finish') return {ok:finishOk, json:async () => finish};
       if (url === '/connections') return {ok:false};
       throw Error('unexpected request ' + url);
     },
@@ -273,4 +273,27 @@ test('hidden tabs do not poll; returning to the tab checks immediately', async (
   h.listeners['doc:visibilitychange']();
   for (let i = 0; i < 5; i++) await h.settle();
   assert.equal(h.requests.filter(([url]) => url === '/connections/data/link/finish').length, 1);
+});
+
+test('an expired or otherwise ended session re-reads state instead of polling forever', async () => {
+  for (const finish of [{detail:'link_session_expired'}, {detail:'connection_not_repairable'}]) {
+    const h = autoCheckHarness({finish, finishOk:false});
+    h.timers[0]();
+    for (let i = 0; i < 5; i++) await h.settle();
+    assert.ok(h.requests.some(([url]) => url === '/connections'), finish.detail + ' refreshes state');
+  }
+});
+
+test('a transient or foreign-browser error stays quiet', async () => {
+  const h = autoCheckHarness({finish:{detail:'browser_session_mismatch'}, finishOk:false});
+  h.timers[0]();
+  for (let i = 0; i < 5; i++) await h.settle();
+  assert.equal(h.requests.some(([url]) => url === '/connections'), false);
+});
+
+test('any settled status other than pending refreshes the stale panel', async () => {
+  const h = autoCheckHarness({finish:{status:'removed', connection_id:4}});
+  h.timers[0]();
+  for (let i = 0; i < 5; i++) await h.settle();
+  assert.ok(h.requests.some(([url]) => url === '/connections'));
 });
