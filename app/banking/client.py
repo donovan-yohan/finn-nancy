@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from decimal import Decimal
 from pathlib import Path
 from collections.abc import Callable
@@ -10,7 +11,15 @@ import httpx
 
 
 class BankingError(ValueError):
-    """An allowlisted safe error code, never provider text or secrets."""
+    """An allowlisted safe error code, never provider text or secrets.
+
+    ``provider_code`` carries Plaid's own error_code for diagnostics only; it is
+    never shown to clients.
+    """
+
+    def __init__(self, code, provider_code=None):
+        super().__init__(code)
+        self.provider_code = provider_code
 
 
 ENDPOINTS = frozenset({
@@ -55,7 +64,8 @@ class PlaidClient:
                         raise BankingError('invalid_provider_response')
                     if response.status_code != 200:
                         code = parsed.get('error_code')
-                        raise BankingError(code if code in SAFE_ERRORS else 'provider_request_failed')
+                        diagnostic = code if isinstance(code, str) and re.fullmatch(r'[A-Z0-9_]{1,64}', code) else None
+                        raise BankingError(code if code in SAFE_ERRORS else 'provider_request_failed', diagnostic)
                     return parsed
         except BankingError:
             raise

@@ -105,7 +105,10 @@
       link_outcome_uncertain_do_not_retry:'Connection outcome uncertain. Do not connect again. Verify access in Plaid or your bank.',
       revocation_uncertain_do_not_retry:'Disconnection is not confirmed. Do not retry. Check access in Plaid or your bank.',
       browser_session_required:'Your connection session expired. Check current state before trying again.',
-      trusted_origin_required:'This address cannot make changes. Open the configured trusted address.'
+      trusted_origin_required:'This address cannot make changes. Open the configured trusted address.',
+      link_session_expired:'This connection attempt expired before Plaid finished. Connect again when ready.',
+      link_session_not_found:'This connection attempt is no longer available. Check current state.',
+      browser_session_mismatch:'This connection was started in another browser. It finishes automatically there or on the server.'
     };
     const all = (selector, parent = root) => [...parent.querySelectorAll(selector)];
     const findScope = key => all('[data-scope]').find(el => el.dataset.scope === key);
@@ -203,7 +206,7 @@
       const title = doc.createElement('h3');
       title.textContent = 'Continue connecting for ' + member.dataset.memberName;
       const instructions = doc.createElement('p');
-      instructions.textContent = 'Select your bank and accounts in Plaid, then return and check this connection.';
+      instructions.textContent = 'Select your bank and accounts in Plaid. The connection finishes here automatically when Plaid is done.';
       const anchor = doc.createElement('a');
       anchor.href = hostedLink(activeLink.url);
       anchor.target = '_blank'; anchor.rel = 'noopener noreferrer';
@@ -352,6 +355,49 @@
       feedback(context.scope, 'Working…', 'success');
       void owner.run(operation);
     }
+    // Returning from Plaid needs no click: check open sessions quietly on load,
+    // when this tab becomes visible again, and every few seconds while one is open.
+    // The server also completes sessions on its own; both share one exchange.
+    let autoChecking = false;
+    function openSessions() {
+      const sessions = all('[data-link-state="pending"] [data-action="finish"]').map(button => ({
+        id:button.dataset.sessionId, scope:button.closest('[data-member]')?.dataset.scope}));
+      if (activeLink && !sessions.some(s => s.id === activeLink.sessionId)) {
+        sessions.push({id:activeLink.sessionId, scope:'member-' + activeLink.memberId});
+      }
+      return sessions;
+    }
+    async function autoCheck() {
+      if (autoChecking || owner.busy || owner.blocked || doc.hidden
+          || root.dataset.readOnly === 'true' || root.dataset.networkAllowed !== 'true') return;
+      const sessions = openSessions();
+      if (!sessions.length) return;
+      autoChecking = true;
+      let settled = null;
+      try {
+        for (const session of sessions) {
+          let result;
+          try { result = await post('link/finish', {session_id:session.id}); }
+          catch (error) {
+            // Another browser's session or a transient read: the server poller still
+            // owns completion. Only an uncertain exchange needs the page to re-read.
+            if (error.uncertain) settled = {scope:session.scope, message:error.message, error:true};
+            continue;
+          }
+          if (result.status === 'connected') {
+            settled = {scope:session.scope, message:'Bank connected. Load accounts from this connection.'};
+          } else if (result.status === 'exited') {
+            settled = {scope:session.scope, message:'Plaid closed before a bank was connected. Connect again when ready.'};
+          } else continue;
+          if (activeLink?.sessionId === session.id) activeLink = null;
+        }
+      } finally { autoChecking = false; }
+      if (settled && !owner.busy && !owner.blocked) {
+        context = {scope:settled.scope};
+        outcome = settled;
+        void owner.retryRead();
+      }
+    }
     root.addEventListener('input', event => {
       const form = event.target.closest('form[data-form]');
       if (form) updateForm(form);
@@ -437,8 +483,11 @@
           if (result.status === 'connected') {
             activeLink = null;
             outcome = {message:'Bank connected. Load accounts from this connection.', focus:{id:'member-' + context.memberId + '-title'}};
+          } else if (result.status === 'exited') {
+            activeLink = null;
+            outcome = {message:'Plaid closed before a bank was connected. Connect again when ready.', focus:{id:'member-' + context.memberId + '-title'}};
           } else outcome = {scope:activeLink?.sessionId === sessionId ? 'active-link' : context.scope,
-            message:'Complete the bank and account selection in Plaid, then check again.', focus:{key:button.dataset.focusKey}};
+            message:'Plaid has not finished yet. This page connects the bank as soon as it does.', focus:{key:button.dataset.focusKey}};
         } else if (['accounts','sync','disconnect'].includes(action)) {
           await post(action, {connection_id:connectionId});
           outcome = {message:action === 'accounts' ? 'Accounts loaded.' : action === 'sync' ? 'Bank feed synced. Review new activity in Bank feed.' : 'Bank disconnected.',
@@ -448,6 +497,12 @@
     });
     initialize();
     root.dataset.onboardingReady = 'true';
+    if (typeof win.setInterval === 'function') {
+      win.setInterval(() => { void autoCheck(); }, 4000);
+      doc.addEventListener('visibilitychange', () => { if (!doc.hidden) void autoCheck(); });
+      win.addEventListener('focus', () => { void autoCheck(); });
+      win.setTimeout(() => { void autoCheck(); }, 0);
+    }
     return owner;
   }
   const api = {hostedLink, bindingPayload, createOperationOwner, uncertainError, retainedDrafts, mount};

@@ -44,7 +44,7 @@
   {{ ui.feedback('member-' ~ m.id ~ '-feedback') }}
   {% for pending in pending_links %}{% if (pending.member_id is defined and pending.member_id == m.id) or (pending.member_id is not defined and pending.member_name == m.name) %}
   <div class="household-pending" data-scope="session-{{ pending.session_id }}" data-link-state="{{ pending.state }}">
-    {% if pending.state == 'pending' %}<p>Connection in progress for {{ member_label }}. Select your bank and accounts in Plaid, then return here.</p>
+    {% if pending.state == 'pending' %}<p>Connection in progress for {{ member_label }}. Select your bank and accounts in Plaid; the connection finishes here automatically when Plaid is done.</p>
     <button class="btn btn-outline-secondary" type="button" data-action="finish" data-session-id="{{ pending.session_id }}" data-focus-key="finish-{{ pending.session_id }}"{% if not overview.network_allowed or local_read_only or not m.consented or m.needs_name %} disabled{% endif %}>Check connection for {{ member_label }}</button>
     {% else %}<p>Connection outcome uncertain for {{ member_label }}. Do not connect again. Verify access in Plaid or your bank before recovery.</p>{% endif %}
     {{ ui.feedback('session-' ~ pending.session_id ~ '-feedback') }}

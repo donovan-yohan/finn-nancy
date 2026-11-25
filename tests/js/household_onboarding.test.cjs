@@ -205,3 +205,72 @@ test('failed readback never restores stale mutation controls; retry performs a r
   assert.equal(unlocks, 1);
   assert.equal(owner.blocked, false);
 });
+
+function autoCheckHarness({hidden = false, finish = {status:'connected'}} = {}) {
+  const {mount} = require(source);
+  const requests = [], timers = [], intervals = [], listeners = {};
+  const finishButton = {dataset:{action:'finish', sessionId:'synthetic-session'},
+    closest:selector => selector === '[data-member]' ? {dataset:{scope:'member-1'}} : null};
+  const region = {textContent:'', dataset:{}, hidden:true};
+  const scope = {dataset:{scope:'member-1'}, querySelector:() => region};
+  const panel = {hidden:true, querySelector:selector => selector === 'button' ? {disabled:false} : {textContent:''}};
+  const doc = {hidden, activeElement:null, body:{}, getElementById:() => null,
+    addEventListener:(event, handler) => {listeners['doc:' + event] = handler;}};
+  const win = {
+    fetch:async (url, options) => {
+      requests.push([url, options]);
+      if (url === '/connections/data/overview') return {ok:true, json:async () => ({csrf:'synthetic-csrf'})};
+      if (url === '/connections/data/link/finish') return {ok:true, json:async () => finish};
+      if (url === '/connections') return {ok:false};
+      throw Error('unexpected request ' + url);
+    },
+    setTimeout:fn => {timers.push(fn);}, setInterval:fn => {intervals.push(fn);},
+    addEventListener:(event, handler) => {listeners['win:' + event] = handler;}
+  };
+  doc.defaultView = win;
+  const root = {dataset:{readOnly:'false', networkAllowed:'true'}, ownerDocument:doc, contains:() => false,
+    setAttribute:() => {}, removeAttribute:() => {},
+    querySelector:selector => selector === '[data-refresh-panel]' ? panel : null,
+    querySelectorAll:selector => {
+      if (selector === '[data-link-state="pending"] [data-action="finish"]') return [finishButton];
+      if (selector === '[data-scope]') return [scope];
+      return [];
+    }, addEventListener:() => {}};
+  const owner = mount(root);
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  return {owner, doc, requests, timers, intervals, listeners, region, settle};
+}
+
+test('a pending Hosted Link session completes on page load without a click', async () => {
+  const h = autoCheckHarness();
+  assert.equal(h.timers.length, 1, 'mount schedules an immediate check');
+  assert.equal(h.intervals.length, 1, 'mount polls while a session is open');
+  h.timers[0]();
+  for (let i = 0; i < 5; i++) await h.settle();
+  const finishes = h.requests.filter(([url]) => url === '/connections/data/link/finish');
+  assert.equal(finishes.length, 1);
+  assert.deepEqual(JSON.parse(finishes[0][1].body), {session_id:'synthetic-session'});
+  assert.equal(finishes[0][1].headers['X-Banking-CSRF'], 'synthetic-csrf');
+  assert.ok(h.requests.some(([url]) => url === '/connections'), 'a completed session re-reads authoritative state');
+});
+
+test('a still-pending check stays quiet and does not re-read', async () => {
+  const h = autoCheckHarness({finish:{status:'pending'}});
+  h.intervals[0]();
+  for (let i = 0; i < 5; i++) await h.settle();
+  assert.equal(h.requests.filter(([url]) => url === '/connections/data/link/finish').length, 1);
+  assert.equal(h.requests.some(([url]) => url === '/connections'), false);
+  assert.equal(h.region.textContent, '');
+  assert.equal(h.owner.busy, false);
+});
+
+test('hidden tabs do not poll; returning to the tab checks immediately', async () => {
+  const h = autoCheckHarness({hidden:true});
+  h.timers[0](); h.intervals[0]();
+  for (let i = 0; i < 3; i++) await h.settle();
+  assert.equal(h.requests.length, 0);
+  h.doc.hidden = false;
+  h.listeners['doc:visibilitychange']();
+  for (let i = 0; i < 5; i++) await h.settle();
+  assert.equal(h.requests.filter(([url]) => url === '/connections/data/link/finish').length, 1);
+});
