@@ -77,6 +77,7 @@ class Messages:
     validity: int = 41
     calls: list[bytes] = field(default_factory=list)
     search_ranges: list[tuple[int, int]] = field(default_factory=list)
+    extra_metadata: bytes = b''
 
 
 @pytest.fixture
@@ -115,6 +116,7 @@ def wire(monkeypatch, generated_mail):
                     assert rest == b'INBOX'
                     self.emit(f'* {len(messages.items)} EXISTS\r\n* OK [UIDVALIDITY {messages.validity}] epoch\r\n'
                               f'* OK [UIDNEXT {max(messages.items, default=0) + 1}] next\r\n'.encode())
+                    self.emit(messages.extra_metadata)
                 elif command == b'UID' and rest.startswith(b'SEARCH UID '):
                     _, _, interval, field, sender = rest.split()
                     assert field == b'FROM' and sender == b'"' + SENDER.encode() + b'"'
@@ -233,6 +235,16 @@ def test_restart_uid_epoch_and_transient_failure_keep_progress(tmp_path, empty_d
         assert repo.counts(conn, source) == {'conflict_count': 0, 'rejected_count': 0, 'deferred_count': 1}
         assert len(repo.list_alerts(conn, source, {})) == 2
     replacement = mailbox.RogersMailbox(lambda: settings, parse=parse, clock=lambda: 100 + mailbox.RETRY_SECONDS)
+    for metadata in (b'* OK [UIDVALIDITY 42] conflict\r\n', b'* OK [UIDNEXT 6] conflict\r\n'):
+        calls = len(messages.calls)
+        messages.extra_metadata = metadata
+        replacement.poll_safely()
+        assert replacement.outcome == 'retrying'
+        assert messages.calls[calls:] == [b'CAPABILITY', b'LOGIN', b'EXAMINE']
+        with engine.read_conn(empty_db) as conn:
+            assert repo.cursor(conn, source) == (41, 4)
+            assert repo.due_retries(conn, source, 41, 100 + mailbox.RETRY_SECONDS, 1) == [3]
+    messages.extra_metadata = b''
     replacement.poll_safely()
     assert replacement.outcome == 'checked'
     with engine.read_conn(empty_db) as conn:

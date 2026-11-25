@@ -5,10 +5,12 @@ from base64 import b64encode
 from dataclasses import FrozenInstanceError
 from email import policy
 from email.message import EmailMessage
+from types import SimpleNamespace
 
 import dkim
 import dns.exception
 import dns.message
+import dns.rcode
 import dns.resolver
 import dns.rrset
 import pytest
@@ -285,6 +287,13 @@ def test_policy_withdrawal_is_never_reclassified(signing_keys, fmt, withdrawal):
     assert error.value is stopped
 
 
+def _txt_response(request, record):
+    response = dns.message.make_response(request)
+    chunks = [f'"{record[i:i + 200].decode("ascii")}"' for i in range(0, len(record), 200)]
+    response.answer.append(dns.rrset.from_text(request.question[0].name, 60, "IN", "TXT", " ".join(chunks)))
+    return dns.message.from_wire(response.to_wire())
+
+
 @pytest.mark.parametrize("withdrawn", [False, True])
 def test_system_dns_checks_policy_again_before_tcp_fallback(signing_keys, fmt, monkeypatch, withdrawn):
     private_key, record = signing_keys
@@ -306,10 +315,7 @@ def test_system_dns_checks_policy_again_before_tcp_fallback(signing_keys, fmt, m
     def tcp(request, address, *, timeout):
         calls.append("tcp")
         assert address == "192.0.2.1" and timeout > 0
-        response = dns.message.make_response(request)
-        chunks = [(b'"' + record[i:i + 200] + b'"').decode() for i in range(0, len(record), 200)]
-        response.answer.append(dns.rrset.from_text(request.question[0].name, 60, "IN", "TXT", " ".join(chunks)))
-        return dns.message.from_wire(response.to_wire())
+        return _txt_response(request, record)
 
     class Resolver:
         nameservers = ["192.0.2.1"]
@@ -326,6 +332,78 @@ def test_system_dns_checks_policy_again_before_tcp_fallback(signing_keys, fmt, m
     else:
         assert parse_message(raw, fmt, check_allowed=check).amount_cents == -1234
         assert calls == ["guard", "udp", "guard", "tcp"]
+
+
+@pytest.mark.parametrize("failure", ["udp_timeout", "tcp_timeout", "servfail"])
+def test_system_dns_uses_healthy_secondary_within_shared_budget(signing_keys, fmt, monkeypatch, failure):
+    private_key, record = signing_keys
+    primary, secondary = "192.0.2.1", "192.0.2.2"
+    budget = rogers_message._DNS_TIMEOUT
+    now = 0.0
+    calls = []
+
+    def udp(request, address, *, timeout, raise_on_truncation):
+        nonlocal now
+        calls.append(("udp", address, timeout))
+        assert request.question[0].name.to_text() == "fixture._domainkey.example.invalid."
+        assert raise_on_truncation
+        if address == secondary:
+            return _txt_response(request, record)
+        assert address == primary
+        if failure == "servfail":
+            response = dns.message.make_response(request)
+            response.set_rcode(dns.rcode.SERVFAIL)
+            return response
+        if failure == "tcp_timeout":
+            now += budget / 8
+            raise dns.message.Truncated
+        now += timeout
+        raise dns.exception.Timeout
+
+    def tcp(request, address, *, timeout):
+        nonlocal now
+        assert failure == "tcp_timeout" and address == primary
+        calls.append(("tcp", address, timeout))
+        now += timeout
+        raise dns.exception.Timeout
+
+    monkeypatch.setattr(rogers_message, "time", SimpleNamespace(monotonic=lambda: now))
+    monkeypatch.setattr(rogers_message.dns.resolver, "Resolver", lambda: SimpleNamespace(nameservers=[primary, secondary]))
+    monkeypatch.setattr(rogers_message.dns.query, "udp", udp)
+    monkeypatch.setattr(rogers_message.dns.query, "tcp", tcp)
+    alert = parse_message(_signed(_raw(), private_key), fmt, check_allowed=lambda: calls.append("guard"))
+    assert alert.amount_cents == -1234
+    tcp_attempt = ["guard", ("tcp", primary, budget * 3 / 8)] if failure == "tcp_timeout" else []
+    secondary_budget = budget if failure == "servfail" else budget / 2
+    assert calls == ["guard", ("udp", primary, budget / 2), *tcp_attempt, "guard", ("udp", secondary, secondary_budget)]
+
+
+def test_system_dns_does_not_send_to_secondary_after_consent_withdrawal(signing_keys, fmt, monkeypatch):
+    primary, secondary = "192.0.2.1", "192.0.2.2"
+    now = 0.0
+    calls = []
+    stopped = TimeoutError()
+
+    def check():
+        calls.append("guard")
+        if now:
+            raise stopped
+
+    def udp(request, address, *, timeout, raise_on_truncation):
+        nonlocal now
+        assert address == primary
+        calls.append(address)
+        now += timeout
+        raise dns.exception.Timeout
+
+    monkeypatch.setattr(rogers_message, "time", SimpleNamespace(monotonic=lambda: now))
+    monkeypatch.setattr(rogers_message.dns.resolver, "Resolver", lambda: SimpleNamespace(nameservers=[primary, secondary]))
+    monkeypatch.setattr(rogers_message.dns.query, "udp", udp)
+    monkeypatch.setattr(rogers_message.dns.query, "tcp", _never_lookup)
+    with pytest.raises(TimeoutError) as error:
+        parse_message(_signed(_raw(), signing_keys[0]), fmt, check_allowed=check)
+    assert error.value is stopped
+    assert calls == ["guard", primary, "guard"]
 
 
 @pytest.mark.parametrize("cte", ["7bit", "base64", "quoted-printable", "8bit"])

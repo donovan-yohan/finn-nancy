@@ -28,6 +28,9 @@ _FLAGS = re.compile(rb'\((?:' + _FLAG + rb'(?: ' + _FLAG + rb')*+)?\)')
 _QUOTED = re.compile(rb'"([^"\\\x00\r\n\x80-\xff]*+(?:\\["\\][^"\\\x00\r\n\x80-\xff]*+)*+)"')
 _QUOTED_PAIR = re.compile(rb'\\(["\\])')
 _LITERAL = re.compile(rb'\{([0-9]{1,9})\}')
+_MAILBOX_CODES = ('UIDVALIDITY', 'UIDNEXT')
+_MAILBOX_CODE = re.compile(rb'[^ ]+ (OK|NO|BAD|PREAUTH|BYE) \[(UIDVALIDITY|UIDNEXT)(?=[ \]])', re.I)
+_MAILBOX_VALUE = re.compile(rb' ([1-9][0-9]{0,9})\] [^\x00\r\n]+')
 
 
 def _protocol_error():
@@ -47,7 +50,7 @@ def _check_frame(line):
             raise _protocol_error()
 
 
-def _resolve(host, port, deadline):
+def _resolve(host, port, deadline, check_allowed):
     if not _DNS_SLOT.acquire(blocking=False):
         raise TimeoutError('mailbox_resolver_busy')
     done = threading.Event()
@@ -56,6 +59,9 @@ def _resolve(host, port, deadline):
 
     def lookup():
         try:
+            check_allowed()
+            if time.monotonic() >= deadline:
+                raise TimeoutError('mailbox_resolver_timeout')
             result.extend(socket.getaddrinfo(host, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP))
         except Exception as exc:
             errors.append(exc)
@@ -84,6 +90,7 @@ class BoundedIMAP(imaplib.IMAP4_SSL):
         self.check_allowed = check_allowed
         self.remaining_bytes = WIRE_LIMIT
         self.buffer = bytearray()
+        self._examine_codes = None
         super().__init__(host, port, ssl_context=create_default_context(), timeout=_CALL_TIMEOUT)
 
     def _timeout(self):
@@ -94,7 +101,8 @@ class BoundedIMAP(imaplib.IMAP4_SSL):
 
     def _open_tcp(self):
         self.check_allowed()
-        addresses = _resolve(self.host, self.port, min(self.deadline, time.monotonic() + self._timeout()))
+        addresses = _resolve(self.host, self.port, min(self.deadline, time.monotonic() + self._timeout()),
+                             self.check_allowed)
         self.check_allowed()
         error = OSError('mailbox_no_address')
         for family, kind, protocol, _, address in addresses:
@@ -181,6 +189,36 @@ class BoundedIMAP(imaplib.IMAP4_SSL):
             if len(self.buffer) > MAX_MESSAGE_BYTES:
                 raise imaplib.IMAP4.abort('mailbox_line_limit')
             self._receive()
+
+    def _get_response(self):
+        line = super()._get_response()  # type: ignore[reportAttributeAccessIssue]  # imaplib private hook
+        if self._examine_codes is not None and line is not None:
+            marker = _MAILBOX_CODE.match(line)
+            if marker:
+                value = _MAILBOX_VALUE.fullmatch(line, marker.end())
+                if marker[1] != b'OK' or not value or not (line.startswith(b'* ') or self.tagre.match(line)):
+                    raise _protocol_error()
+                self._examine_codes[marker[2].decode().upper()].append(value[1])
+        return line
+
+    def examine_epoch(self, folder):
+        # imaplib folds untagged data and response codes into the same buckets.
+        # Cross-check those buckets against actual OK frames from this EXAMINE.
+        codes: dict[str, list[bytes]] = {name: [] for name in _MAILBOX_CODES}
+        self._examine_codes = codes
+        try:
+            status, _ = self.select(folder, readonly=True)
+            if status != 'OK':
+                raise _protocol_error()
+            values = []
+            for name, observed in codes.items():
+                _, data = self.response(name)
+                if data != observed or len(set(observed)) != 1:
+                    raise _protocol_error()
+                values.append(_uid(observed[0]))
+            return values[0], values[1]
+        finally:
+            self._examine_codes = None
 
 
 def _uid(value):

@@ -179,43 +179,56 @@ def _check_address(headers: Message, header: str, expected: str, code: RejectCod
 
 
 def _system_dns(name: bytes, *, timeout: float, check_allowed: Callable[[], None]) -> bytes | None:
-    """Bounded recursive TXT lookup. An actual UDP/TCP send gets its own policy check."""
+    """Try system-configured recursive servers within one TXT lookup deadline."""
+    deadline = time.monotonic() + timeout
     try:
         addresses = dns.resolver.Resolver().nameservers
-        if not addresses:
-            raise _LookupRetry()
         request = dns.message.make_query(name.decode("ascii"), "TXT")
     except (dns.exception.DNSException, OSError, ValueError):
         raise _LookupRetry() from None
 
-    address = addresses[0]  # The system-configured recursive nameserver, never a sender-supplied host.
-    deadline = time.monotonic() + timeout
-    check_allowed()
-    try:
-        response = dns.query.udp(request, address, timeout=timeout, raise_on_truncation=True)
-    except dns.message.Truncated:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise _LookupRetry() from None
+    for index, address in enumerate(addresses):
+        now = time.monotonic()
+        if now >= deadline:
+            break
+        # Reserve a fair share for every remaining server. UDP and TCP share
+        # this server's slice, and unused time goes to the remaining servers.
+        attempt_deadline = now + (deadline - now) / (len(addresses) - index)
+        # Policy failures must propagate, even if shaped like transport errors.
         check_allowed()
+        remaining = attempt_deadline - time.monotonic()
+        if remaining <= 0:
+            continue
         try:
-            response = dns.query.tcp(request, address, timeout=remaining)
+            response = dns.query.udp(request, address, timeout=remaining, raise_on_truncation=True)
+        except dns.message.Truncated:
+            if time.monotonic() >= attempt_deadline:
+                continue
+            check_allowed()
+            remaining = attempt_deadline - time.monotonic()
+            if remaining <= 0:
+                continue
+            try:
+                response = dns.query.tcp(request, address, timeout=remaining)
+            except (dns.exception.DNSException, OSError):
+                continue
         except (dns.exception.DNSException, OSError):
-            raise _LookupRetry() from None
-    except (dns.exception.DNSException, OSError):
-        raise _LookupRetry() from None
+            continue
 
-    if response.rcode() == dns.rcode.NXDOMAIN:
-        return None
-    if response.rcode() != dns.rcode.NOERROR:
-        raise _LookupRetry()
-    try:
-        answer = response.resolve_chaining().answer
-    except dns.exception.DNSException:
-        raise _LookupRetry() from None
-    if answer is None or len(answer) != 1:
-        return None
-    return b"".join(next(iter(answer)).strings)
+        rcode = response.rcode()
+        if rcode == dns.rcode.NXDOMAIN:
+            return None
+        if rcode != dns.rcode.NOERROR:
+            continue
+        try:
+            answer = response.resolve_chaining().answer
+        except dns.exception.DNSException:
+            continue
+        if answer is None or len(answer) != 1:
+            return None
+        return b"".join(next(iter(answer)).strings)
+
+    raise _LookupRetry()
 
 
 def _lookup_key(name: bytes, dns_lookup: DNSLookup | None, check_allowed: Callable[[], None]) -> bytes | None:

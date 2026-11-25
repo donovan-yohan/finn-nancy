@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, f
 from ..config import Settings, get_settings
 from ..db import engine, repo_rogers_alerts as repo
 from .client import BankingError
-from .rogers_imap import BoundedIMAP, _uid, fetch_message, search_uids
+from .rogers_imap import BoundedIMAP, fetch_message, search_uids
 from .rogers_message import Alert, AlertFormat, MessageRejected, MessageRetry, parse_message
 from .secrets import private_read
 
@@ -145,11 +145,10 @@ class RogersMailbox:
             allowed()
             imap.login(config.username, config.password.get_secret_value())
             allowed()
-            status, _ = imap.select(config.folder, readonly=True)
-            if status != 'OK':
+            validity, next_uid = imap.examine_epoch(config.folder)
+            upper = next_uid - 1
+            if expected is not None and expected[0] == validity and upper < expected[1]:
                 raise BankingError('mailbox_protocol_error')
-            validity = _uid(imap.response('UIDVALIDITY')[1][-1])
-            upper = _uid(imap.response('UIDNEXT')[1][-1]) - 1
             if expected is None or expected[0] != validity:
                 advance((validity, 0))  # Re-scan retained mail after a mailbox epoch change.
             assert expected is not None

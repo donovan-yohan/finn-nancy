@@ -2,6 +2,7 @@
 import socket
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -144,12 +145,39 @@ def test_stalled_dns_wait_is_bounded_without_resolver_backlog(monkeypatch, deadl
     assert calls == ['dns', 'dns']
 
 
+@pytest.mark.parametrize('guard', ['revoked', 'expired'])
+def test_delayed_resolver_rechecks_before_lookup(monkeypatch, guard):
+    now = 0
+    revoked = False
+
+    class DelayedStart:
+        def __init__(self, *, target, **kwargs):
+            self.target = target
+
+        def start(self):
+            nonlocal now, revoked
+            revoked = guard == 'revoked'
+            now = 5 if guard == 'expired' else 0
+            self.target()
+
+    def check_allowed():
+        if revoked:
+            raise BankingError('mailbox_disabled')
+
+    monkeypatch.setattr(transport, 'time', SimpleNamespace(monotonic=lambda: now))
+    monkeypatch.setattr(transport.threading, 'Thread', DelayedStart)
+    monkeypatch.setattr(socket, 'getaddrinfo', lambda *a, **k: pytest.fail('forbidden lookup'))
+    with pytest.raises(BankingError if guard == 'revoked' else TimeoutError):
+        transport._resolve('fixture.invalid', 993, 2, check_allowed)
+
+
 @pytest.fixture
 def wire_imap(monkeypatch):
     class Wire:
         def __init__(self):
             self.incoming = bytearray(b'* PREAUTH fixture\r\n')
             self.responses = b''
+            self.examine = b'* 1 EXISTS\r\n'
             self.commands = []
 
         def makefile(self, _):
@@ -163,7 +191,7 @@ def wire_imap(monkeypatch):
             self.commands.append(command)
             responses = {
                 b'CAPABILITY': b'* CAPABILITY IMAP4rev1\r\n',
-                b'EXAMINE INBOX': b'* 1 EXISTS\r\n',
+                b'EXAMINE INBOX': self.examine,
             }
             self.incoming.extend(responses.get(command, self.responses) + tag + b' OK done\r\n')
 
@@ -177,6 +205,29 @@ def wire_imap(monkeypatch):
     imap = transport.BoundedIMAP('fixture.invalid', 993, deadline=time.monotonic() + 2, check_allowed=lambda: None)
     assert imap.select('INBOX', readonly=True)[0] == 'OK'
     return imap, wire
+
+
+def test_examine_reads_only_valid_metadata_for_this_selection(wire_imap):
+    imap, wire = wire_imap
+    wire.examine += b'* OK [UIDVALIDITY 9] epoch\r\n* OK [UIDNEXT 20] next\r\n* OK [UIDNEXT 20] next\r\n'
+    assert imap.examine_epoch('INBOX') == (9, 20)
+    wire.examine = b'* 1 EXISTS\r\n'
+    with pytest.raises(BankingError, match='mailbox_protocol_error'):
+        imap.examine_epoch('INBOX')
+
+
+@pytest.mark.parametrize('metadata', [
+    b'* OK [UIDNEXT 20] next\r\n* OK [UIDNEXT 21] next\r\n',
+    b'* NO [UIDNEXT 20] next\r\n',
+    b'* UIDNEXT 20\r\n',
+    b'* OK [UIDNEXT 20] next\r\n* UIDNEXT 20\r\n',
+    b'* OK [UIDNEXT 0] next\r\n',
+])
+def test_examine_refuses_ambiguous_metadata(wire_imap, metadata):
+    imap, wire = wire_imap
+    wire.examine += b'* OK [UIDVALIDITY 9] epoch\r\n' + metadata
+    with pytest.raises(BankingError, match='mailbox_protocol_error'):
+        imap.examine_epoch('INBOX')
 
 
 @pytest.mark.parametrize(('responses', 'expected'), [
