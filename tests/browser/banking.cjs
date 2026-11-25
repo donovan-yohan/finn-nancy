@@ -68,7 +68,8 @@ async function main(){
    await hostedCdp.eval("document.querySelector('#authorize').click()");await hostedCdp.until("document.body.dataset.completed==='1'");
    await drain(hostedCdp);hostedCdp.close();hostedCdp=null;await c.call('Target.closeTarget',{targetId:hostedTarget.targetId});
    await fetch(base+`/__banking_fixture/hosted/${ordinal}`,{method:'POST'});
-   await visit('/connections');await click(`[data-member="${member}"] [data-action="finish"]`);await settled();
+   // Returning to Connections must finish the link with no click.
+   await visit('/connections');
    await c.until(`!!document.querySelector('[data-onboarding-ready="true"] [data-connection="${ordinal}"]')`);
    const form=`form[data-form="binding"][data-connection-id="${ordinal}"]`;
    await click(`[data-connection="${ordinal}"] [data-editor] > summary`);

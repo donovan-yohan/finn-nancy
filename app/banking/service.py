@@ -7,7 +7,10 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import json
 import hashlib
+import logging
+import re
 import secrets
+import threading
 import time
 from urllib.parse import urlsplit
 from datetime import datetime
@@ -18,6 +21,8 @@ from ..db import engine, repo_budgets, repo_period_policy
 from ..reconcile import feed
 from .client import BankingError, PlaidClient
 from .secrets import PrivateStore
+
+logger = logging.getLogger('uvicorn.error.banking')
 
 CONSENT_VERSION = 'plaid-transactions-v1'
 CONSENT_TEXT = ('I authorize Plaid to access my selected bank accounts and transaction history for this household. '
@@ -30,6 +35,72 @@ def text(value, maximum=500):
     if not isinstance(value, str) or not value or len(value)>maximum or any(ord(c)<32 for c in value):
         raise BankingError('invalid_provider_response')
     return value
+
+
+def _safe_id(value, maximum=80):
+    return value if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_.:@-]{1,%d}' % maximum, value) else None
+
+
+def _safe_label(value, maximum=80):
+    return value if isinstance(value, str) and 0 < len(value) <= maximum and all(ord(c) >= 32 for c in value) else None
+
+
+def completion_tokens(session):
+    """Public tokens from a Link session.
+
+    Current integrations receive results.item_add_results; on_success is returned
+    only for legacy integrations (Production returned results only, 2026-11-14).
+    Malformed rows are ignored.
+    """
+    results = session.get('results')
+    items = results.get('item_add_results') if isinstance(results, dict) else None
+    found = {r['public_token'] for r in items if isinstance(r, dict) and isinstance(r.get('public_token'), str)
+             and r['public_token']} if isinstance(items, list) else set()
+    legacy = session.get('on_success')
+    if isinstance(legacy, dict) and isinstance(legacy.get('public_token'), str) and legacy['public_token']:
+        found.add(legacy['public_token'])
+    return found
+
+
+def link_exit(session):
+    value = session.get('exit') if isinstance(session.get('exit'), dict) else session.get('on_exit')
+    return value if isinstance(value, dict) else None
+
+
+def link_diagnostics(response):
+    """Content-free summary of /link/token/get: counts, ids and error codes only."""
+    sessions = [s for s in response.get('link_sessions') or [] if isinstance(s, dict)]
+    summary = []
+    for s in sessions[:5]:
+        results = s.get('results') if isinstance(s.get('results'), dict) else {}
+        items = [i for i in results.get('item_add_results') or [] if isinstance(i, dict)]
+        exit_ = link_exit(s) or {}
+        error = exit_.get('error') if isinstance(exit_.get('error'), dict) else {}
+        metadata = exit_.get('metadata') if isinstance(exit_.get('metadata'), dict) else {}
+        events = []
+        for event in s.get('events') or []:
+            if not isinstance(event, dict) or event.get('event_name') not in {'ERROR', 'EXIT', 'SELECT_INSTITUTION', 'HANDOFF'}:
+                continue
+            meta = event.get('event_metadata') if isinstance(event.get('event_metadata'), dict) else {}
+            events.append({k: v for k, v in {
+                'event': _safe_id(event.get('event_name')), 'at': _safe_id(event.get('timestamp')),
+                'institution_id': _safe_id(meta.get('institution_id')),
+                'institution_name': _safe_label(meta.get('institution_name')),
+                'error_code': _safe_id(meta.get('error_code')), 'error_type': _safe_id(meta.get('error_type')),
+                'exit_status': _safe_id(meta.get('exit_status'))}.items() if v})
+        summary.append({k: v for k, v in {
+            'link_session_id': _safe_id(s.get('link_session_id')),
+            'finished': bool(s.get('finished_at')),
+            'items': len(items),
+            'public_tokens': sum(1 for i in items if i.get('public_token')),
+            'legacy_on_success': isinstance(s.get('on_success'), dict),
+            'institutions': [i for i in (_safe_id((it.get('institution') or {}).get('institution_id'))
+                                         if isinstance(it.get('institution'), dict) else None for it in items) if i],
+            'exit_status': _safe_id(metadata.get('status')),
+            'exit_error_code': _safe_id(error.get('error_code')),
+            'events': sorted(events, key=lambda e: e.get('at', ''))[-12:],
+        }.items() if v not in (None, [], False) or k in {'finished', 'items'}})
+    return {'request_id': _safe_id(response.get('request_id')), 'plaid_sessions': len(sessions), 'sessions': summary}
 
 
 class BankingService:
@@ -49,6 +120,8 @@ class BankingService:
         self.home_currency = home_currency
         self.transport = transport
         self._store = None
+        self._finish_lock = threading.Lock()
+        self._last_server_check = {}
 
     @property
     def store(self):
@@ -284,18 +357,83 @@ class BankingService:
         return {'session_id':session_id,'hosted_link_url':hosted}
 
     def finish_link(self, session_id, *, browser):
+        """Browser-bound check. Completion itself is shared with the server poller."""
         self.writable()
-        with engine.read_conn(self.db_path) as conn:
-            row=conn.execute('SELECT * FROM bank_link_sessions WHERE id=?',(session_id,)).fetchone()
-            if row is None:
-                raise BankingError('link_session_not_found')
-            session=dict(row)
+        session = self._link_session(session_id)
         if not secrets.compare_digest(session['browser_hash'],hashlib.sha256(browser.encode()).hexdigest()):
             raise BankingError('browser_session_mismatch')
+        return self._finish_session(session_id, source='browser')
+
+    def complete_pending_links(self):
+        """Server-side completion: a finished Plaid session never depends on a browser returning.
+
+        Pending sessions are checked every call; exited ones are rechecked at most once a
+        minute until expiry because the user can reopen the same Hosted Link URL.
+        """
+        now = time.time()
+        with engine.read_conn(self.db_path) as conn:
+            rows = [dict(r) for r in conn.execute(
+                "SELECT id,state FROM bank_link_sessions WHERE state IN ('pending','exited') AND expires_at>=?", (now,))]
+        open_ids = {row['id'] for row in rows}
+        for stale in set(self._last_server_check) - open_ids:
+            del self._last_server_check[stale]
+        if not rows or self.read_only() or not self.setup()['ready']:
+            return []
+        results = []
+        for row in rows:
+            if row['state'] == 'exited' and now - self._last_server_check.get(row['id'], 0) < 60:
+                continue
+            self._last_server_check[row['id']] = now
+            try:
+                results.append(self._finish_session(row['id'], source='server'))
+            except BankingError as exc:
+                results.append({'status': 'error', 'code': str(exc)})
+        return results
+
+    def _link_session(self, session_id):
+        with engine.read_conn(self.db_path) as conn:
+            row=conn.execute('SELECT * FROM bank_link_sessions WHERE id=?',(session_id,)).fetchone()
+        if row is None:
+            raise BankingError('link_session_not_found')
+        return dict(row)
+
+    def _record_check(self, session_id, source, outcome, detail=None):
+        detail = json.dumps(detail or {}, sort_keys=True, separators=(',', ':'))
+        with engine.write_tx(self.db_path) as conn:
+            last = conn.execute('SELECT outcome,detail FROM bank_link_checks WHERE session_id=? ORDER BY id DESC LIMIT 1',
+                                (session_id,)).fetchone()
+            # Repeated identical polls add no information; keep the first of each run.
+            changed = last is None or (last['outcome'], last['detail']) != (outcome, detail)
+            if changed:
+                conn.execute('INSERT INTO bank_link_checks(session_id,source,outcome,detail) VALUES (?,?,?,?)',
+                             (session_id, source, outcome, detail))
+        if not changed:
+            return
+        logger.info(json.dumps({'event': 'bank_link_check', 'session': hashlib.sha256(session_id.encode()).hexdigest()[:12],
+                                'source': source, 'outcome': outcome, 'detail': json.loads(detail)}, separators=(',', ':')))
+
+    def _finish_session(self, session_id, *, source):
+        # One completion at a time in this single-instance service, so a browser check
+        # racing the server poller waits instead of observing a live 'exchanging' row.
+        with self._finish_lock:
+            session = self._link_session(session_id)
+            try:
+                result, detail = self._finish_locked(session)
+            except BankingError as exc:
+                detail = getattr(exc, 'diagnostics', None) or {}
+                if getattr(exc, 'provider_code', None):
+                    detail = {**detail, 'provider_error_code': exc.provider_code}
+                self._record_check(session_id, source, str(exc), detail)
+                raise
+            self._record_check(session_id, source, result['status'], detail)
+            return result
+
+    def _finish_locked(self, session):
+        session_id = session['id']
         if session['state']=='complete':
-            return self._link_result(session['connection_id'])
-        if session['state']!='pending':
-            raise BankingError('link_outcome_uncertain_do_not_retry' if session['state'] in {'exchanging','uncertain'} else 'link_exited')
+            return self._link_result(session['connection_id']), {}
+        if session['state'] not in {'pending','exited'}:
+            raise BankingError('link_outcome_uncertain_do_not_retry')
         if session['expires_at']<time.time():
             raise BankingError('link_session_expired')
         self._policy(session['member_id'], session['consent_id'])
@@ -303,41 +441,48 @@ class BankingService:
         if session['connection_id'] is not None:
             repair_connection = self._connection(session['connection_id'])
             if repair_connection['state'] != 'needs_repair':
+                # Another session already settled this connection. Leave pending so this
+                # superseded attempt cannot block new links until it expires.
+                settled = 'complete' if repair_connection['state'] == 'active' else 'exited'
+                with engine.write_tx(self.db_path) as conn:
+                    conn.execute("UPDATE bank_link_sessions SET state=? WHERE id=? AND state IN ('pending','exited')",
+                                 (settled, session_id))
+                if settled == 'complete':
+                    return self._link_result(repair_connection['id']), {'superseded': True}
                 raise BankingError('connection_not_repairable')
+        repair = repair_connection is not None
         link=self.store.get(session['token_ref'])
         response=self._post(session['member_id'],'/link/token/get',{'link_token':link},
                             connection=repair_connection, consent_id=session['consent_id'])
         if response.get('link_token')!=link or not isinstance(response.get('link_sessions'),list):
             raise BankingError('server_link_verification_unavailable')
-        def completion_tokens(s):
-            # Current integrations receive results.item_add_results; on_success is
-            # returned only for legacy integrations. Accept either, ignore malformed rows.
-            results=s.get('results')
-            items=results.get('item_add_results') if isinstance(results,dict) else None
-            found={r['public_token'] for r in items if isinstance(r,dict) and isinstance(r.get('public_token'),str)
-                   and r['public_token']} if isinstance(items,list) else set()
-            legacy=s.get('on_success')
-            if isinstance(legacy,dict) and isinstance(legacy.get('public_token'),str) and legacy['public_token']:
-                found.add(legacy['public_token'])
-            return found
-        finished=[(s,completion_tokens(s)) for s in response['link_sessions']
-                  if isinstance(s,dict) and isinstance(s.get('finished_at'),str) and s['finished_at']]
-        # Repair (update mode) success may carry no new token; keep the legacy callback signal.
-        finished=[(s,t) for s,t in finished if t or isinstance(s.get('on_success'),dict)]
-        if not finished:
-            return {'status':'pending'}
-        if len(finished)!=1:
-            raise BankingError('ambiguous_link_completion')
-        tokens=finished[0][1]
-        repair=session['connection_id'] is not None
+        detail = link_diagnostics(response)
+        sessions = [s for s in response['link_sessions'] if isinstance(s, dict)]
+        finished = [(s, completion_tokens(s)) for s in sessions
+                    if isinstance(s.get('finished_at'), str) and s['finished_at']]
+        # A new Item needs a public token. Update mode (repair) adds no Item, so any
+        # finished session that did not exit is its success signal.
+        succeeded = [(s, t) for s, t in finished
+                     if t or isinstance(s.get('on_success'), dict) or (repair and link_exit(s) is None)]
+        if not succeeded:
+            exited = [s for s, _ in finished if link_exit(s) is not None]
+            if exited and len(finished) == len(sessions):
+                with engine.write_tx(self.db_path) as conn:
+                    conn.execute("UPDATE bank_link_sessions SET state='exited' WHERE id=? AND state='pending'", (session_id,))
+                return {'status': 'exited'}, detail
+            return {'status':'pending'}, detail
+        if len(succeeded)!=1:
+            error = BankingError('ambiguous_link_completion'); error.diagnostics = detail; raise error
+        tokens=set(succeeded[0][1])
         if not repair and len(tokens)!=1:
-            raise BankingError('server_link_verification_unavailable')
+            error = BankingError('server_link_verification_unavailable'); error.diagnostics = detail; raise error
         self._policy(session['member_id'])
         with engine.write_tx(self.db_path) as conn:
             self._check_consent(conn, session['member_id'], session['consent_id'])
             if repair_connection is not None:
                 self._check_connection(conn, repair_connection)
-            if conn.execute("UPDATE bank_link_sessions SET state='exchanging' WHERE id=? AND state='pending'",(session_id,)).rowcount!=1:
+            if conn.execute("UPDATE bank_link_sessions SET state='exchanging' WHERE id=? AND state IN ('pending','exited')",
+                            (session_id,)).rowcount!=1:
                 raise BankingError('link_already_consumed')
         # Once claimed, never repeat public-token exchange, including process crashes.
         try:
@@ -360,16 +505,19 @@ class BankingService:
                     connection_id=conn.execute('''INSERT INTO bank_connections(member_id,item_id,token_ref,consent_version,state)
                         VALUES (?,?,?,?,'active')''',(session['member_id'],item_id,access_ref,CONSENT_VERSION)).lastrowid
                     conn.execute("UPDATE bank_link_sessions SET state='complete',connection_id=? WHERE id=?",(connection_id,session_id))
-        except Exception:
+        except Exception as exc:
             with engine.write_tx(self.db_path) as conn:
                 conn.execute("UPDATE bank_link_sessions SET state='uncertain' WHERE id=? AND state='exchanging'",(session_id,))
-            raise BankingError('link_outcome_uncertain_do_not_retry') from None
+            error = BankingError('link_outcome_uncertain_do_not_retry')
+            error.diagnostics = {**detail, 'exchange_error': str(exc) if isinstance(exc, BankingError) else type(exc).__name__}
+            error.provider_code = getattr(exc, 'provider_code', None)
+            raise error from None
         # Discovery is retryable independently; an exchange success is never reported as relink-safe.
         try:
             self.discover_accounts(connection_id)
-        except BankingError:
-            pass
-        return self._link_result(connection_id)
+        except BankingError as exc:
+            detail = {**detail, 'discovery_error': str(exc)}
+        return self._link_result(connection_id), detail
 
     def _link_result(self, connection_id):
         current = self._connection(connection_id)

@@ -12,6 +12,7 @@ from ..api.middleware import ApiGuardMiddleware
 from ..api.authority import RequestAuthorityMiddleware, unhandled_error_response
 from ..api.routes import router as api_router
 from ..api.finance_routes import router as finance_router
+from ..banking.completion import run_link_completion
 from ..banking.service import BankingService
 from ..banking.web import build_router as build_banking_router
 from ..channels import inbox, telegram
@@ -47,6 +48,8 @@ async def lifespan(app: FastAPI):
         with engine.write_tx(settings.db_path) as conn:
             repo_embeddings.enqueue_embed_transactions(conn)
     worker_task = asyncio.create_task(run_worker(stop))
+    banking = getattr(app.state, 'banking_service', None)
+    link_task = asyncio.create_task(run_link_completion(stop, banking)) if banking is not None else None
     telegram_stop = asyncio.Event()
     telegram_task = None
     telegram_runtime = telegram.TelegramRuntimeState(
@@ -92,6 +95,11 @@ async def lifespan(app: FastAPI):
             await asyncio.wait_for(worker_task, timeout=5)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             worker_task.cancel()
+        if link_task is not None:
+            try:
+                await asyncio.wait_for(link_task, timeout=5)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                link_task.cancel()
 
 
 def create_app() -> FastAPI:
