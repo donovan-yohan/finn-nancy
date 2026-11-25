@@ -46,6 +46,9 @@ _DOT_ATOM = r"[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]
 _LABEL = r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
 _DOMAIN = re.compile(rf"{_LABEL}(?:\.{_LABEL})+")
 _SELECTOR = re.compile(_LABEL.encode("ascii"))
+_SERVICE_TYPE = re.compile(
+    rb"[ \t]*(?:\r\n[ \t]+)?(\*|[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?)[ \t]*(?:\r\n[ \t]+)?"
+)
 _MESSAGE_ID = re.compile(rf"<{_DOT_ATOM}@{_DOT_ATOM}>")
 _HEADER_START = re.compile(rb"[\x21-\x39\x3b-\x7e]+:")
 _AMOUNT = re.compile(r"(0|[1-9][0-9]{0,11}|[1-9][0-9]{0,2}(?:,[0-9]{3}){1,3})\.([0-9]{2})")
@@ -178,9 +181,8 @@ def _check_address(headers: Message, header: str, expected: str, code: RejectCod
         raise MessageRejected(code)
 
 
-def _system_dns(name: bytes, *, timeout: float, check_allowed: Callable[[], None]) -> bytes | None:
+def _system_dns(name: bytes, *, deadline: float, check_allowed: Callable[[], None]) -> bytes | None:
     """Try system-configured recursive servers within one TXT lookup deadline."""
-    deadline = time.monotonic() + timeout
     try:
         addresses = dns.resolver.Resolver().nameservers
         request = dns.message.make_query(name.decode("ascii"), "TXT")
@@ -231,31 +233,54 @@ def _system_dns(name: bytes, *, timeout: float, check_allowed: Callable[[], None
     raise _LookupRetry()
 
 
-def _lookup_key(name: bytes, dns_lookup: DNSLookup | None, check_allowed: Callable[[], None]) -> bytes | None:
+def _lookup_key(
+    name: bytes,
+    dns_lookup: DNSLookup | None,
+    check_allowed: Callable[[], None],
+    *,
+    deadline: float | None,
+) -> bytes | None:
+    if dns_lookup is not None:
+        check_allowed()  # Outside exception handling, including TimeoutError-shaped policy withdrawal.
+    now = time.monotonic()
+    if deadline is not None and now >= deadline:
+        raise TimeoutError
     if dns_lookup is None:
-        return _system_dns(name, timeout=_DNS_TIMEOUT, check_allowed=check_allowed)
-    check_allowed()  # Outside exception handling, including for TimeoutError-shaped policy withdrawal.
+        cutoff = now + _DNS_TIMEOUT
+        if deadline is not None:
+            cutoff = min(cutoff, deadline)
+        return _system_dns(name, deadline=cutoff, check_allowed=check_allowed)
+    timeout = _DNS_TIMEOUT if deadline is None else min(_DNS_TIMEOUT, deadline - now)
     try:
-        return dns_lookup(name, timeout=_DNS_TIMEOUT)
+        return dns_lookup(name, timeout=timeout)
     except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
         return None
     except (MessageRetry, dns.exception.DNSException, OSError):
         raise _LookupRetry() from None
 
 
-def _eligible_key(record: bytes | None) -> bool:
+def _email_key(record: bytes | None) -> bytes | None:
     if not record or len(record) > _MAX_KEY_BYTES:
-        return False
+        return None
     try:
         tags = dkim.parse_tag_value(record)
     except dkim.InvalidTagValueList:
-        return False
-    return (
+        return None
+    if not (
         bool(tags.get(b"p"))
         and tags.get(b"k", b"rsa") == b"rsa"
         and b"sha256" in re.split(rb"\s*:\s*", tags.get(b"h", b"sha256"))
-        and tags.get(b"s", b"*") in {b"*", b"email"}
-    )
+    ):
+        return None
+    services = [_SERVICE_TYPE.fullmatch(s) for s in tags.get(b"s", b"*").split(b":")]
+    if any(s is None for s in services) or not any(s and s[1] in {b"*", b"email"} for s in services):
+        return None
+    if len(services) == 1:
+        return record
+    # RFC 6376 permits a service list, but dkimpy accepts only a single type.
+    # Project the already-validated list onto this verifier's email service.
+    tags[b"s"] = b"email"
+    return b"; ".join(name + b"=" + value for name, value in tags.items())
 
 
 def _authenticated_view(
@@ -264,6 +289,8 @@ def _authenticated_view(
     domain: bytes,
     dns_lookup: DNSLookup | None,
     check_allowed: Callable[[], None],
+    *,
+    deadline: float | None,
 ) -> tuple[list[tuple[bytes, bytes]], bytes]:
     count = sum(name.lower() == b"dkim-signature" for name, _ in message.headers)
     if not 1 <= count <= _MAX_SIGNATURES:
@@ -295,12 +322,17 @@ def _authenticated_view(
             continue
         if name not in keys:
             try:
-                keys[name] = _lookup_key(name, dns_lookup, check_allowed)
+                keys[name] = _lookup_key(name, dns_lookup, check_allowed, deadline=deadline)
             except _LookupRetry:
                 deferred.add(name)
+            # Expiring the poll is not a selector failure, even if the resolver
+            # reported a timeout or returned an answer as the budget ran out.
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError
+            if name in deferred:
                 continue
-        record = keys[name]
-        if not _eligible_key(record):
+        record = _email_key(keys[name])
+        if record is None:
             continue
         # Only this candidate's DNS name can use the prefetched TXT record. No
         # transport or policy exception crosses the verifier's exception handlers.
@@ -438,8 +470,12 @@ def parse_message(
     *,
     dns_lookup: DNSLookup | None = None,
     check_allowed: Callable[[], None] = lambda: None,
+    deadline: float | None = None,
 ) -> Alert:
-    """Accept intact plaintext (including a plain MIME alternative), never forwarded attachments."""
+    """Accept intact plaintext, including a signed plain MIME alternative.
+
+    ``deadline``, if supplied, is the poll's absolute monotonic DNS cutoff.
+    """
     message = _read_wire(raw)
     critical = []
     for name, value in message.headers:
@@ -460,7 +496,7 @@ def parse_message(
     _check_address(headers, 'From', fmt.sender, 'untrusted_sender')
     _check_address(headers, 'To', fmt.recipient, 'untrusted_recipient')
     signed_headers, signed_body = _authenticated_view(
-        message, names, fmt.signing_domain.encode("ascii"), dns_lookup, check_allowed
+        message, names, fmt.signing_domain.encode("ascii"), dns_lookup, check_allowed, deadline=deadline,
     )
     # Parse the signed canonical representation so DKIM-equivalent whitespace
     # changes cannot alter the subject, captured fields or deduplication key.

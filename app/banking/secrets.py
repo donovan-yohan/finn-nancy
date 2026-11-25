@@ -29,7 +29,8 @@ def private_read(path: Path) -> str:
     path = Path(path)
     check_private_path(path)
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        # Do not wait for a writer if the entry is no longer a regular file.
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         with os.fdopen(fd, 'r') as handle:
             info = os.fstat(handle.fileno())
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:

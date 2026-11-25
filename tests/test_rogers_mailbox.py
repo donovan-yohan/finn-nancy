@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from email.policy import SMTP
 from pathlib import Path
+from types import SimpleNamespace
 
 import dkim
 import pytest
@@ -76,6 +77,7 @@ class Messages:
     items: dict
     validity: int = 41
     calls: list[bytes] = field(default_factory=list)
+    logins: list[bytes] = field(default_factory=list)
     search_ranges: list[tuple[int, int]] = field(default_factory=list)
     extra_metadata: bytes = b''
 
@@ -111,7 +113,7 @@ def wire(monkeypatch, generated_mail):
                 if command == b'CAPABILITY':
                     self.emit(b'* CAPABILITY IMAP4rev1\r\n')
                 elif command == b'LOGIN':
-                    assert rest == b'bank-alerts@example.invalid "generated mailbox password"'
+                    messages.logins.append(rest)
                 elif command == b'EXAMINE':
                     assert rest == b'INBOX'
                     self.emit(f'* {len(messages.items)} EXISTS\r\n* OK [UIDVALIDITY {messages.validity}] epoch\r\n'
@@ -217,6 +219,17 @@ def test_tls_mailbox_to_normal_feed_and_review(monkeypatch, tmp_path, empty_db, 
     assert set(messages.calls) == {b'CAPABILITY', b'LOGIN', b'EXAMINE', b'UID SEARCH', b'UID FETCH'}
 
 
+def test_login_quotes_configured_username_on_wire(tmp_path, empty_db, wire):
+    port, messages, _, _ = wire
+    messages.items.clear()
+    _, path = configure(tmp_path, empty_db, port, username='alerts%desk@example.invalid')
+    settings = app_settings(empty_db, path)
+    box = mailbox.RogersMailbox(lambda: settings)
+    box.poll_safely()
+    assert box.outcome == 'checked'
+    assert messages.logins == [b'"alerts%desk@example.invalid" "generated mailbox password"']
+
+
 def test_restart_uid_epoch_and_transient_failure_keep_progress(tmp_path, empty_db, wire):
     port, messages, parse, signed = wire
     _, path = configure(tmp_path, empty_db, port)
@@ -259,6 +272,76 @@ def test_restart_uid_epoch_and_transient_failure_keep_progress(tmp_path, empty_d
         assert conn.execute('SELECT COUNT(*) FROM rogers_alerts').fetchone()[0] == 4
 
 
+def test_fresh_alert_stages_before_slow_due_retry(monkeypatch, tmp_path, empty_db, wire):
+    port, messages, parse, signed = wire
+    _, path = configure(tmp_path, empty_db, port)
+    settings = app_settings(empty_db, path)
+    source = mailbox.MailboxConfig.model_validate_json(path.read_text()).source_key
+    with engine.write_tx(empty_db) as conn:
+        repo.advance(conn, source, None, (41, 1), retry_at=100)
+    messages.items = {1: signed(id='old', amount='1.00'), 2: signed(id='fresh', amount='2.00')}
+    started = now = time.monotonic()
+    monkeypatch.setattr(mailbox, 'time', SimpleNamespace(monotonic=lambda: now))
+    attempts = []
+    deadlines = []
+
+    def slow_retry(raw, *args, deadline=None, **kwargs):
+        nonlocal now
+        deadlines.append(deadline)
+        if b'<old@example.invalid>' in raw:
+            attempts.append('old')
+            now += mailbox.POLL_BUDGET  # A retry uses the rest of this poll's time.
+            raise MessageRetry()
+        attempts.append('fresh')
+        return parse(raw, *args, deadline=deadline, **kwargs)
+
+    box = mailbox.RogersMailbox(lambda: settings, parse=slow_retry, clock=lambda: 100)
+    box.poll_safely()
+    assert attempts == ['fresh', 'old']
+    assert deadlines == [started + mailbox.POLL_BUDGET] * 2
+    assert box.outcome == 'retrying'
+    assert messages.calls[-3:] == [b'UID SEARCH', b'UID FETCH', b'UID FETCH']
+    with engine.read_conn(empty_db) as conn:
+        assert repo.cursor(conn, source) == (41, 2)
+        assert [row['amount_cents'] for row in repo.list_alerts(conn, source, {})] == [-200]
+        assert repo.due_retries(conn, source, 41, 100, 2) == [1]
+
+    # The expired attempt never takes ownership of the pointer; the next poll
+    # can settle it, even with no new mail left to search.
+    box.parse = parse
+    box.poll_safely()
+    assert box.outcome == 'checked'
+    with engine.read_conn(empty_db) as conn:
+        assert repo.cursor(conn, source) == (41, 2)
+        assert [row['amount_cents'] for row in repo.list_alerts(conn, source, {})] == [-100, -200]
+        assert repo.due_retries(conn, source, 41, 100, 2) == []
+
+
+def test_one_due_retry_gets_a_turn_during_fresh_backlog(monkeypatch, tmp_path, empty_db, wire):
+    port, messages, parse, signed = wire
+    _, path = configure(tmp_path, empty_db, port)
+    settings = app_settings(empty_db, path)
+    source = mailbox.MailboxConfig.model_validate_json(path.read_text()).source_key
+    with engine.write_tx(empty_db) as conn:
+        repo.advance(conn, source, None, (41, 1), retry_at=100)
+        repo.advance(conn, source, (41, 1), (41, 2), retry_at=100)
+    monkeypatch.setattr(mailbox, 'BATCH', 2)
+    messages.items = {uid: signed(id=str(uid), amount=f'{uid}.00') for uid in range(1, 6)}
+    box = mailbox.RogersMailbox(lambda: settings, parse=parse, clock=lambda: 100)
+
+    box.poll()
+    with engine.read_conn(empty_db) as conn:
+        assert repo.cursor(conn, source) == (41, 4)
+        assert [row['amount_cents'] for row in repo.list_alerts(conn, source, {})] == [-400, -100, -300]
+        assert repo.due_retries(conn, source, 41, 100, 2) == [2]
+
+    box.poll()
+    with engine.read_conn(empty_db) as conn:
+        assert repo.cursor(conn, source) == (41, 5)
+        assert [row['amount_cents'] for row in repo.list_alerts(conn, source, {})] == [-200, -500, -400, -100, -300]
+        assert repo.due_retries(conn, source, 41, 100, 2) == []
+
+
 def test_uid_windows_make_bounded_progress_on_a_sparse_mailbox(monkeypatch, tmp_path, empty_db, wire):
     port, messages, parse, signed = wire
     _, path = configure(tmp_path, empty_db, port)
@@ -295,6 +378,36 @@ def test_private_file_and_current_consent_are_required(tmp_path, empty_db, mode,
                                connect=lambda *a, **k: pytest.fail('unexpected dispatch'))
     box.poll_safely()
     assert box.outcome == 'setup_required'
+
+
+@pytest.mark.parametrize('slow_read', [1, 2], ids=['initial-consent', 'dispatch-recheck'])
+def test_consent_read_that_exhausts_deadline_blocks_connect(monkeypatch, tmp_path, empty_db, slow_read):
+    _, path = configure(tmp_path, empty_db, 993)
+    settings = app_settings(empty_db, path)
+    now = 100.0
+    reads = 0
+    dispatched = []
+    read = mailbox.private_read
+
+    def read_consent(path):
+        nonlocal now, reads
+        snapshot = read(path)
+        reads += 1
+        if reads == slow_read:
+            now += mailbox.POLL_BUDGET
+        return snapshot
+
+    def connect(*args, **kwargs):
+        dispatched.append(True)
+        raise TimeoutError
+
+    monkeypatch.setattr(mailbox, 'time', SimpleNamespace(monotonic=lambda: now))
+    monkeypatch.setattr(mailbox, 'private_read', read_consent)
+    box = mailbox.RogersMailbox(lambda: settings, connect=connect)
+    box.poll_safely()
+    assert not dispatched
+    assert reads == slow_read
+    assert box.outcome == 'retrying'
 
 
 def test_consent_change_while_fetching_blocks_commit(tmp_path, empty_db, wire):

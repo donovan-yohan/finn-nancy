@@ -97,22 +97,28 @@ class RogersMailbox:
             raise BankingError('mailbox_disabled')
 
     def poll(self):
+        deadline = time.monotonic() + POLL_BUDGET
+
+        def check_deadline():
+            if time.monotonic() >= deadline:
+                raise TimeoutError
+
         settings = self.settings()
         self._gate(settings)
         config, snapshot = self._config(settings)
+        check_deadline()
         config_path = settings.rogers_alerts_config_file
         assert config_path is not None  # _config requires a private file.
         source_key = config.source_key
-        deadline = time.monotonic() + POLL_BUDGET
 
         def allowed():
-            if time.monotonic() >= deadline:
-                raise TimeoutError
+            check_deadline()
             active = self.settings()
             self._gate(active)
             if (active.db_path != settings.db_path or active.rogers_alerts_config_file != config_path
                     or private_read(config_path) != snapshot):
                 raise BankingError('mailbox_configuration_changed')
+            check_deadline()
 
         with engine.read_conn(settings.db_path) as conn:
             expected = repo.cursor(conn, source_key)
@@ -130,7 +136,7 @@ class RogersMailbox:
             if raw is None:
                 return {}
             try:
-                item = self.parse(raw, config.format, check_allowed=allowed)
+                item = self.parse(raw, config.format, check_allowed=allowed, deadline=deadline)
             except MessageRejected:
                 return {'rejected': True}
             except MessageRetry:
@@ -143,7 +149,9 @@ class RogersMailbox:
         imap = self.connect(config.host, config.port, deadline=deadline, check_allowed=allowed)
         try:
             allowed()
-            imap.login(config.username, config.password.get_secret_value())
+            # imaplib quotes only the password. The username allowlist excludes
+            # quoted-string escapes but permits atom specials such as percent.
+            imap.login(f'"{config.username}"', config.password.get_secret_value())
             allowed()
             validity, next_uid = imap.examine_epoch(config.folder)
             upper = next_uid - 1
@@ -152,15 +160,17 @@ class RogersMailbox:
             if expected is None or expected[0] != validity:
                 advance((validity, 0))  # Re-scan retained mail after a mailbox epoch change.
             assert expected is not None
-            # One old retry per pass reserves room for new mail even on a
-            # persistent DNS failure. Rotating retry_at provides fairness.
             with engine.read_conn(settings.db_path) as conn:
-                retry = repo.due_retries(conn, source_key, validity, int(self.clock()), 1)
-            if retry:
-                result = classify(imap, retry[0])
+                due = repo.due_retries(conn, source_key, validity, int(self.clock()), 1)
+
+            def retry_once():
+                if not due:
+                    return
+                uid = due.pop()
+                result = classify(imap, uid)
                 with engine.write_tx(settings.db_path) as conn:
                     allowed()
-                    repo.settle_retry(conn, source_key, expected, retry[0], **result)
+                    repo.settle_retry(conn, source_key, expected, uid, **result)
 
             remaining = BATCH
             for _ in range(WINDOWS_PER_POLL):
@@ -173,9 +183,13 @@ class RogersMailbox:
                 count = min(len(candidates), remaining)
                 for uid in candidates[:count]:
                     advance((validity, uid), **classify(imap, uid))
+                    # Commit fresh progress before a slow retry can exhaust the
+                    # poll. Give one due pointer a turn before the rest of the batch.
+                    retry_once()
                 if count == len(candidates) and (not count or candidates[count - 1] < high):
                     advance((validity, high))
                 remaining -= count
+            retry_once()  # Also retry when no new candidate was found.
         finally:
             # No FLAGS, STORE, CLOSE or EXPUNGE. End the read-only TLS session locally.
             with contextlib.suppress(OSError):

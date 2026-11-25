@@ -55,6 +55,13 @@ WHEN EXISTS (SELECT 1 FROM rogers_alert_reviews WHERE id=NEW.id)
      SELECT 1 FROM accounts a JOIN rogers_alerts r ON r.id=NEW.alert_id
      WHERE a.id=NEW.account_id AND a.is_active=1 AND a.kind='credit' AND a.currency=r.currency))
 BEGIN SELECT RAISE(ABORT,'invalid alert review'); END;
+
+-- The generated row ID is only reliable after INSERT. Keep the latest-id
+-- projection and the predecessor chain in the same strictly increasing order.
+CREATE TRIGGER rogers_alert_review_order AFTER INSERT ON rogers_alert_reviews
+WHEN NEW.id<=COALESCE(NEW.previous_id,0)
+BEGIN SELECT RAISE(ABORT,'invalid alert review order'); END;
+
 CREATE TRIGGER rogers_alert_review_period BEFORE INSERT ON rogers_alert_reviews
 WHEN EXISTS (SELECT 1 FROM rogers_alerts a JOIN v_period_policy_locked_months m
  ON m.month=substr(a.authorized_on,1,7) WHERE a.id=NEW.alert_id)

@@ -260,12 +260,96 @@ def test_eligible_second_signature_has_an_independent_guarded_resolution(signing
                      "guard", b"fixture._domainkey.example.invalid."]
 
 
-def test_resolver_timeout_is_retryable_and_content_free(signing_keys, fmt):
+def test_resolver_timeout_is_retryable_and_content_free(signing_keys, fmt, monkeypatch):
+    now = 100.0
+
     def unavailable(name, *, timeout):
+        nonlocal now
+        assert timeout == rogers_message._DNS_TIMEOUT
+        now += timeout
         raise dns.exception.Timeout("synthetic resolver text not for display")
 
+    monkeypatch.setattr(rogers_message, "time", SimpleNamespace(monotonic=lambda: now))
     with pytest.raises(MessageRetry, match="^dns_unavailable$"):
-        parse_message(_signed(_raw(), signing_keys[0]), fmt, dns_lookup=unavailable)
+        parse_message(_signed(_raw(), signing_keys[0]), fmt, dns_lookup=unavailable, deadline=116.0)
+
+
+def test_injected_dns_gets_remaining_poll_budget_for_each_selector(signing_keys, fmt, monkeypatch):
+    private_key, record = signing_keys
+    raw = _raw()
+    first = _signed(raw, private_key, selector=b"missing")[:-len(raw)]
+    now = 100.0
+    calls = []
+
+    def check():
+        nonlocal now
+        calls.append("guard")
+        now += 0.0625
+
+    def lookup(name, *, timeout):
+        nonlocal now
+        calls.append((name, timeout))
+        if name.startswith(b"missing."):
+            now += 0.125
+            raise dns.exception.Timeout
+        return record
+
+    monkeypatch.setattr(rogers_message, "time", SimpleNamespace(monotonic=lambda: now))
+    alert = parse_message(
+        first + _signed(raw, private_key), fmt, dns_lookup=lookup, check_allowed=check, deadline=100.5,
+    )
+    assert alert.amount_cents == -1234
+    assert calls == ["guard", (b"missing._domainkey.example.invalid.", 0.4375),
+                     "guard", (b"fixture._domainkey.example.invalid.", 0.25)]
+
+
+@pytest.mark.parametrize("system", [False, True], ids=["injected", "system"])
+def test_expired_poll_does_not_dispatch_dns(signing_keys, fmt, monkeypatch, system):
+    monkeypatch.setattr(rogers_message, "time", SimpleNamespace(monotonic=lambda: 100.0))
+    monkeypatch.setattr(rogers_message.dns.resolver, "Resolver", _never_lookup)
+    with pytest.raises(TimeoutError):
+        parse_message(_signed(_raw(), signing_keys[0]), fmt,
+                      dns_lookup=None if system else _never_lookup, deadline=100.0)
+
+
+@pytest.mark.parametrize("system", [False, True], ids=["injected", "system"])
+@pytest.mark.parametrize("has_answer", [False, True], ids=["resolver-timeout", "late-answer"])
+def test_dns_poll_expiry_is_not_a_selector_result(signing_keys, fmt, monkeypatch, system, has_answer):
+    private_key, record = signing_keys
+    now = 100.0
+    calls = []
+
+    def lookup(name, *, timeout):
+        nonlocal now
+        calls.append(timeout)
+        now += timeout
+        if not has_answer:
+            raise dns.exception.Timeout
+        return record
+
+    def udp(request, address, *, timeout, raise_on_truncation):
+        return _txt_response(request, lookup(request.question[0].name, timeout=timeout))
+
+    monkeypatch.setattr(rogers_message, "time", SimpleNamespace(monotonic=lambda: now))
+    monkeypatch.setattr(rogers_message.dns.resolver, "Resolver", lambda: SimpleNamespace(nameservers=["192.0.2.1"]))
+    monkeypatch.setattr(rogers_message.dns.query, "udp", udp)
+    monkeypatch.setattr(rogers_message.dns.query, "tcp", _never_lookup)
+    with pytest.raises(TimeoutError):
+        parse_message(_signed(_raw(), private_key), fmt, dns_lookup=None if system else lookup, deadline=100.25)
+    assert calls == [0.25]
+
+
+@pytest.mark.parametrize("service", [b"email:other", b"other : email", b"other:*", b"other:\r\n\temail"])
+def test_dkim_key_service_list_allows_email_or_wildcard(signing_keys, fmt, service):
+    private_key, record = signing_keys
+    alert = parse_message(_signed(_raw(), private_key), fmt, dns_lookup=_dns(record + b"; s=" + service, []))
+    assert alert.amount_cents == -1234
+
+
+@pytest.mark.parametrize("service", [b"tlsrpt:other", b"emails:other", b"email::other", b"other:\nemail"])
+def test_dkim_key_service_list_does_not_allow_unrelated_or_invalid_services(signing_keys, fmt, service):
+    private_key, record = signing_keys
+    _assert_rejected(_signed(_raw(), private_key), fmt, "unauthenticated", _dns(record + b"; s=" + service, []))
 
 
 def test_dkim_library_errors_do_not_log_message_or_key_material(signing_keys, fmt, caplog):
@@ -283,7 +367,8 @@ def test_policy_withdrawal_is_never_reclassified(signing_keys, fmt, withdrawal):
         raise stopped
 
     with pytest.raises(withdrawal) as error:
-        parse_message(_signed(_raw(), signing_keys[0]), fmt, dns_lookup=_never_lookup, check_allowed=check)
+        parse_message(_signed(_raw(), signing_keys[0]), fmt, dns_lookup=_never_lookup, check_allowed=check,
+                      deadline=rogers_message.time.monotonic() + 10)
     assert error.value is stopped
 
 
@@ -335,11 +420,13 @@ def test_system_dns_checks_policy_again_before_tcp_fallback(signing_keys, fmt, m
 
 
 @pytest.mark.parametrize("failure", ["udp_timeout", "tcp_timeout", "servfail"])
-def test_system_dns_uses_healthy_secondary_within_shared_budget(signing_keys, fmt, monkeypatch, failure):
+@pytest.mark.parametrize("poll_budget", [None, 0.25, 16.0], ids=["local", "poll-cap", "local-cap"])
+def test_system_dns_uses_healthy_secondary_within_shared_budget(signing_keys, fmt, monkeypatch, failure, poll_budget):
     private_key, record = signing_keys
     primary, secondary = "192.0.2.1", "192.0.2.2"
-    budget = rogers_message._DNS_TIMEOUT
-    now = 0.0
+    budget = min(rogers_message._DNS_TIMEOUT, poll_budget) if poll_budget is not None else rogers_message._DNS_TIMEOUT
+    now = 100.0
+    deadline = None if poll_budget is None else now + poll_budget
     calls = []
 
     def udp(request, address, *, timeout, raise_on_truncation):
@@ -371,7 +458,8 @@ def test_system_dns_uses_healthy_secondary_within_shared_budget(signing_keys, fm
     monkeypatch.setattr(rogers_message.dns.resolver, "Resolver", lambda: SimpleNamespace(nameservers=[primary, secondary]))
     monkeypatch.setattr(rogers_message.dns.query, "udp", udp)
     monkeypatch.setattr(rogers_message.dns.query, "tcp", tcp)
-    alert = parse_message(_signed(_raw(), private_key), fmt, check_allowed=lambda: calls.append("guard"))
+    alert = parse_message(_signed(_raw(), private_key), fmt, check_allowed=lambda: calls.append("guard"),
+                          deadline=deadline)
     assert alert.amount_cents == -1234
     tcp_attempt = ["guard", ("tcp", primary, budget * 3 / 8)] if failure == "tcp_timeout" else []
     secondary_budget = budget if failure == "servfail" else budget / 2

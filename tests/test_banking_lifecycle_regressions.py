@@ -204,6 +204,28 @@ def test_completed_repair_replay_reports_current_removed_state_without_http(bank
     assert calls == before
 
 
+def test_private_storage_rejects_nonregular_entries_without_waiting(tmp_path, monkeypatch):
+    from app.banking import secrets as storage
+
+    regular = tmp_path.resolve() / 'generated-private.json'
+    regular.write_text('generated-safe-value')
+    regular.chmod(0o600)
+    assert storage.private_read(regular) == 'generated-safe-value'
+
+    nonregular = regular.with_name('generated-pipe')
+    storage.os.mkfifo(nonregular, 0o600)
+    real_open = storage.os.open
+
+    def checked_open(path, flags, *args, **kwargs):
+        if path == nonregular:
+            assert flags & storage.os.O_NONBLOCK, 'a nonregular entry must never block the reader'
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(storage.os, 'open', checked_open)
+    with pytest.raises(BankingError, match='unsafe_private_permissions'):
+        storage.private_read(nonregular)
+
+
 @pytest.mark.parametrize('marker', ['directory', 'linked_file', 'ignored', 'bare'])
 def test_private_storage_refuses_any_git_ancestor_before_io(tmp_path, monkeypatch, marker):
     from app.banking.client import PlaidClient

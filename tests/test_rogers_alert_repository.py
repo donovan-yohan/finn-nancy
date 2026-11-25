@@ -86,6 +86,21 @@ def test_replace_cannot_rewrite_alert_or_review(empty_db):
                 VALUES(?,?,?,'dismiss','Changed')''', (review_id, alert_id, review_id))
 
 
+def test_review_chain_only_accepts_a_forward_extension(empty_db):
+    with engine.write_tx(empty_db) as conn:
+        key = 'b' * 64
+        alerts.advance(conn, key, None, (14, 1), alert=sample())
+        alert_id = alerts.list_alerts(conn, key, {})[0]['id']
+        conn.execute("INSERT INTO rogers_alert_reviews(id,alert_id,decision,reason) VALUES(10,?,'dismiss','First')",
+                     (alert_id,))
+        with pytest.raises(sqlite3.IntegrityError, match='invalid alert review order'):
+            conn.execute('''INSERT INTO rogers_alert_reviews(id,alert_id,previous_id,decision,reason)
+                VALUES(5,?,10,'dismiss','Out of order')''', (alert_id,))
+        assert alerts.decide(conn, alert_id, 10, 'dismiss', None, 'Second', key, {})['review_id'] > 10
+        assert [tuple(row) for row in conn.execute(
+            'SELECT previous_id, reason FROM rogers_alert_reviews ORDER BY id')] == [(None, 'First'), (10, 'Second')]
+
+
 def test_alert_cannot_block_close_or_bypass_closed_review_guard(empty_db):
     with engine.write_tx(empty_db) as conn:
         key = 'b' * 64
