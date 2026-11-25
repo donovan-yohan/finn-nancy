@@ -10,6 +10,9 @@
     link_outcome_uncertain_do_not_retry: 'Connection outcome is uncertain. Do not connect again. Check provider access before recovery.',
     revocation_uncertain_do_not_retry: 'Disconnection outcome is uncertain. Do not retry. Check access in Plaid or your bank.',
     stale_review_plan: 'This transaction changed. Reload and review it again.',
+    stale_alert_review: 'This alert was reviewed elsewhere. Reload to see its current review.',
+    alert_account_changed: 'The account mapping changed. Reload before confirming.',
+    invalid_alert_review: 'Enter a reason for this review.',
     current_member_consent_required: 'Current consent from this member is required.',
     egress_blocked: 'Bank connections are disabled by the current local-access policy.',
     candidate_acknowledgement_required: 'Review the equal-amount candidates and confirm this is a separate transaction.',
@@ -93,6 +96,20 @@
     });});
   }
   const decision = document.getElementById('banking-decision');
+  for (const form of root.querySelectorAll('.banking-alert')) {
+    form.addEventListener('submit', event => {event.preventDefault();
+      const action = event.submitter?.value;
+      if (action !== 'confirm' && action !== 'dismiss') return;
+      run(async () => {
+        await call('rogers-alert/' + form.dataset.alert, {
+          expected_review_id:Number(form.dataset.review), action,
+          account_id:action === 'confirm' ? Number(form.dataset.account) : null,
+          reason:String(new FormData(form).get('reason'))
+        });
+        reload();
+      });
+    });
+  }
   for (const form of document.querySelectorAll('.banking-receipt')) {
     form.addEventListener('submit', event => {event.preventDefault();run(async () => {
       const data = new FormData(form);

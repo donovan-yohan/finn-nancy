@@ -108,6 +108,7 @@ def test_031_conservative_legacy_and_copied_database_backfill(tmp_path):
         "041_bank_feed.sql",
         "042_household_onboarding.sql",
         "043_bank_link_checks.sql",
+        "044_rogers_alerts.sql",
     ]
     with engine.read_conn(copy) as conn:
         review = conn.execute("SELECT * FROM statement_reviews").fetchone()

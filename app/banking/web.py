@@ -6,9 +6,10 @@ import secrets
 import sqlite3
 import threading
 import time
+from typing import Literal
 
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -68,7 +69,14 @@ class Receipt(StrictBody):
     reason: str = Field(min_length=1,max_length=500)
 
 
-def build_router(service):
+class AlertReview(StrictBody):
+    expected_review_id: int = Field(ge=0, lt=2**63)
+    action: Literal['confirm', 'dismiss']
+    account_id: int | None = Field(default=None, gt=0, lt=2**63)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+def build_router(service, mailbox=None):
     router=APIRouter()
     sessions={}
     lock=threading.Lock()
@@ -158,8 +166,9 @@ def build_router(service):
         return rendered
 
     @router.get('/bank-feed',response_class=HTMLResponse)
-    def bank_feed(request: Request):
-        return page(request,'banking_feed.html',{'rows':service.feed(),'receipts':service.pending_receipts()})
+    def bank_feed(request: Request, alerts_before: int | None = Query(None, ge=1, lt=2**63)):
+        return page(request,'banking_feed.html',{'rows':service.feed(),'receipts':service.pending_receipts(),
+            'rogers':mailbox.page(alerts_before) if mailbox else None})
 
     @router.get('/bank-feed/{subject_id}',response_class=HTMLResponse)
     def review(request: Request,subject_id:int):
@@ -225,5 +234,13 @@ def build_router(service):
     @router.post('/connections/data/receipt')
     def receipt(body:Receipt,_=Depends(browser_write)):
         return safe(lambda:service.attach_receipt(**body.model_dump()))
+
+    if mailbox is not None:
+        @router.post('/connections/data/rogers-alert/{alert_id}')
+        def review_alert(alert_id: int, body: AlertReview, _=Depends(local_write)):
+            if not 0 < alert_id < 2**63:
+                raise HTTPException(404,'alert_not_found')
+            return JSONResponse(safe(lambda:mailbox.decide(alert_id, **body.model_dump())),
+                                headers={'Cache-Control':'no-store'})
 
     return router

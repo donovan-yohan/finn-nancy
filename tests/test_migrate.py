@@ -336,6 +336,7 @@ def test_flow_backfill_migrates_legacy_rows_without_guessing_and_is_repeatable(t
         "041_bank_feed.sql",
         "042_household_onboarding.sql",
         "043_bank_link_checks.sql",
+        "044_rogers_alerts.sql",
     ]
     with engine.read_conn(path) as conn:
         observed = {

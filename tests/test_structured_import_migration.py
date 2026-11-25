@@ -6,7 +6,7 @@ from app.db import engine, migrate
 def test_033_adds_versioned_import_and_multiset_identity_schema(tmp_path):
     path = tmp_path / "structured.sqlite"
     applied = migrate.init_db(path)
-    assert applied[-9:] == [
+    assert applied[-10:] == [
         "035_merchant_resolution_knowledge.sql",
         "036_period_policy.sql",
         "037_import_runs.sql",
@@ -16,6 +16,7 @@ def test_033_adds_versioned_import_and_multiset_identity_schema(tmp_path):
         "041_bank_feed.sql",
         "042_household_onboarding.sql",
         "043_bank_link_checks.sql",
+        "044_rogers_alerts.sql",
     ]
     assert migrate.init_db(path) == []
 

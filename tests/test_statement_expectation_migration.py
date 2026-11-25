@@ -471,6 +471,7 @@ def test_legacy_backfill_is_conservative_exact_and_audited(tmp_path):
         BANK_FEED_MIGRATION,
         "042_household_onboarding.sql",
         "043_bank_link_checks.sql",
+        "044_rogers_alerts.sql",
     ]
     assert migrate.init_db(path) == []
 
@@ -606,6 +607,7 @@ def test_pre_migration_copy_upgrades_to_same_truth_and_preserves_identity(tmp_pa
         BANK_FEED_MIGRATION,
         "042_household_onboarding.sql",
         "043_bank_link_checks.sql",
+        "044_rogers_alerts.sql",
     ]
     assert migrate.init_db(copied) == [
         MIGRATION,
@@ -622,6 +624,7 @@ def test_pre_migration_copy_upgrades_to_same_truth_and_preserves_identity(tmp_pa
         BANK_FEED_MIGRATION,
         "042_household_onboarding.sql",
         "043_bank_link_checks.sql",
+        "044_rogers_alerts.sql",
     ]
 
     def semantic_snapshot(path: Path) -> tuple[list[tuple], list[tuple], list[tuple]]:

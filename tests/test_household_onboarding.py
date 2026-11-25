@@ -94,7 +94,7 @@ def test_exact_seeds_retire_without_losing_history(tmp_path, monkeypatch, copied
         path = tmp_path / "generated-copy.sqlite"
         with sqlite3.connect(source) as src, sqlite3.connect(path) as dest:
             src.backup(dest)
-    assert migrate.init_db(path) == [MIGRATION, "043_bank_link_checks.sql"]
+    assert migrate.init_db(path) == [MIGRATION, "043_bank_link_checks.sql", "044_rogers_alerts.sql"]
     with engine.read_conn(path) as conn:
         member = dict(conn.execute("SELECT * FROM household_members WHERE id=1").fetchone())
         assert member["name"].startswith("Name required")
@@ -376,7 +376,7 @@ def test_copied_migration_preserves_booked_bank_associations(tmp_path, monkeypat
     copy = tmp_path / 'booked-copy.sqlite'
     with sqlite3.connect(path) as src, sqlite3.connect(copy) as dest:
         src.backup(dest)
-    assert migrate.init_db(copy) == [MIGRATION, "043_bank_link_checks.sql"]
+    assert migrate.init_db(copy) == [MIGRATION, "043_bank_link_checks.sql", "044_rogers_alerts.sql"]
     assert migrate.init_db(copy) == []
     with engine.read_conn(copy) as conn:
         assert {t: [tuple(r) for r in conn.execute(f'SELECT * FROM {t}')] for t in tables} == before
