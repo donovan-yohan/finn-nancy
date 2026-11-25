@@ -15,6 +15,7 @@ This map points contributors to the executable contracts before they change beha
 - `docs/HERMES_CHAT.md` and `app/hermes_chat/` — native Hermes chat bridge, authority and recovery contract.
 - `docs/NAMAKO_FINANCE.md` and `app/api/finance.py` — machine inspection and split-category proposals shared by HTTP, local CLI and MCP; keyed clients may also drive the existing decision/undo workflows.
 - `docs/BANKING.md` and `app/banking/` — opt-in Production Plaid transport, per-member consent, account bindings and immutable provider observations.
+- `docs/ROGERS_ALERTS.md` and `app/banking/rogers_mailbox.py` — opt-in forwarded card authorization evidence; no public receiver or ledger authority.
 
 ## Persistence and accounting
 

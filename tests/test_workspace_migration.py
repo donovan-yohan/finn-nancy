@@ -26,7 +26,8 @@ def test_category_and_banking_upgrade_preserve_copied_ledger(tmp_path, monkeypat
     with sqlite3.connect(source) as source_conn, sqlite3.connect(proof) as proof_conn:
         source_conn.backup(proof_conn)
     monkeypatch.setattr(migrate, 'MIGRATIONS_DIR', canonical)
-    assert migrate.init_db(proof) == ['040_category_operations.sql', '041_bank_feed.sql', '042_household_onboarding.sql', '043_bank_link_checks.sql']
+    assert migrate.init_db(proof) == ['040_category_operations.sql', '041_bank_feed.sql',
+                                     '042_household_onboarding.sql', '043_bank_link_checks.sql', '044_rogers_alerts.sql']
     assert migrate.init_db(proof) == []
     with engine.read_conn(proof) as conn:
         observed = {
@@ -40,5 +41,6 @@ def test_category_and_banking_upgrade_preserve_copied_ledger(tmp_path, monkeypat
         assert conn.execute('SELECT COUNT(*) FROM bank_observations').fetchone()[0] == 0
         assert conn.execute('SELECT COUNT(*) FROM bank_associations').fetchone()[0] == 0
         assert conn.execute('SELECT COUNT(*) FROM category_operations').fetchone()[0] == 0
+        assert conn.execute('SELECT COUNT(*) FROM rogers_alerts').fetchone()[0] == 0
     with engine.read_conn(source) as conn:
         assert conn.execute('SELECT filename FROM schema_migrations ORDER BY filename DESC LIMIT 1').fetchone()[0] == '039_month_spine_budgets.sql'

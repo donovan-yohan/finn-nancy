@@ -5,6 +5,7 @@
 <section class="banking" data-banking="feed">
   <header class="fn-page-head"><h1>Bank feed</h1><a class="btn btn-link" href="/connections">Connections</a></header>
   <p class="fn-muted banking-context">Review before recording. Bank feeds do not replace statements.</p>
+  {% if rogers or receipts %}<div id="banking-error" class="fn-feedback banking-notice" role="alert" hidden></div>{% endif %}
   <div class="banking-feed">
     {% for row in rows %}
     <details class="banking-row">
@@ -24,10 +25,51 @@
     <div class="banking-empty"><h2>No bank transactions yet</h2><p><a href="/connections">Connect and sync an account</a> to review its feed.</p></div>
     {% endfor %}
   </div>
+  {% if rogers %}
+  <section id="rogers-alerts" class="banking-late-receipts" aria-labelledby="rogers-alerts-title">
+    <h2 id="rogers-alerts-title">Rogers Bank alerts</h2>
+    <p class="fn-muted">Forwarded purchase authorizations. Import your statement to reconcile posted transactions.</p>
+    {% if rogers.outcome == 'paused' %}<p>Mailbox intake is paused.</p>
+    {% elif rogers.outcome == 'setup_required' %}<p>The operator needs to configure the alerts mailbox.</p>
+    {% elif rogers.outcome == 'retrying' %}<p>The last mailbox check did not finish. Finn Nancy will retry.</p>{% endif %}
+    {% if rogers.deferred_count %}<p>Messages waiting for signature verification: {{ rogers.deferred_count }}.</p>{% endif %}
+    {% if rogers.rejected_count %}<p>Messages not imported: {{ rogers.rejected_count }}. Check the dedicated mailbox and its forwarding rule.</p>{% endif %}
+    {% if rogers.conflict_count %}<p>Conflicting alert copies: {{ rogers.conflict_count }}. The first copy was kept. Check the mailbox before relying on the alert.</p>{% endif %}
+    <div class="banking-feed">
+      {% for alert in rogers.rows %}
+      <details class="banking-row" data-rogers-alert="{{ alert.id }}">
+        <summary>
+          <span class="banking-date">{{ alert.authorized_on }}</span>
+          <span class="banking-merchant">{{ alert.merchant }}<small>Rogers Bank · Card ending {{ alert.card_last4 }}</small></span>
+          <span class="banking-amount">{{ alert.amount_cents|money }} {{ alert.currency }}</span>
+          <span class="banking-row-state">{% if alert.decision == 'confirm' %}Account confirmed{% elif alert.decision == 'dismiss' %}Dismissed{% else %}Needs review{% endif %}<small>Not booked</small></span>
+        </summary>
+        <div class="banking-evidence">
+          {% if alert.decision %}<p>Last review{% if alert.reviewed_account %} for {{ alert.reviewed_account }}{% endif %}: {{ alert.reason }}</p>{% endif %}
+          <p>{% if alert.suggested_account %}Mapped account: {{ alert.suggested_account }}{% else %}No eligible account mapping for this card.{% endif %}</p>
+          {% if rogers.writable %}
+          <form class="banking-alert fn-editor" data-alert="{{ alert.id }}" data-review="{{ alert.review_id or 0 }}" data-account="{{ alert.suggested_account_id or '' }}">
+            <div class="fn-field"><label class="form-label" for="alert-reason-{{ alert.id }}">Review reason</label><textarea class="form-control" id="alert-reason-{{ alert.id }}" name="reason" required maxlength="500" rows="2"></textarea></div>
+            <div class="fn-actions">
+              {% if alert.suggested_account %}<button class="btn btn-primary" type="submit" value="confirm">Confirm account</button>{% endif %}
+              <button class="btn btn-outline-secondary" type="submit" value="dismiss">Dismiss alert</button>
+            </div>
+          </form>
+          {% endif %}
+        </div>
+      </details>
+      {% else %}<p class="banking-empty">No alerts on this page.</p>{% endfor %}
+    </div>
+    <div class="fn-actions">
+      {% if request.query_params.get('alerts_before') %}<a class="btn btn-link" href="/bank-feed#rogers-alerts">Latest alerts</a>{% endif %}
+      {% if rogers.older %}<a class="btn btn-link" href="/bank-feed?alerts_before={{ rogers.older }}#rogers-alerts">Older alerts</a>{% endif %}
+    </div>
+  </section>
+  {% endif %}
   {% if receipts %}
   <section class="banking-late-receipts" aria-labelledby="late-receipts-title">
     <h2 id="late-receipts-title">Late receipts</h2>
-    <div id="banking-error" class="fn-feedback banking-notice" role="alert" hidden></div>
+
     {% for r in receipts %}
     <form class="banking-receipt fn-editor" data-extraction="{{ r.extraction_id }}">
       <h3>{{ r.merchant }} · {{ r.amount_cents|money }}</h3>

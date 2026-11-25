@@ -95,6 +95,8 @@ class Settings(BaseSettings):
     )
     plaid_origin: str = ""
     plaid_completion_uri: str = ""
+    rogers_alerts_enabled: bool = False
+    rogers_alerts_config_file: Path | None = Field(default=None, repr=False)
 
     # Merchant research (FN-150 search adapter). Enabled by default so the
     # ingestion flow can look up descriptors it cannot otherwise explain, but

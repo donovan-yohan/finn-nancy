@@ -204,6 +204,58 @@ def test_completed_repair_replay_reports_current_removed_state_without_http(bank
     assert calls == before
 
 
+@pytest.mark.parametrize('entry', ['fifo', 'directory', 'failed_handoff'])
+def test_private_storage_closes_rejected_entries_without_waiting(tmp_path, monkeypatch, entry):
+    import errno
+
+    from app.banking import secrets as storage
+
+    regular = tmp_path.resolve() / 'generated-private.json'
+    regular.write_text('generated-safe-value')
+    regular.chmod(0o600)
+    assert storage.private_read(regular) == 'generated-safe-value'
+
+    target = regular.with_name('generated-rejected-entry')
+    if entry == 'fifo':
+        storage.os.mkfifo(target, 0o600)
+    elif entry == 'directory':
+        target.mkdir(mode=0o700)
+    else:
+        target = regular
+
+    real_open = storage.os.open
+    opened = []
+
+    def checked_open(path, flags, *args, **kwargs):
+        if path == target:
+            assert flags & storage.os.O_NONBLOCK, 'a nonregular entry must never block the reader'
+        fd = real_open(path, flags, *args, **kwargs)
+        if path == target:
+            opened.append(fd)
+        return fd
+
+    monkeypatch.setattr(storage.os, 'open', checked_open)
+    if entry == 'failed_handoff':
+        def fail_handoff(*args, **kwargs):
+            raise OSError('generated handoff failure')
+
+        monkeypatch.setattr(storage.os, 'fdopen', fail_handoff)
+
+    expected = 'private_store_unavailable' if entry == 'failed_handoff' else 'unsafe_private_permissions'
+    try:
+        with pytest.raises(BankingError, match=expected):
+            storage.private_read(target)
+    finally:
+        assert len(opened) == 1
+        try:
+            storage.os.fstat(opened[0])
+        except OSError as exc:
+            assert exc.errno == errno.EBADF
+        else:
+            storage.os.close(opened[0])
+            pytest.fail('private_read left its rejected descriptor open')
+
+
 @pytest.mark.parametrize('marker', ['directory', 'linked_file', 'ignored', 'bare'])
 def test_private_storage_refuses_any_git_ancestor_before_io(tmp_path, monkeypatch, marker):
     from app.banking.client import PlaidClient
