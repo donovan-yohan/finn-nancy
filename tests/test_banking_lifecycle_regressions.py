@@ -204,7 +204,10 @@ def test_completed_repair_replay_reports_current_removed_state_without_http(bank
     assert calls == before
 
 
-def test_private_storage_rejects_nonregular_entries_without_waiting(tmp_path, monkeypatch):
+@pytest.mark.parametrize('entry', ['fifo', 'directory', 'failed_handoff'])
+def test_private_storage_closes_rejected_entries_without_waiting(tmp_path, monkeypatch, entry):
+    import errno
+
     from app.banking import secrets as storage
 
     regular = tmp_path.resolve() / 'generated-private.json'
@@ -212,18 +215,45 @@ def test_private_storage_rejects_nonregular_entries_without_waiting(tmp_path, mo
     regular.chmod(0o600)
     assert storage.private_read(regular) == 'generated-safe-value'
 
-    nonregular = regular.with_name('generated-pipe')
-    storage.os.mkfifo(nonregular, 0o600)
+    target = regular.with_name('generated-rejected-entry')
+    if entry == 'fifo':
+        storage.os.mkfifo(target, 0o600)
+    elif entry == 'directory':
+        target.mkdir(mode=0o700)
+    else:
+        target = regular
+
     real_open = storage.os.open
+    opened = []
 
     def checked_open(path, flags, *args, **kwargs):
-        if path == nonregular:
+        if path == target:
             assert flags & storage.os.O_NONBLOCK, 'a nonregular entry must never block the reader'
-        return real_open(path, flags, *args, **kwargs)
+        fd = real_open(path, flags, *args, **kwargs)
+        if path == target:
+            opened.append(fd)
+        return fd
 
     monkeypatch.setattr(storage.os, 'open', checked_open)
-    with pytest.raises(BankingError, match='unsafe_private_permissions'):
-        storage.private_read(nonregular)
+    if entry == 'failed_handoff':
+        def fail_handoff(*args, **kwargs):
+            raise OSError('generated handoff failure')
+
+        monkeypatch.setattr(storage.os, 'fdopen', fail_handoff)
+
+    expected = 'private_store_unavailable' if entry == 'failed_handoff' else 'unsafe_private_permissions'
+    try:
+        with pytest.raises(BankingError, match=expected):
+            storage.private_read(target)
+    finally:
+        assert len(opened) == 1
+        try:
+            storage.os.fstat(opened[0])
+        except OSError as exc:
+            assert exc.errno == errno.EBADF
+        else:
+            storage.os.close(opened[0])
+            pytest.fail('private_read left its rejected descriptor open')
 
 
 @pytest.mark.parametrize('marker', ['directory', 'linked_file', 'ignored', 'bare'])

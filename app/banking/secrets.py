@@ -31,14 +31,18 @@ def private_read(path: Path) -> str:
     try:
         # Do not wait for a writer if the entry is no longer a regular file.
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(fd, 'r') as handle:
-            info = os.fstat(handle.fileno())
+        try:
+            info = os.fstat(fd)
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
                 raise BankingError('unsafe_private_permissions')
-            value = handle.read(65537)
+            # The raw descriptor remains ours even if creating the reader fails.
+            with os.fdopen(fd, 'r', closefd=False) as handle:
+                value = handle.read(65537)
             if len(value) > 65536:
                 raise BankingError('invalid_private_value')
             return value
+        finally:
+            os.close(fd)
     except OSError:
         raise BankingError('private_store_unavailable') from None
 
