@@ -14,7 +14,7 @@ Save a receipt, bring in account statements, and reconcile the evidence without 
 - **[Common-flow walkthroughs](docs/DEMO_WALKTHROUGHS.md)** — receipt capture, reconciliation, household setup, reports, and planning.
 - **[Disposable local sandbox](docs/SANDBOX.md)** — try the fictional household without touching a real ledger; see the [screenshot catalog](docs/MEDIA.md).
 - **[Optional Plaid setup](docs/PLAID_SETUP.md)** — Trial eligibility, Production access, and the application's actual Hosted Link configuration.
-- **[Optional Rogers Bank email alerts](docs/ROGERS_ALERTS.md)** — forward selected purchase alerts to a dedicated mailbox for review without booking transactions.
+- **[Optional email alerts](docs/EMAIL_ALERTS.md)** — forward selected card-purchase alerts to dedicated mailboxes for review without booking transactions.
 
 You can use Finn Nancy without Plaid or an assistant. Automatic document extraction needs a configured model; manual bookkeeping and structured statement import do not require a bank connection.
 
@@ -45,7 +45,7 @@ A bank-feed observation is not automatically a booked transaction or a complete 
 
 Your ledger and original documents live on the server you control. **The web UI has no app-level authentication.** Bind it to loopback; access from another device requires an authenticated, access-controlled private overlay with no public sharing. Do not expose it directly to a LAN or the Internet.
 
-Plaid, forwarded bank alerts, Telegram, merchant search, and remote model endpoints are optional external services. A configured model receives prompts and document-derived content; use a local endpoint for local inference. `STRICT_LOCAL_MODE=true` blocks Plaid, mailbox polling, merchant search, and Telegram, but does not make a remote model endpoint local. See the [configuration guide](docs/GETTING_STARTED.md#configuration) before enabling integrations.
+Plaid, forwarded email alerts, Telegram, merchant search, and remote model endpoints are optional external services. A configured model receives prompts and document-derived content; use a local endpoint for local inference. `STRICT_LOCAL_MODE=true` blocks Plaid, mailbox polling, merchant search, and Telegram, but does not make a remote model endpoint local. See the [configuration guide](docs/GETTING_STARTED.md#configuration) before enabling integrations.
 
 This is an experimental application. Review imported data, accounting decisions, categories, and assistant output. It has not been independently security audited.
 

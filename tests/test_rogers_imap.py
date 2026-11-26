@@ -2,6 +2,7 @@
 import socket
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
@@ -81,29 +82,34 @@ def test_revocation_fences_the_next_wire_boundary(monkeypatch, revoke_at):
 
 
 @pytest.mark.parametrize('deadline_budget', [0.2, 3])
-def test_stalled_dns_wait_is_bounded_without_resolver_backlog(monkeypatch, deadline_budget):
+def test_stalled_dns_wait_leaves_peer_host_free_without_same_host_backlog(monkeypatch, deadline_budget):
     calls = []
+    tcp = []
     resolving = threading.Event()
     release = threading.Event()
     blocked = []
 
-    def resolve(*args, **kwargs):
-        calls.append('dns')
+    def resolve(host, port, **kwargs):
+        calls.append((host, port))
         if len(calls) == 1:
             blocked.append(threading.current_thread())
             resolving.set()
-            assert release.wait(2), 'resolver fixture was not released'
-        return [_ADDRESS]
+            assert release.wait(3), 'resolver fixture was not released'
+        ip = '127.0.0.2' if host == 'peer.invalid' else '127.0.0.1'
+        return [(*_ADDRESS[:4], (ip, port))]
 
-    def connect_fixture(budget):
-        return transport.BoundedIMAP('fixture.invalid', 993, deadline=time.monotonic() + budget,
+    def connect_fixture(host, port, budget):
+        return transport.BoundedIMAP(host, port, deadline=time.monotonic() + budget,
                                      check_allowed=lambda: None)
 
-    def socket_forbidden(*args):
-        pytest.fail('no address from an abandoned DNS lookup may reach TCP')
+    def fake_connect(address):
+        tcp.append(address)
+        raise ConnectionRefusedError('fixture reached TCP')
 
     monkeypatch.setattr(socket, 'getaddrinfo', resolve)
-    monkeypatch.setattr(socket, 'socket', socket_forbidden)
+    monkeypatch.setattr(socket, 'socket', lambda *args: SimpleNamespace(
+        connect=fake_connect, settimeout=lambda _: None, close=lambda: None,
+    ))
     monkeypatch.setattr(transport, 'create_default_context', object)
     if deadline_budget > 1:
         monkeypatch.setattr(transport, '_CALL_TIMEOUT', 0.2)
@@ -112,7 +118,7 @@ def test_stalled_dns_wait_is_bounded_without_resolver_backlog(monkeypatch, deadl
 
     def first_poll():
         try:
-            connect_fixture(deadline_budget)
+            connect_fixture('fixture.invalid', 993, deadline_budget)
         except BaseException as exc:
             errors.append(exc)
         finally:
@@ -123,11 +129,16 @@ def test_stalled_dns_wait_is_bounded_without_resolver_backlog(monkeypatch, deadl
     try:
         assert resolving.wait(1)
         assert finished.wait(1), 'poll is still waiting on DNS beyond its deadline'
-        assert len(errors) == 1 and isinstance(errors[0], TimeoutError)
-        for _ in range(3):
-            with pytest.raises(TimeoutError):
-                connect_fixture(0.2)
-        assert calls == ['dns']
+        assert len(errors) == 1 and type(errors[0]) is TimeoutError
+        assert str(errors[0]) == 'mailbox_resolver_timeout'
+        assert not tcp
+        # Same DNS name across configuration/port changes still owns one slot.
+        for host, port in [('FIXTURE.invalid', 993), ('fixture.invalid.', 993), ('fixture.invalid', 1993)]:
+            with pytest.raises(TimeoutError, match='mailbox_resolver_busy'):
+                connect_fixture(host, port, 1)
+        with pytest.raises(ConnectionRefusedError, match='fixture reached TCP'):
+            connect_fixture('peer.invalid', 993, 1)
+        assert calls == [('fixture.invalid', 993), ('peer.invalid', 993)]
         assert blocked[0].is_alive()
     finally:
         release.set()
@@ -135,14 +146,52 @@ def test_stalled_dns_wait_is_bounded_without_resolver_backlog(monkeypatch, deadl
         if blocked:
             blocked[0].join(2)
     assert not blocked[0].is_alive()
+    assert tcp == [('127.0.0.2', 993)], 'late DNS completion must not reach TCP'
 
-    def socket_recovers(*args):
-        raise ConnectionRefusedError
+    with pytest.raises(ConnectionRefusedError, match='fixture reached TCP'):
+        connect_fixture('FIXTURE.invalid.', 1993, 1)
+    assert calls[-1] == ('FIXTURE.invalid.', 1993)
+    assert tcp == [('127.0.0.2', 993), ('127.0.0.1', 1993)]
 
-    monkeypatch.setattr(socket, 'socket', socket_recovers)
-    with pytest.raises(ConnectionRefusedError):
-        connect_fixture(1)
-    assert calls == ['dns', 'dns']
+
+def test_four_distinct_lookups_exhaust_global_capacity_until_a_worker_finishes(monkeypatch):
+    hosts = [f'fixture-{index}.invalid' for index in range(5)]
+    held = {host: (threading.Event(), threading.Event()) for host in hosts[:4]}
+    calls = []
+
+    def resolve(host, port, **kwargs):
+        calls.append(host)
+        if host in held:
+            started, release = held[host]
+            started.set()
+            assert release.wait(5), 'resolver fixture was not released'
+        return [_ADDRESS]
+
+    def lookup(host):
+        return transport._resolve(host, 993, time.monotonic() + 3, lambda: None)
+
+    monkeypatch.setattr(socket, 'getaddrinfo', resolve)
+    with ThreadPoolExecutor(max_workers=4) as callers:
+        pending = []
+        try:
+            for host, (started, _) in held.items():
+                result = callers.submit(lookup, host)
+                pending.append(result)
+                assert started.wait(1), f'{host} could not start while peer lookups were held'
+                assert not result.done()
+            with pytest.raises(TimeoutError, match='mailbox_resolver_busy'):
+                lookup(hosts[4])
+            assert calls == hosts[:4]
+
+            held[hosts[0]][1].set()
+            assert pending[0].result(timeout=1) == [_ADDRESS]
+            assert lookup(hosts[4]) == [_ADDRESS]
+            assert not any(result.done() for result in pending[1:])
+        finally:
+            for _, release in held.values():
+                release.set()
+    assert all(result.result() == [_ADDRESS] for result in pending)
+    assert calls == hosts  # Releasing capacity did not run the refused request.
 
 
 @pytest.mark.parametrize('guard', ['revoked', 'expired'])

@@ -27,7 +27,7 @@ Use a first-class reviewed feed subject, separate from statement lines. A corrob
 7. Changed/removed/superseded associated observations create durable review work while ledger history remains unchanged. Unresolved discrepancies block clean close but feed synchronization never satisfies statement expectations.
 8. Namako inspects and proposes categories for the canonical split through the shared machine interface, then may drive the existing approval/undo endpoints with the shared API key. The operator selected UI-equivalent workflow access, not an extra agent-only approval requirement. Ordinary evidence and period checks remain.
 
-The [Rogers Bank alerts](ROGERS_ALERTS.md) panel is supplemental authorization evidence, not a Plaid feed subject. Reviewing an email can confirm its mapped account or dismiss it with a reason. It cannot create or match a ledger transaction, clear an account, or satisfy a statement requirement.
+**Bank feed → [Email alerts](EMAIL_ALERTS.md)** shows supplemental card-authorization evidence, not Plaid feed subjects. Reviewing an alert can confirm its mapped account or dismiss it with a reason. It cannot create or match a ledger transaction, clear an account, or satisfy a statement requirement. The [legacy Rogers intake](ROGERS_ALERTS.md) uses the same review path and retains its saved progress when migrated with the same source identity.
 
 For the initial import into an existing ledger, follow [remote history reconciliation](INITIAL_RECONCILIATION.md): explicitly map existing accounts, stage available history, match overlap, book only reviewed missing activity, retain legacy-only history and leave ambiguity unresolved rather than double-booking.
 

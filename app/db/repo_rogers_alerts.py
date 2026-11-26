@@ -1,6 +1,8 @@
 """Email alert evidence and read-only mailbox progress. No ledger writers here."""
 from __future__ import annotations
 
+import json
+
 from ..banking.client import BankingError
 from . import repo_period_policy
 
@@ -82,21 +84,39 @@ def _record(conn, source_key, alert, rejected):
     return result
 
 
-def counts(conn, source_key):
-    row = conn.execute('''SELECT m.rejected_count,m.conflict_count,
-        (SELECT COUNT(*) FROM rogers_alert_retries r WHERE r.source_key=m.source_key AND r.uid_validity=m.uid_validity)
-            AS deferred_count FROM rogers_alert_mailboxes m WHERE m.source_key=?''', (source_key,)).fetchone()
-    return dict(row) if row is not None else {'rejected_count': 0, 'conflict_count': 0, 'deferred_count': 0}
+def counts(conn, source_key, *, scopes=None):
+    keys = tuple(scopes) if scopes is not None else (source_key,)
+    row = conn.execute('''SELECT COALESCE(SUM(m.rejected_count),0) AS rejected_count,
+        COALESCE(SUM(m.conflict_count),0) AS conflict_count,
+        COALESCE(SUM((SELECT COUNT(*) FROM rogers_alert_retries r
+          WHERE r.source_key=m.source_key AND r.uid_validity=m.uid_validity)),0) AS deferred_count
+        FROM rogers_alert_mailboxes m WHERE m.source_key IN (SELECT value FROM json_each(?))''',
+        (json.dumps(keys),)).fetchone()
+    return dict(row)
 
 
-def _account(conn, evidence, source_key, cards):
-    return conn.execute('''SELECT id,name FROM accounts
-        WHERE id=? AND currency=? AND kind='credit' AND is_active=1 AND EXISTS (
-          SELECT 1 FROM rogers_alert_occurrences WHERE alert_id=? AND source_key=?)''',
-        (cards.get(evidence['card_last4']), evidence['currency'], evidence['id'], source_key)).fetchone()
+def _review_scopes(source_key, cards, scopes):
+    if scopes is not None:
+        return scopes  # An explicit empty mapping retires all authority.
+    return {source_key: cards} if source_key is not None else {}
 
 
-def list_alerts(conn, source_key, cards, before_id=None):
+def _account(conn, evidence, scopes):
+    mappings = {scope: account_id for scope, cards in scopes.items()
+                if (account_id := cards.get(evidence['card_last4'])) is not None}
+    if not mappings:
+        return None
+    rows = conn.execute('''SELECT id,name FROM accounts
+        WHERE currency=? AND kind='credit' AND is_active=1 AND id IN (
+            SELECT c.value FROM json_each(?) c JOIN rogers_alert_occurrences o ON o.source_key=c.key
+            WHERE o.alert_id=?
+        ) LIMIT 2''', (evidence['currency'], json.dumps(mappings), evidence['id'])).fetchall()
+    # Repeated evidence for one account agrees; two eligible accounts are ambiguous.
+    return rows[0] if len(rows) == 1 else None
+
+
+def list_alerts(conn, source_key, cards, before_id=None, *, scopes=None):
+    scopes = _review_scopes(source_key, cards, scopes)
     rows = conn.execute('''SELECT e.id,e.authorized_on,e.card_last4,e.amount_cents,e.currency,e.merchant,
         r.id AS review_id,r.decision,r.reason,a.name AS reviewed_account
         FROM rogers_alerts e LEFT JOIN rogers_alert_reviews r ON r.id=(
@@ -105,7 +125,7 @@ def list_alerts(conn, source_key, cards, before_id=None):
         WHERE (? IS NULL OR e.id<?) ORDER BY e.id DESC LIMIT ?''', (before_id, before_id, PAGE_SIZE + 1))
     result = []
     for row in rows:
-        account = _account(conn, row, source_key, cards)
+        account = _account(conn, row, scopes)
         item = dict(row)
         item['suggested_account_id'] = account['id'] if account else None
         item['suggested_account'] = account['name'] if account else None
@@ -113,7 +133,7 @@ def list_alerts(conn, source_key, cards, before_id=None):
     return result
 
 
-def decide(conn, alert_id, expected_review_id, action, account_id, reason, source_key, cards):
+def decide(conn, alert_id, expected_review_id, action, account_id, reason, source_key, cards, *, scopes=None):
     if not reason.strip() or len(reason) > 500 or action not in {'confirm', 'dismiss'}:
         raise BankingError('invalid_alert_review')
     if (action == 'confirm') != (account_id is not None):
@@ -125,14 +145,15 @@ def decide(conn, alert_id, expected_review_id, action, account_id, reason, sourc
     latest = conn.execute('''SELECT id,previous_id,decision,account_id,reason FROM rogers_alert_reviews
         WHERE alert_id=? ORDER BY id DESC LIMIT 1''', (alert_id,)).fetchone()
     previous_id = expected_review_id or None
-    if latest and tuple(latest)[1:] == (previous_id, action, account_id, reason):
-        return {'status': action, 'review_id': latest['id']}
-    if expected_review_id != (latest['id'] if latest else 0):
+    replay_id = latest['id'] if latest and tuple(latest)[1:] == (previous_id, action, account_id, reason) else None
+    if replay_id is None and expected_review_id != (latest['id'] if latest else 0):
         raise BankingError('stale_alert_review')
     if action == 'confirm':
-        account = _account(conn, row, source_key, cards)
+        account = _account(conn, row, _review_scopes(source_key, cards, scopes))
         if account is None or account['id'] != account_id:
             raise BankingError('alert_account_changed')
+    if replay_id is not None:
+        return {'status': action, 'review_id': replay_id}
     repo_period_policy.guard_months(conn, [row['authorized_on'][:7]])
     ident = conn.execute('''INSERT INTO rogers_alert_reviews(alert_id,previous_id,decision,account_id,reason)
         VALUES (?,?,?,?,?)''', (alert_id, previous_id, action, account_id, reason)).lastrowid

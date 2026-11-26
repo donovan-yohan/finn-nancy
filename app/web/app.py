@@ -52,7 +52,8 @@ async def lifespan(app: FastAPI):
     banking = getattr(app.state, 'banking_service', None)
     link_task = asyncio.create_task(run_link_completion(stop, banking)) if banking is not None else None
     mailbox = app.state.rogers_mailbox
-    mail_task = asyncio.create_task(run_mailbox(stop, mailbox)) if settings.rogers_alerts_enabled else None
+    mail_task = (asyncio.create_task(run_mailbox(stop, mailbox))
+                 if settings.email_alerts_enabled or settings.rogers_alerts_enabled else None)
     telegram_stop = asyncio.Event()
     telegram_task = None
     telegram_runtime = telegram.TelegramRuntimeState(
