@@ -173,13 +173,17 @@ def await_check(box):
     assert box.outcome == 'checked'
 
 
-def test_tls_mailbox_to_normal_feed_and_review(monkeypatch, tmp_path, empty_db, wire):
+@pytest.mark.parametrize('generic', [False, True])
+def test_tls_mailbox_to_normal_feed_and_review(monkeypatch, tmp_path, empty_db, wire, generic):
     from app.web import app as web_module
 
     port, messages, parse, _ = wire
     account, path = configure(tmp_path, empty_db, port)
-    for name, value in {'DB_PATH': empty_db, 'DATA_DIR': str(tmp_path), 'ROGERS_ALERTS_ENABLED': 'true',
-                        'ROGERS_ALERTS_CONFIG_FILE': str(path), 'STRICT_LOCAL_MODE': 'false',
+    prefix = 'EMAIL_ALERTS' if generic else 'ROGERS_ALERTS'
+    if generic:
+        convert_email_alerts(path)
+    for name, value in {'DB_PATH': empty_db, 'DATA_DIR': str(tmp_path), f'{prefix}_ENABLED': 'true',
+                        f'{prefix}_CONFIG_FILE': str(path), 'STRICT_LOCAL_MODE': 'false',
                         'PLAID_ORIGIN': ORIGIN}.items():
         monkeypatch.setenv(name, value)
     get_settings.cache_clear()
@@ -197,7 +201,7 @@ def test_tls_mailbox_to_normal_feed_and_review(monkeypatch, tmp_path, empty_db, 
             view = client.get('/bank-feed')
             assert view.status_code == 200 and view.headers['cache-control'] == 'no-store'
             assert view.text.count('Example Store') == 2
-            assert 'Not booked' in view.text and 'Messages not imported: 2' in view.text
+            assert 'Email alerts' in view.text and 'Not booked' in view.text and 'Intake rejections: 2' in view.text
             assert 'generated mailbox password' not in view.text and SENDER not in view.text
             state = box.page()
             mapped = next(row for row in state['rows'] if row['card_last4'] == '0123')
@@ -217,6 +221,158 @@ def test_tls_mailbox_to_normal_feed_and_review(monkeypatch, tmp_path, empty_db, 
         get_settings.cache_clear()
     assert messages.calls.count(b'UID FETCH') == 5
     assert set(messages.calls) == {b'CAPABILITY', b'LOGIN', b'EXAMINE', b'UID SEARCH', b'UID FETCH'}
+
+
+def convert_email_alerts(path, extra=None):
+    source = json.loads(path.read_text())
+    del source['consent_version']
+    source.update(transport='imap', kind='card_purchase')
+    intakes = [source]
+    if extra is not None:
+        intakes.append(source | extra(source))
+    path.write_text(json.dumps({'consent_version': 'forwarded-email-alerts-v1', 'intakes': intakes}))
+
+
+def generic_settings(empty_db, path, **overrides):
+    return app_settings(empty_db, None, **({'rogers_alerts_enabled': False, 'email_alerts_enabled': True,
+                        'email_alerts_config_file': path} | overrides))
+
+
+def test_email_alerts_file_runs_multiple_qualified_intakes(tmp_path, empty_db, wire):
+    port, messages, parse, signed = wire
+    first, path = configure(tmp_path, empty_db, port)
+    with engine.write_tx(empty_db) as conn:
+        second = conn.execute("INSERT INTO accounts(name,kind,currency) VALUES('Second card','credit','CAD')").lastrowid
+    second_recipient = 'other@example.invalid'
+    convert_email_alerts(path, lambda source: {'format': source['format'] | {'recipient': second_recipient},
+                                              'card_accounts': {'0123': second}})
+    messages.items = {1: signed(id='first-intake'), 2: signed(id='second-intake', recipient=second_recipient)}
+    settings = generic_settings(empty_db, path)
+    box = mailbox.RogersMailbox(lambda: settings, parse=parse)
+    box.poll_safely()
+    assert box.outcome == 'checked'
+    page = box.page()
+    assert page is not None
+    assert [row['suggested_account_id'] for row in page['rows']] == [second, first]
+    with engine.read_conn(empty_db) as conn:
+        cursors = conn.execute('SELECT uid_validity,last_uid FROM rogers_alert_mailboxes ORDER BY source_key').fetchall()
+        assert [tuple(row) for row in cursors] == [(41, 2), (41, 2)]
+        assert conn.execute('SELECT COUNT(*) FROM transactions').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('invalid', ['duplicate', 'unsupported_kind', 'unsupported_transport', 'mixed_settings',
+                                     'strict_local', 'read_only', 'no_consent'])
+def test_email_alerts_rejects_ambiguous_or_unapproved_configs_before_network(tmp_path, empty_db, invalid):
+    _, path = configure(tmp_path, empty_db, 993)
+    overrides = {}
+    extra = None
+    if invalid == 'duplicate':
+        extra = lambda intake: {'format': intake['format'] | {'subject': 'Another approval'}}
+    elif invalid == 'unsupported_kind':
+        extra = lambda _: {'kind': 'receipt'}
+    elif invalid == 'unsupported_transport':
+        extra = lambda _: {'transport': 'gmail_api'}
+    elif invalid == 'mixed_settings':
+        overrides['rogers_alerts_config_file'] = path
+    elif invalid == 'strict_local':
+        overrides['strict_local_mode'] = True
+    elif invalid == 'read_only':
+        overrides['read_only'] = True
+    convert_email_alerts(path, extra)
+    if invalid == 'no_consent':
+        data = json.loads(path.read_text())
+        del data['consent_version']
+        path.write_text(json.dumps(data))
+    settings = generic_settings(empty_db, path, **overrides)
+    box = mailbox.RogersMailbox(lambda: settings, connect=lambda *a, **k: pytest.fail('unexpected dispatch'))
+    box.poll_safely()
+    assert box.outcome == ('mailbox_disabled' if invalid in {'strict_local', 'read_only'} else 'setup_required')
+
+
+def test_generic_email_alerts_failure_of_one_intake_does_not_block_peer(tmp_path, empty_db, wire):
+    port, messages, parse, signed = wire
+    account, path = configure(tmp_path, empty_db, port, host='offline.example.invalid')
+    convert_email_alerts(path, lambda _: {'host': 'localhost'})
+    messages.items = {1: signed(id='available')}
+    settings = generic_settings(empty_db, path)
+    calls = []
+
+    def connect(host, *args, **kwargs):
+        calls.append(host)
+        if host == 'offline.example.invalid':
+            raise TimeoutError
+        return rogers_imap.BoundedIMAP(host, *args, **kwargs)
+
+    box = mailbox.RogersMailbox(lambda: settings, connect=connect, parse=parse)
+    box.poll_safely()
+    assert calls == ['offline.example.invalid', 'localhost']
+    assert box.outcome == 'retrying'
+    page = box.page()
+    assert page is not None and [row['suggested_account_id'] for row in page['rows']] == [account]
+
+
+@pytest.mark.parametrize('generic', [False, True])
+def test_duplicate_card_suffix_in_private_json_never_dispatches(tmp_path, empty_db, generic):
+    account, path = configure(tmp_path, empty_db, 993)
+    if generic:
+        convert_email_alerts(path)
+    text = path.read_text()
+    original = f'"0123": {account}'
+    assert text.count(original) == 1
+    path.write_text(text.replace(original, original + ', "0123": 123'))
+    settings = generic_settings(empty_db, path) if generic else app_settings(empty_db, path)
+    box = mailbox.RogersMailbox(lambda: settings, connect=lambda *a, **k: pytest.fail('ambiguous intake dispatched'))
+    box.poll_safely()
+    assert box.outcome == 'setup_required'
+
+
+def test_converting_legacy_file_preserves_cursor_and_retries(tmp_path, empty_db, wire):
+    port, messages, parse, signed = wire
+    account, path = configure(tmp_path, empty_db, port)
+    source = mailbox.MailboxConfig.model_validate_json(path.read_text()).source_key
+    messages.items = {1: signed(id='retained'), 2: signed(id='retry')}
+
+    def defer_second(raw, fmt, **kwargs):
+        if raw == messages.items[2]:
+            raise MessageRetry()
+        return parse(raw, fmt, **kwargs)
+
+    box = mailbox.RogersMailbox(lambda: app_settings(empty_db, path), parse=defer_second, clock=lambda: 100)
+    box.poll_safely()
+    assert box.outcome == 'checked'
+    convert_email_alerts(path)
+    before = messages.calls.count(b'UID SEARCH')
+    box = mailbox.RogersMailbox(lambda: generic_settings(empty_db, path), parse=parse,
+                                clock=lambda: 100 + mailbox.RETRY_SECONDS)
+    box.poll_safely()
+    assert box.outcome == 'checked'
+    assert messages.calls.count(b'UID SEARCH') == before
+    page = box.page()
+    assert page is not None and [row['suggested_account_id'] for row in page['rows']] == [account, account]
+    with engine.read_conn(empty_db) as conn:
+        assert repo.cursor(conn, source) == (41, 2)
+        assert repo.counts(conn, source)['deferred_count'] == 0
+
+
+def test_removing_shared_consent_stops_current_commit_and_remaining_intakes(tmp_path, empty_db, wire):
+    port, messages, parse, signed = wire
+    _, path = configure(tmp_path, empty_db, port)
+    convert_email_alerts(path, lambda intake: {'format': intake['format'] | {'recipient': 'other@example.invalid'}})
+    messages.items = {1: signed(id='not-committed')}
+    settings = generic_settings(empty_db, path)
+
+    def revoke(raw, fmt, **kwargs):
+        alert = parse(raw, fmt, **kwargs)
+        path.unlink()
+        return alert
+
+    box = mailbox.RogersMailbox(lambda: settings, parse=revoke)
+    box.poll_safely()
+    assert box.outcome == 'retrying'
+    assert messages.calls.count(b'LOGIN') == 1
+    with engine.read_conn(empty_db) as conn:
+        assert conn.execute('SELECT COUNT(*) FROM rogers_alerts').fetchone()[0] == 0
+        assert [row[0] for row in conn.execute('SELECT last_uid FROM rogers_alert_mailboxes')] == [0]
 
 
 def test_login_quotes_configured_username_on_wire(tmp_path, empty_db, wire):

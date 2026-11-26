@@ -27,20 +27,20 @@
   </div>
   {% if rogers %}
   <section id="rogers-alerts" class="banking-late-receipts" aria-labelledby="rogers-alerts-title">
-    <h2 id="rogers-alerts-title">Rogers Bank alerts</h2>
+    <h2 id="rogers-alerts-title">Email alerts</h2>
     <p class="fn-muted">Forwarded purchase authorizations. Import your statement to reconcile posted transactions.</p>
     {% if rogers.outcome == 'paused' %}<p>Mailbox intake is paused.</p>
     {% elif rogers.outcome == 'setup_required' %}<p>The operator needs to configure the alerts mailbox.</p>
     {% elif rogers.outcome == 'retrying' %}<p>The last mailbox check did not finish. Finn Nancy will retry.</p>{% endif %}
     {% if rogers.deferred_count %}<p>Messages waiting for signature verification: {{ rogers.deferred_count }}.</p>{% endif %}
-    {% if rogers.rejected_count %}<p>Messages not imported: {{ rogers.rejected_count }}. Check the dedicated mailbox and its forwarding rule.</p>{% endif %}
+    {% if rogers.rejected_count %}<p>Intake rejections: {{ rogers.rejected_count }}. A message rejected by one intake may be accepted by another.</p>{% endif %}
     {% if rogers.conflict_count %}<p>Conflicting alert copies: {{ rogers.conflict_count }}. The first copy was kept. Check the mailbox before relying on the alert.</p>{% endif %}
     <div class="banking-feed">
       {% for alert in rogers.rows %}
       <details class="banking-row" data-rogers-alert="{{ alert.id }}">
         <summary>
           <span class="banking-date">{{ alert.authorized_on }}</span>
-          <span class="banking-merchant">{{ alert.merchant }}<small>Rogers Bank · Card ending {{ alert.card_last4 }}</small></span>
+          <span class="banking-merchant">{{ alert.merchant }}<small>Card ending {{ alert.card_last4 }}</small></span>
           <span class="banking-amount">{{ alert.amount_cents|money }} {{ alert.currency }}</span>
           <span class="banking-row-state">{% if alert.decision == 'confirm' %}Account confirmed{% elif alert.decision == 'dismiss' %}Dismissed{% else %}Needs review{% endif %}<small>Not booked</small></span>
         </summary>

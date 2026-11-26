@@ -15,9 +15,11 @@ from .rogers_message import MAX_MESSAGE_BYTES
 MAX_UID = 2**32 - 1
 WIRE_LIMIT = 3 * 1024 * 1024
 _CALL_TIMEOUT = 4
-# System getaddrinfo cannot be interrupted. Admit at most one lookup and never
-# queue another behind it; a timed-out lookup cannot initiate a connection.
-_DNS_SLOT = threading.Lock()
+# System getaddrinfo cannot be interrupted. Cap outstanding work across config
+# changes, without letting one stuck host occupy every slot or queueing lookups.
+_DNS_LIMIT = 4
+_DNS_LOCK = threading.Lock()
+_DNS_HOSTS: set[str] = set()
 _DATA_FRAME = re.compile(rb'\* (?:(\d+) )?(FETCH|SEARCH)(?![A-Z-])')
 _MISFRAMED_CODE = re.compile(rb'[^ ]+ (?:OK|NO|BAD) \[(?:FETCH|SEARCH)(?=[ \]])')
 _FETCH_START = re.compile(rb'([1-9][0-9]{0,9}) \(')
@@ -51,11 +53,16 @@ def _check_frame(line):
 
 
 def _resolve(host, port, deadline, check_allowed):
-    if not _DNS_SLOT.acquire(blocking=False):
-        raise TimeoutError('mailbox_resolver_busy')
+    # Key by DNS name alone, not port or intake. Keep the configured spelling
+    # for getaddrinfo and TLS; the key is only for admission.
+    key = host.lower().rstrip('.')
     done = threading.Event()
     result = []
     errors = []
+
+    def release():
+        with _DNS_LOCK:
+            _DNS_HOSTS.remove(key)
 
     def lookup():
         try:
@@ -66,14 +73,20 @@ def _resolve(host, port, deadline, check_allowed):
         except Exception as exc:
             errors.append(exc)
         finally:
-            _DNS_SLOT.release()
+            release()
             done.set()
 
+    with _DNS_LOCK:
+        if key in _DNS_HOSTS or len(_DNS_HOSTS) >= _DNS_LIMIT:
+            raise TimeoutError('mailbox_resolver_busy')
+        _DNS_HOSTS.add(key)
     try:
         threading.Thread(target=lookup, name='rogers-imap-dns', daemon=True).start()
-    except BaseException:
-        _DNS_SLOT.release()
+    except Exception:
+        release()
         raise
+    # Only the waiting caller can use the address list. Timing out does not
+    # release the reservation; the worker still owns it until it finishes.
     left = deadline - time.monotonic()
     if left <= 0 or not done.wait(left) or time.monotonic() >= deadline:
         raise TimeoutError('mailbox_resolver_timeout')

@@ -71,6 +71,109 @@ def test_verified_duplicate_retains_one_alert_across_mailbox_migration(empty_db)
         assert len(rows) == 1 and rows[0]['suggested_account_id'] == account
 
 
+def test_multi_scope_confirmation_requires_an_occurrence_from_the_mapped_scope(empty_db):
+    with engine.write_tx(empty_db) as conn:
+        account = conn.execute("INSERT INTO accounts(name,kind,currency) VALUES ('Example card','credit','CAD')").lastrowid
+        first, second = 'b' * 64, 'd' * 64
+        alerts.advance(conn, first, None, (14, 4), alert=sample())
+        scopes = {first: {}, second: {'0123': account}}
+        row, = alerts.list_alerts(conn, None, {}, scopes=scopes)
+        assert row['suggested_account_id'] is None
+        with pytest.raises(BankingError, match='alert_account_changed'):
+            alerts.decide(conn, row['id'], 0, 'confirm', account, 'Checked card', None, {}, scopes=scopes)
+        assert alerts.advance(conn, second, None, (20, 1), alert=sample()) == 'duplicate'
+        copy, = alerts.list_alerts(conn, None, {}, scopes=scopes)
+        assert copy['id'] == row['id'] and copy['suggested_account_id'] == account
+        decision = alerts.decide(conn, row['id'], 0, 'confirm', account, 'Checked card', None, {}, scopes=scopes)
+        reviewed, = alerts.list_alerts(conn, None, {}, scopes=scopes)
+        assert (reviewed['review_id'], reviewed['decision'], reviewed['reviewed_account']) == (
+            decision['review_id'], 'confirm', 'Example card')
+
+
+def test_multi_scope_copies_must_agree_on_one_eligible_account(empty_db):
+    with engine.write_tx(empty_db) as conn:
+        account = conn.execute("INSERT INTO accounts(name,kind,currency) VALUES ('Example card','credit','CAD')").lastrowid
+        other = conn.execute("INSERT INTO accounts(name,kind,currency) VALUES ('Other card','credit','CAD')").lastrowid
+        first, second = 'b' * 64, 'd' * 64
+        alerts.advance(conn, first, None, (14, 4), alert=sample())
+        alerts.advance(conn, second, None, (20, 1), alert=sample())
+        conflicting = {first: {'0123': account}, second: {'0123': other}}
+        row, = alerts.list_alerts(conn, None, {}, scopes=conflicting)
+        assert (row['suggested_account_id'], row['suggested_account']) == (None, None)
+        for target in (account, other):
+            with pytest.raises(BankingError, match='alert_account_changed'):
+                alerts.decide(conn, row['id'], 0, 'confirm', target, 'Checked card', None, {}, scopes=conflicting)
+        assert conn.execute('SELECT COUNT(*) FROM rogers_alert_reviews').fetchone()[0] == 0
+
+        remaining, = alerts.list_alerts(conn, None, {}, scopes={second: {'0123': other}})
+        assert remaining['suggested_account_id'] == other
+        agreed = {first: {'0123': account}, second: {'0123': account}}
+        copy, = alerts.list_alerts(conn, None, {}, scopes=agreed)
+        assert (copy['id'], copy['suggested_account_id'], copy['suggested_account']) == (
+            row['id'], account, 'Example card')
+        review = alerts.decide(conn, row['id'], 0, 'confirm', account, 'Checked card', None, {}, scopes=agreed)
+        assert review['status'] == 'confirm'
+
+
+@pytest.mark.parametrize(('kind', 'currency', 'is_active'), [
+    ('credit', 'CAD', 0), ('credit', 'USD', 1), ('chequing', 'CAD', 1),
+])
+def test_multi_scope_ignores_ineligible_accounts(empty_db, kind, currency, is_active):
+    with engine.write_tx(empty_db) as conn:
+        account = conn.execute("INSERT INTO accounts(name,kind,currency) VALUES ('Example card','credit','CAD')").lastrowid
+        ineligible = conn.execute("INSERT INTO accounts(name,kind,currency,is_active) VALUES ('Ineligible',?,?,?)",
+                                 (kind, currency, is_active)).lastrowid
+        first, second = 'b' * 64, 'd' * 64
+        alerts.advance(conn, first, None, (14, 4), alert=sample())
+        alerts.advance(conn, second, None, (20, 1), alert=sample())
+        scopes = {first: {'0123': ineligible}, second: {'0123': account}}
+        row, = alerts.list_alerts(conn, None, {}, scopes=scopes)
+        assert row['suggested_account_id'] == account
+        review = alerts.decide(conn, row['id'], 0, 'confirm', account, 'Checked card', None, {}, scopes=scopes)
+        assert review['status'] == 'confirm'
+
+
+def test_multi_scope_retirement_preserves_history_without_granting_authority(empty_db):
+    with engine.write_tx(empty_db) as conn:
+        account = conn.execute("INSERT INTO accounts(name,kind,currency) VALUES ('Example card','credit','CAD')").lastrowid
+        retired = 'b' * 64
+        cards = {'0123': account}
+        alerts.advance(conn, retired, None, (14, 4), alert=sample())
+        initial, = alerts.list_alerts(conn, retired, cards)
+        review = alerts.decide(conn, initial['id'], 0, 'confirm', account, 'Checked card', retired, cards)
+        row, = alerts.list_alerts(conn, retired, cards, scopes={})
+        assert (row['id'], row['review_id'], row['decision'], row['suggested_account_id']) == (
+            initial['id'], review['review_id'], 'confirm', None)
+        with pytest.raises(BankingError, match='alert_account_changed'):
+            alerts.decide(conn, row['id'], 0, 'confirm', account, 'Checked card', retired, cards, scopes={})
+        with pytest.raises(BankingError, match='alert_account_changed'):
+            alerts.decide(conn, row['id'], review['review_id'], 'confirm', account, 'Checked again', retired, cards,
+                          scopes={})
+        assert alerts.decide(conn, row['id'], review['review_id'], 'dismiss', None, 'No longer needed', retired, cards,
+                             scopes={})['status'] == 'dismiss'
+
+
+def test_multi_scope_counts_include_only_configured_mailboxes(empty_db):
+    with engine.write_tx(empty_db) as conn:
+        first, second, retired, unseen = ('b' * 64, 'd' * 64, 'e' * 64, 'f' * 64)
+        alerts.advance(conn, first, None, (14, 1), alert=sample())
+        alerts.advance(conn, first, (14, 1), (14, 2), rejected=True)
+        alerts.advance(conn, first, (14, 2), (14, 3), retry_at=70)
+        alerts.advance(conn, second, None, (20, 1), alert=sample(merchant='Different'))
+        alerts.advance(conn, second, (20, 1), (20, 2), rejected=True)
+        alerts.advance(conn, second, (20, 2), (20, 3), rejected=True)
+        alerts.advance(conn, second, (20, 3), (20, 4), retry_at=70)
+        alerts.advance(conn, retired, None, (25, 1), alert=sample(merchant='Different'))
+        alerts.advance(conn, retired, (25, 1), (25, 2), rejected=True)
+        alerts.advance(conn, retired, (25, 2), (25, 3), retry_at=70)
+        assert alerts.counts(conn, None, scopes={first: {}, second: {}, unseen: {}}) == {
+            'rejected_count': 3, 'conflict_count': 1, 'deferred_count': 2}
+        assert alerts.counts(conn, first) == {'rejected_count': 1, 'conflict_count': 0, 'deferred_count': 1}
+        assert alerts.counts(conn, first, scopes={}) == {'rejected_count': 0, 'conflict_count': 0, 'deferred_count': 0}
+        alerts.advance(conn, second, (20, 4), (21, 1))
+        assert alerts.counts(conn, None, scopes={first: {}, second: {}})['deferred_count'] == 1
+
+
 def test_replace_cannot_rewrite_alert_or_review(empty_db):
     with engine.write_tx(empty_db) as conn:
         key = 'b' * 64

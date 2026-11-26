@@ -12,7 +12,7 @@ import time
 from collections.abc import Callable
 from typing import Literal, TypedDict
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from ..config import Settings, get_settings
 from ..db import engine, repo_rogers_alerts as repo
@@ -30,10 +30,18 @@ WINDOWS_PER_POLL = 4
 RETRY_SECONDS = 120
 
 
-class MailboxConfig(BaseModel):
+def _unique_object(pairs):
+    result = {}
+    for name, value in pairs:
+        if name in result:
+            raise ValueError('duplicate JSON key')
+        result[name] = value
+    return result
+
+
+class _CardPurchaseMailbox(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True, frozen=True, hide_input_in_errors=True)
 
-    consent_version: Literal['rogers-forwarded-alerts-v1']
     host: str = Field(pattern=r'^[a-zA-Z0-9][a-zA-Z0-9.\-]{0,252}$')
     port: int = Field(default=993, ge=1, le=65535)
     username: str = Field(pattern=r'^[A-Za-z0-9._+@%\-]{1,254}$', repr=False)
@@ -66,6 +74,28 @@ class MailboxConfig(BaseModel):
         return hashlib.sha256(identity.encode()).hexdigest()
 
 
+class MailboxConfig(_CardPurchaseMailbox):
+    consent_version: Literal['rogers-forwarded-alerts-v1']
+
+
+class EmailAlertIntake(_CardPurchaseMailbox):
+    transport: Literal['imap']
+    kind: Literal['card_purchase']
+
+
+class EmailAlertsConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True, frozen=True, hide_input_in_errors=True)
+
+    consent_version: Literal['forwarded-email-alerts-v1']
+    intakes: list[EmailAlertIntake] = Field(min_length=1, max_length=4, repr=False)
+
+    @model_validator(mode='after')
+    def unique_sources(self):
+        if len({intake.source_key for intake in self.intakes}) != len(self.intakes):
+            raise ValueError('duplicate mailbox intake scope')
+        return self
+
+
 class _PollResult(TypedDict, total=False):
     alert: Alert
     rejected: bool
@@ -82,50 +112,92 @@ class RogersMailbox:
         self.stopping = threading.Event()
         self.outcome = None
 
-    def _config(self, settings):
-        path = settings.rogers_alerts_config_file
+    @staticmethod
+    def _enabled(settings):
+        return settings.email_alerts_enabled or settings.rogers_alerts_enabled
+
+    @staticmethod
+    def _location(settings):
+        generic = settings.email_alerts_enabled
+        if generic:
+            if settings.rogers_alerts_enabled or settings.rogers_alerts_config_file is not None:
+                raise BankingError('setup_required')
+            path = settings.email_alerts_config_file
+        else:
+            if settings.email_alerts_config_file is not None:
+                raise BankingError('setup_required')
+            path = settings.rogers_alerts_config_file
         if path is None:
             raise BankingError('setup_required')
+        return path, generic
+
+    def _config(self, path, generic):
         try:
             text = private_read(path)
-            return MailboxConfig.model_validate_json(text), text
-        except (BankingError, UnicodeError, ValidationError):
+            data = json.loads(text, object_pairs_hook=_unique_object)
+            intakes = (EmailAlertsConfig.model_validate(data).intakes if generic else
+                       [MailboxConfig.model_validate(data)])
+            return intakes, text
+        except (BankingError, ValueError, RecursionError):
             raise BankingError('setup_required') from None
 
     def _gate(self, settings):
-        if self.stopping.is_set() or not settings.rogers_alerts_enabled or settings.strict_local_mode or settings.read_only:
+        if self.stopping.is_set() or not self._enabled(settings) or settings.strict_local_mode or settings.read_only:
             raise BankingError('mailbox_disabled')
 
     def poll(self):
         deadline = time.monotonic() + POLL_BUDGET
-
-        def check_deadline():
-            if time.monotonic() >= deadline:
-                raise TimeoutError
-
         settings = self.settings()
         self._gate(settings)
-        config, snapshot = self._config(settings)
-        check_deadline()
-        config_path = settings.rogers_alerts_config_file
-        assert config_path is not None  # _config requires a private file.
-        source_key = config.source_key
+        path, generic = self._location(settings)
+        intakes, snapshot = self._config(path, generic)
+        if time.monotonic() >= deadline:
+            raise TimeoutError
 
-        def allowed():
-            check_deadline()
+        def permitted():
             active = self.settings()
             self._gate(active)
-            if (active.db_path != settings.db_path or active.rogers_alerts_config_file != config_path
-                    or private_read(config_path) != snapshot):
+            if active.db_path != settings.db_path or self._location(active) != (path, generic):
                 raise BankingError('mailbox_configuration_changed')
-            check_deadline()
+            try:
+                current = private_read(path)
+            except (BankingError, UnicodeError):
+                raise BankingError('mailbox_configuration_changed') from None
+            if current != snapshot:
+                raise BankingError('mailbox_configuration_changed')
 
-        with engine.read_conn(settings.db_path) as conn:
+        def poll_intake(intake, deadline):
+            def allowed():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError
+                permitted()
+                if time.monotonic() >= deadline:
+                    raise TimeoutError
+
+            self._poll_intake(settings.db_path, intake, allowed, deadline)
+
+        outcome = 'checked'
+        for index, intake in enumerate(intakes):
+            try:
+                poll_intake(intake, deadline if index == 0 else time.monotonic() + POLL_BUDGET)
+            except BankingError as exc:
+                if len(intakes) == 1 or str(exc) in {'mailbox_configuration_changed', 'mailbox_disabled', 'setup_required'}:
+                    raise
+                outcome = 'retrying'
+            except (MessageRetry, OSError, imaplib.IMAP4.error):
+                if len(intakes) == 1:
+                    raise
+                outcome = 'retrying'
+        return outcome
+
+    def _poll_intake(self, db_path, config, allowed, deadline):
+        source_key = config.source_key
+        with engine.read_conn(db_path) as conn:
             expected = repo.cursor(conn, source_key)
 
         def advance(current, **kwargs):
             nonlocal expected
-            with engine.write_tx(settings.db_path) as conn:
+            with engine.write_tx(db_path) as conn:
                 allowed()
                 repo.advance(conn, source_key, expected, current, **kwargs)
             expected = current
@@ -160,7 +232,7 @@ class RogersMailbox:
             if expected is None or expected[0] != validity:
                 advance((validity, 0))  # Re-scan retained mail after a mailbox epoch change.
             assert expected is not None
-            with engine.read_conn(settings.db_path) as conn:
+            with engine.read_conn(db_path) as conn:
                 due = repo.due_retries(conn, source_key, validity, int(self.clock()), 1)
 
             def retry_once():
@@ -168,7 +240,7 @@ class RogersMailbox:
                     return
                 uid = due.pop()
                 result = classify(imap, uid)
-                with engine.write_tx(settings.db_path) as conn:
+                with engine.write_tx(db_path) as conn:
                     allowed()
                     repo.settle_retry(conn, source_key, expected, uid, **result)
 
@@ -197,43 +269,43 @@ class RogersMailbox:
 
     def poll_safely(self):
         try:
-            self.poll()
+            self.outcome = self.poll()
         except BankingError as exc:
             self.outcome = str(exc) if str(exc) in {'setup_required', 'mailbox_disabled'} else 'retrying'
         except (MessageRetry, OSError, imaplib.IMAP4.error):
             self.outcome = 'retrying'
-        else:
-            self.outcome = 'checked'
 
-    def _mapping(self, settings):
-        if not settings.rogers_alerts_enabled:
-            return None, {}
+    def _scopes(self, settings):
+        if not self._enabled(settings):
+            return {}
         try:
-            config, _ = self._config(settings)
+            intakes, _ = self._config(*self._location(settings))
         except BankingError:
-            return None, {}
-        return config.source_key, config.card_accounts
+            return {}
+        return {intake.source_key: intake.card_accounts for intake in intakes}
 
     def page(self, before_id=None):
         settings = self.settings()
-        scope, cards = self._mapping(settings)
+        scopes = self._scopes(settings)
         with engine.read_conn(settings.db_path) as conn:
-            rows = repo.list_alerts(conn, scope, cards, before_id)
-            counts = repo.counts(conn, scope)
-        if not settings.rogers_alerts_enabled and not rows:
+            rows = repo.list_alerts(conn, None, {}, before_id, scopes=scopes)
+            counts = repo.counts(conn, None, scopes=scopes)
+        if not self._enabled(settings) and not rows:
             return None
-        paused = not settings.rogers_alerts_enabled or settings.strict_local_mode or settings.read_only
+        paused = not self._enabled(settings) or settings.strict_local_mode or settings.read_only
         return {'rows': rows[:repo.PAGE_SIZE], 'older': rows[repo.PAGE_SIZE - 1]['id'] if len(rows) > repo.PAGE_SIZE else None,
-                'outcome': 'paused' if paused else ('setup_required' if scope is None else self.outcome),
+                'outcome': 'paused' if paused else ('setup_required' if not scopes else self.outcome),
                 'writable': not settings.read_only, **counts}
 
     def decide(self, alert_id, **body):
         settings = self.settings()
         with engine.write_tx(settings.db_path) as conn:
-            if self.settings().read_only:
+            active = self.settings()
+            if active.read_only:
                 raise BankingError('read_only')
-            scope, cards = self._mapping(settings)
-            return repo.decide(conn, alert_id, source_key=scope, cards=cards, **body)
+            if active.db_path != settings.db_path:
+                raise BankingError('alert_account_changed')
+            return repo.decide(conn, alert_id, source_key=None, cards={}, scopes=self._scopes(active), **body)
 
 
 async def run_mailbox(stop: asyncio.Event, mailbox: RogersMailbox):
